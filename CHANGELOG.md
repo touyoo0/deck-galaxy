@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.9.0 - 2026-11-18
+
 ### Changed
 
 - Steam Deck fork: the release notes on the home screen show each date as
