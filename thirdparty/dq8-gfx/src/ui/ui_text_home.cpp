@@ -28,6 +28,12 @@ const TextEntry kTextsHome[] = {
     {"Up / Down: scroll    Left: back", "Haut / Bas : défiler    Gauche : retour",
      "Hoch / Runter: scrollen    Links: zurück", "Arriba / Abajo: desplazar    Izquierda: volver",
      "Su / Giù: scorri    Sinistra: indietro"},
+    {"Up / Down: scroll    A: update    Left: back", "Haut / Bas : défiler    A : mettre à jour    Gauche : retour",
+     "Hoch / Runter: scrollen    A: aktualisieren    Links: zurück",
+     "Arriba / Abajo: desplazar    A: actualizar    Izquierda: volver",
+     "Su / Giù: scorri    A: aggiorna    Sinistra: indietro"},
+    {"Version %s is available", "La version %s est disponible", "Version %s ist verfügbar",
+     "La versión %s está disponible", "La versione %s è disponibile"},
     {"Right: read", "Droite : lire", "Rechts: lesen", "Derecha: leer", "Destra: leggi"},
 
     // the release notes' headings
