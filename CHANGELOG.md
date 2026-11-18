@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- The home screen's update is no longer a button among Play, Options and Quit:
+  it sits at the top of the "What's new" panel, a card with the new version,
+  the progress and the errors, a quiet line when there is nothing to do, and a
+  gold dot beside the title while an update waits. On a controller, Right
+  opens the panel and A starts the update.
+
 ## 0.10.0 - 2026-11-18
 
 ### Added

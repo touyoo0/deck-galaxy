@@ -1487,13 +1487,66 @@ void Overlay::drawHome() {
     using State = HostServices::HomeUpdate::State;
     const bool working = update.state == State::Working;
 
+    // The update's button, as the news panel and (without a panel) the column
+    // draw it.
+    std::string label = L("Update");
+    if (update.state == State::Available)
+        label = Lf("Update to %s", update.version.c_str());
+    else if (update.state == State::UpToDate)
+        label = L("Up to date");
+    else if (update.state == State::Checking)
+        label = L("Checking for updates...");
+    else if (update.state == State::Offline)
+        label = L("Cannot check for updates");
+    else if (working)
+        label = L("Updating...");
+    else if (update.state == State::Failed)
+        label = L("Update failed: try again");
+    else if (update.state == State::Done)
+        label = L("Restart to finish");
+    const bool canUpdate = static_cast<bool>(m_host.startUpdate) &&
+                           (update.state == State::Available || update.state == State::Failed);
+    const int adornment = (update.state == State::Checking || working) ? 1 : update.state == State::Available ? 2 : 0;
+    // The progress bar and what the update says, at the cursor.
+    const auto updateStatus = [&](ImDrawList *list, float width) {
+        if (!(working || update.state == State::Failed || update.state == State::Done))
+            return;
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        if (working) {
+            const float bar = em(0.55f);
+            const ImVec2 end(at.x + width, at.y + bar);
+            list->AddRectFilled(at, end, IM_COL32(255, 255, 255, 36), bar * 0.5f);
+            list->PushClipRect(at, end, true);
+            if (update.progress < 0.0f) {
+                const float run = std::fmod(t * 0.8f, 1.4f) - 0.2f;
+                const float from = at.x + width * run;
+                list->AddRectFilledMultiColor(ImVec2(from, at.y), ImVec2(from + width * 0.3f, end.y), IM_COL32(244, 203, 82, 0),
+                                              palette::kGold, palette::kGold, IM_COL32(244, 203, 82, 0));
+            } else {
+                const float done = std::clamp(update.progress, 0.0f, 1.0f);
+                list->AddRectFilledMultiColor(at, ImVec2(at.x + width * done, end.y), IM_COL32(255, 168, 70, 255),
+                                              palette::kGold, palette::kGold, IM_COL32(255, 168, 70, 255));
+            }
+            list->PopClipRect();
+            ImGui::Dummy(ImVec2(width, bar));
+        }
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
+        ImGui::PushStyleColor(ImGuiCol_Text, update.state == State::Failed ? palette::kBad : palette::kText);
+        ImGui::TextUnformatted(updateText(update.text).c_str());
+        ImGui::PopStyleColor();
+        ImGui::PopTextWrapPos();
+    };
+
     // What changed: the last versions' notes, on the right. The wheel or the
     // right stick scrolls; it takes no focus, so the buttons keep the pad.
     const std::vector<ChangeLine> &changes = changelogLines();
     // Stays visible behind the settings; it cannot be read then.
     if (m_settingsOpen)
         gHomeReading = false;
-    if (!changes.empty() && view.x >= view.y * 1.3f) {
+    // With the panel, the update lives in it; without (a narrow window, no
+    // notes), under the buttons.
+    const bool inPanel = !changes.empty() && view.x >= view.y * 1.3f;
+    if (inPanel) {
         const float panelW = std::min(view.x * 0.34f, em(30.0f));
         const float panelH = view.y * 0.72f;
         ImGui::SetNextWindowPos(ImVec2(corner.x - view.x * 0.05f, origin.y + view.y * 0.5f), ImGuiCond_Always,
@@ -1529,6 +1582,11 @@ void Overlay::drawHome() {
                        ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
                 reading = false;
             }
+            // A (or Enter) while reading starts an available update.
+            if (reading && canUpdate &&
+                (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
+                 ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)))
+                m_host.startUpdate();
             if (reading) {
                 for (const ImGuiKey key : {ImGuiKey_GamepadDpadUp, ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadDpadLeft,
                                            ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadFaceDown, ImGuiKey_UpArrow,
@@ -1542,9 +1600,44 @@ void Overlay::drawHome() {
             const float titleSize = em(1.0f);
             trackedText(list, ImGui::GetCursorScreenPos(), titleSize, em(0.22f), IM_COL32(186, 204, 255, 255),
                         IM_COL32(186, 204, 255, 255), L("WHAT'S NEW"), fade);
+            // A gold dot beside the title while an update waits.
+            if (update.state == State::Available) {
+                const float pulse = 0.5f + 0.5f * std::sin(t * 3.0f);
+                const ImVec2 dot(wmin.x + panelW - em(1.4f), wmin.y + em(0.9f) + titleSize * 0.5f);
+                list->AddCircleFilled(dot, em(0.55f), withAlpha(palette::kGold, (0.12f + 0.2f * pulse) * fade), 16);
+                list->AddCircleFilled(dot, em(0.26f), withAlpha(palette::kGold, fade), 12);
+            }
             ImGui::Dummy(ImVec2(0.0f, titleSize * 1.6f));
+
+            // The update: a card when there is something to do or to watch, a
+            // quiet line otherwise.
+            {
+                const float width = ImGui::GetContentRegionAvail().x;
+                if (update.state == State::Available || update.state == State::Failed || working ||
+                    update.state == State::Done) {
+                    if (update.state == State::Available) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, palette::kGold);
+                        ImGui::TextUnformatted(Lf("Version %s is available", update.version.c_str()).c_str());
+                        ImGui::PopStyleColor();
+                    }
+                    ImGui::BeginDisabled(!canUpdate);
+                    if (homeButton("##update", label.c_str(), ImVec2(width, em(2.6f)), canUpdate, fade, adornment) &&
+                        canUpdate)
+                        m_host.startUpdate();
+                    ImGui::EndDisabled();
+                    updateStatus(list, width);
+                    ImGui::Dummy(ImVec2(0.0f, em(0.5f)));
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(150, 165, 200, static_cast<int>(255 * fade)));
+                    ImGui::TextUnformatted(label.c_str());
+                    ImGui::PopStyleColor();
+                    ImGui::Dummy(ImVec2(0.0f, em(0.3f)));
+                }
+            }
             if (navOn) {
-                const char *hint = L(reading ? "Up / Down: scroll    Left: back" : "Right: read");
+                const char *hint = L(reading ? (canUpdate ? "Up / Down: scroll    A: update    Left: back"
+                                                          : "Up / Down: scroll    Left: back")
+                                             : "Right: read");
                 const float hintSize = em(0.8f);
                 ImFont *hintFont = ImGui::GetFont();
                 const float hintWidth = hintFont->CalcTextSizeA(hintSize, FLT_MAX, 0.0f, hint).x;
@@ -1666,29 +1759,13 @@ void Overlay::drawHome() {
         ImGui::SetItemDefaultFocus();
         ImGui::EndDisabled();
 
-        std::string label = L("Update");
-        if (update.state == State::Available)
-            label = Lf("Update to %s", update.version.c_str());
-        else if (update.state == State::UpToDate)
-            label = L("Up to date");
-        else if (update.state == State::Checking)
-            label = L("Checking for updates...");
-        else if (update.state == State::Offline)
-            label = L("Cannot check for updates");
-        else if (working)
-            label = L("Updating...");
-        else if (update.state == State::Failed)
-            label = L("Update failed: try again");
-        else if (update.state == State::Done)
-            label = L("Restart to finish");
-        const bool canUpdate = static_cast<bool>(m_host.startUpdate) &&
-                               (update.state == State::Available || update.state == State::Failed);
-        const int adornment = (update.state == State::Checking || working) ? 1 : update.state == State::Available ? 2 : 0;
-        ImGui::BeginDisabled(!canUpdate);
-        if (homeButton("##update", label.c_str(), buttonSize, canUpdate || update.state == State::UpToDate, fade,
-                       adornment) && canUpdate)
-            m_host.startUpdate();
-        ImGui::EndDisabled();
+        if (!inPanel) {
+            ImGui::BeginDisabled(!canUpdate);
+            if (homeButton("##update", label.c_str(), buttonSize, canUpdate || update.state == State::UpToDate, fade,
+                           adornment) && canUpdate)
+                m_host.startUpdate();
+            ImGui::EndDisabled();
+        }
 
         // Options: the settings window, over the home screen. Back returns here.
         ImGui::BeginDisabled(working);
@@ -1704,32 +1781,8 @@ void Overlay::drawHome() {
         }
         ImGui::EndDisabled();
 
-        if (working || update.state == State::Failed || update.state == State::Done) {
-            const ImVec2 at = ImGui::GetCursorScreenPos();
-            if (working) {
-                const float bar = em(0.55f);
-                const ImVec2 end(at.x + column, at.y + bar);
-                list->AddRectFilled(at, end, IM_COL32(255, 255, 255, 36), bar * 0.5f);
-                list->PushClipRect(at, end, true);
-                if (update.progress < 0.0f) {
-                    const float run = std::fmod(t * 0.8f, 1.4f) - 0.2f;
-                    const float from = at.x + column * run;
-                    list->AddRectFilledMultiColor(ImVec2(from, at.y), ImVec2(from + column * 0.3f, end.y), IM_COL32(244, 203, 82, 0),
-                                                  palette::kGold, palette::kGold, IM_COL32(244, 203, 82, 0));
-                } else {
-                    const float done = std::clamp(update.progress, 0.0f, 1.0f);
-                    list->AddRectFilledMultiColor(at, ImVec2(at.x + column * done, end.y), IM_COL32(255, 168, 70, 255),
-                                                  palette::kGold, palette::kGold, IM_COL32(255, 168, 70, 255));
-                }
-                list->PopClipRect();
-                ImGui::Dummy(ImVec2(column, bar));
-            }
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + column);
-            ImGui::PushStyleColor(ImGuiCol_Text, update.state == State::Failed ? palette::kBad : palette::kText);
-            ImGui::TextUnformatted(updateText(update.text).c_str());
-            ImGui::PopStyleColor();
-            ImGui::PopTextWrapPos();
-        }
+        if (!inPanel)
+            updateStatus(list, column);
         ImGui::End();
     } else {
         ImGui::End();
