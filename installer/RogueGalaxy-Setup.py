@@ -9,8 +9,8 @@ home screen, which updates it, in game mode.
 
 Needs what SteamOS has: python3 with GTK 4 (PyGObject), curl, git, distrobox.
 
-The window speaks English, French, German, Spanish or Italian: the Deck's language to begin with
-(the locale, else Steam's language setting), and a list in the top right corner changes it. --lang CODE
+The window speaks English, French, German, Spanish or Italian: Steam's language to begin with
+(else the locale), and a list in the top right corner changes it. --lang CODE
 or RG_LANG=CODE forces one.
 
 For tests: --iso FILE, --dir FOLDER, --zip ARCHIVE (a release's source
@@ -413,23 +413,30 @@ def locale_language(value: str) -> str | None:
     return code if code in CODES else None
 
 
-def detect_language() -> str:
-    """The Deck's language: RG_LANG, else the system's locale (what desktop mode sets from the Steam Deck's
-    language settings), else Steam's own language setting, else English."""
-    for name in ("RG_LANG", "LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
-        value = next((p for p in os.environ.get(name, "").split(":") if p and p not in ("C", "POSIX")), "")
-        if value:
-            found = locale_language(value)
-            if found:
-                return found
-            break  # a locale this installer has no text for: look at Steam
+def steam_language() -> str | None:
+    """The language in Steam's own settings (the Deck's): None when there is none, "en" for one this window
+    has no texts for."""
     try:
         text = (Path.home() / ".steam" / "registry.vdf").read_text(errors="replace")
-        match = re.search(r'"language"\s+"(\w+)"', text)
-        if match:
-            return STEAM_LANGUAGES.get(match.group(1).lower(), "en")
     except OSError:
-        pass
+        return None
+    match = re.search(r'"language"\s+"(\w+)"', text)
+    return STEAM_LANGUAGES.get(match.group(1).lower(), "en") if match else None
+
+
+def detect_language() -> str:
+    """The Deck's language: RG_LANG for a run of one's own, else Steam's language setting, else the system's
+    locale, else English."""
+    forced = locale_language(os.environ.get("RG_LANG", ""))
+    if forced:
+        return forced
+    steam = steam_language()
+    if steam:
+        return steam
+    for name in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
+        value = next((p for p in os.environ.get(name, "").split(":") if p and p not in ("C", "POSIX")), "")
+        if value:
+            return locale_language(value) or "en"
     return "en"
 
 
