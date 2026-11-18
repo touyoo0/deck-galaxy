@@ -1037,8 +1037,8 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
          "activating every save point still counts as before.",
          false},
         {"achievements", "RetroAchievements",
-         "Checks the game's 130 RetroAchievements as you play and shows a notice when one is earned. Sign in "
-         "above; nothing is sent but your unlocks.",
+         "Checks the game's 130 RetroAchievements as you play and shows a notice when one is earned. Turn it on, "
+         "then sign in; nothing is sent but your unlocks.",
          rg::achievements::signedIn(), 0, 0, 0, "", 1, true, false, "achievements"},
         {"fast_transporter", "Fast transporters",
          "A transporter's warp plays at up to twice the speed. The music and the sounds keep their pace.", false},

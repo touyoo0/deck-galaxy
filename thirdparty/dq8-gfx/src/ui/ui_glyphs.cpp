@@ -908,59 +908,81 @@ const char *controllerFamilyName(SDL_GamepadType type) {
     return type == SDL_GAMEPAD_TYPE_XBOXONE ? "Xbox" : "Controller";
 }
 
+// A Steam Deck, flat and quiet, lit by what is pressed (Steam Deck fork:
+// replaces the PS2 pad). The PS2's buttons sit on the Deck's: Cross on A,
+// Circle on B, Square on X, Triangle on Y, Select on View, Start on Menu.
 void drawPadDiagram(ImDrawList *list, ImVec2 min, ImVec2 size, const gfx::PadSnapshot &pad,
                     PadInput highlight) {
-    // Laid out on a 320x200 grid, then fitted and centred.
-    const float k = std::min(size.x / 320.0f, size.y / 200.0f);
-    const ImVec2 origin(min.x + (size.x - 320.0f * k) * 0.5f, min.y + (size.y - 200.0f * k) * 0.5f);
+    // Laid out on a 400x170 grid, then fitted and centred.
+    const float k = std::min(size.x / 400.0f, size.y / 170.0f);
+    const ImVec2 origin(min.x + (size.x - 400.0f * k) * 0.5f, min.y + (size.y - 170.0f * k) * 0.5f);
     const auto at = [&](float x, float y) { return ImVec2(origin.x + x * k, origin.y + y * k); };
     const auto held = [&](PadInput input) { return (pad.held & gfx::padButtonMask(input)) != 0u; };
 
-    const ImU32 body = IM_COL32(30, 37, 70, 255);
-    const ImU32 well = IM_COL32(18, 23, 48, 255);
-    const ImU32 button = IM_COL32(52, 62, 104, 255);
+    const ImU32 body = IM_COL32(27, 30, 40, 255);
+    const ImU32 well = IM_COL32(14, 16, 23, 255);
+    const ImU32 button = IM_COL32(58, 63, 80, 255);
     const ImU32 lit = palette::kGold;
-    const ImU32 outline = palette::kBorder;
+    const ImU32 outline = IM_COL32(255, 255, 255, 46);
     const float pulse = 0.55f + 0.45f * std::sin(static_cast<float>(ImGui::GetTime()) * 5.0f);
     const ImU32 ring = withAlpha(palette::kGold, pulse);
 
-    // Shoulders, behind the body.
+    // Triggers and bumpers, behind the body.
     struct Shoulder { PadInput input; float x0, y0, x1, y1; };
-    const Shoulder shoulders[] = {{PadInput::L2, 64, 12, 112, 28}, {PadInput::L1, 60, 27, 116, 42},
-                                  {PadInput::R2, 208, 12, 256, 28}, {PadInput::R1, 204, 27, 260, 42}};
+    const Shoulder shoulders[] = {{PadInput::L2, 36, 4, 98, 17}, {PadInput::L1, 30, 15, 104, 28},
+                                  {PadInput::R2, 302, 4, 364, 17}, {PadInput::R1, 296, 15, 370, 28}};
     for (const auto &s : shoulders) {
         const bool on = held(s.input);
         list->AddRectFilled(at(s.x0, s.y0), at(s.x1, s.y1), on ? lit : button, 6.0f * k);
-        list->AddRect(at(s.x0, s.y0), at(s.x1, s.y1), withAlpha(outline, 0.85f), 6.0f * k, 1.5f);
+        list->AddRect(at(s.x0, s.y0), at(s.x1, s.y1), outline, 6.0f * k, 1.0f);
         if (k >= 0.9f)
-            label(list, at((s.x0 + s.x1) * 0.5f, (s.y0 + s.y1) * 0.5f - 1.0f), 10.0f * k,
-                  on ? well : palette::kTextMuted, gfx::padInputName(s.input));
+            label(list, at((s.x0 + s.x1) * 0.5f, (s.y0 + s.y1) * 0.5f), 9.0f * k,
+                  on ? well : palette::kTextMuted, s.input == PadInput::L1 ? "L1" : s.input == PadInput::R1 ? "R1"
+                                                   : s.input == PadInput::L2 ? "L2" : "R2");
         if (highlight == s.input)
             list->AddRect(at(s.x0 - 3, s.y0 - 3), at(s.x1 + 3, s.y1 + 3), ring, 8.0f * k, 2.5f);
     }
 
-    // The body: every shape once in white a little larger, then in navy, so
-    // the union gets one clean edge like the game's windows.
-    for (int pass = 0; pass < 2; ++pass) {
-        const float grow = pass == 0 ? 2.5f : 0.0f;
-        const ImU32 fill = pass == 0 ? outline : body;
-        list->AddRectFilled(ImVec2(at(64, 38).x - grow, at(64, 38).y - grow),
-                            ImVec2(at(256, 126).x + grow, at(256, 126).y + grow), fill, 34.0f * k + grow);
-        for (const float side : {-1.0f, 1.0f}) {
-            const ImVec2 top = at(160.0f + side * 66.0f, 98.0f), bottom = at(160.0f + side * 88.0f, 176.0f);
-            list->AddLine(top, bottom, fill, 54.0f * k + grow * 2.0f);
-            list->AddCircleFilled(top, 27.0f * k + grow, fill);
-            list->AddCircleFilled(bottom, 27.0f * k + grow, fill);
+    // The body and its screen.
+    list->AddRectFilled(at(0, 22), at(400, 152), body, 50.0f * k);
+    list->AddRect(at(0, 22), at(400, 152), outline, 50.0f * k, 1.0f);
+    list->AddRectFilled(at(88, 34), at(312, 140), IM_COL32(8, 10, 15, 255), 9.0f * k);
+    list->AddRectFilledMultiColor(at(88, 34), at(312, 140), IM_COL32(40, 52, 84, 90), IM_COL32(40, 52, 84, 0),
+                                  IM_COL32(40, 52, 84, 0), IM_COL32(40, 52, 84, 40));
+    list->AddRect(at(88, 34), at(312, 140), IM_COL32(255, 255, 255, 22), 9.0f * k, 1.0f);
+    if (k >= 0.9f)
+        label(list, at(200, 87), 12.0f * k, IM_COL32(255, 255, 255, 60), "STEAM DECK");
+
+    // The left stick and the D-pad.
+    const auto stickByte = [&](int shift) { return (static_cast<float>((pad.sticks >> shift) & 0xFFu) - 128.0f) / 128.0f; };
+    struct Stick { float x, y, dx, dy; PadInput click, first; };
+    const Stick sticks[] = {{48, 56, stickByte(8), stickByte(0), PadInput::L3, PadInput::LeftStickUp},
+                            {352, 112, stickByte(24), stickByte(16), PadInput::R3, PadInput::RightStickUp}};
+    for (const auto &s : sticks) {
+        const ImVec2 base = at(s.x, s.y);
+        list->AddCircleFilled(base, 19.0f * k, well);
+        const ImVec2 knob(base.x + s.dx * 7.0f * k, base.y + s.dy * 8.0f * k);
+        const bool on = held(s.click);
+        list->AddCircleFilled(knob, 13.0f * k, on ? lit : button);
+        list->AddCircle(knob, 8.5f * k, on ? well : IM_COL32(255, 255, 255, 50), 0, 1.5f);
+        const bool ringed = highlight == s.click ||
+                            (highlight >= s.first && static_cast<int>(highlight) < static_cast<int>(s.first) + 4);
+        if (ringed)
+            list->AddCircle(base, 22.0f * k, ring, 0, 2.5f);
+        if (highlight >= s.first && static_cast<int>(highlight) < static_cast<int>(s.first) + 4) {
+            const int direction = static_cast<int>(highlight) - static_cast<int>(s.first);
+            const ImVec2 offsets[4] = {{0, -34}, {0, 34}, {-34, 0}, {34, 0}};
+            arrow(list, ImVec2(base.x + offsets[direction].x * k, base.y + offsets[direction].y * k), 9.0f * k,
+                  direction, ring);
         }
     }
 
-    // D-pad.
-    const ImVec2 dpadCenter = at(96, 82);
-    list->AddCircleFilled(dpadCenter, 30.0f * k, well);
+    const ImVec2 dpadCenter = at(48, 112);
+    list->AddCircleFilled(dpadCenter, 23.0f * k, well);
     struct Arm { PadInput input; float x0, y0, x1, y1; int direction; };
-    const Arm arms[] = {{PadInput::Up, 89, 56, 103, 76, kUp}, {PadInput::Down, 89, 88, 103, 108, kDown},
-                        {PadInput::Left, 70, 75, 90, 89, kLeft}, {PadInput::Right, 102, 75, 122, 89, kRight}};
-    list->AddRectFilled(at(89, 75), at(103, 89), button);
+    const Arm arms[] = {{PadInput::Up, 41, 90, 55, 108, kUp}, {PadInput::Down, 41, 116, 55, 134, kDown},
+                        {PadInput::Left, 26, 105, 44, 119, kLeft}, {PadInput::Right, 52, 105, 70, 119, kRight}};
+    list->AddRectFilled(at(41, 105), at(55, 119), button);
     for (const auto &arm : arms) {
         const bool on = held(arm.input);
         list->AddRectFilled(at(arm.x0, arm.y0), at(arm.x1, arm.y1), on ? lit : button, 3.0f * k);
@@ -970,54 +992,28 @@ void drawPadDiagram(ImDrawList *list, ImVec2 min, ImVec2 size, const gfx::PadSna
             list->AddRect(at(arm.x0 - 3, arm.y0 - 3), at(arm.x1 + 3, arm.y1 + 3), ring, 4.0f * k, 2.5f);
     }
 
-    // Face buttons.
-    const ImVec2 faceCenter = at(224, 82);
-    list->AddCircleFilled(faceCenter, 33.0f * k, well);
-    struct Face { PadInput input; float x, y; };
-    const Face faces[] = {{PadInput::Triangle, 224, 61}, {PadInput::Circle, 245, 82},
-                          {PadInput::Cross, 224, 103}, {PadInput::Square, 203, 82}};
+    // The face buttons, as the Deck prints them.
+    struct Face { PadInput input; float x, y; const char *name; ImU32 color; };
+    const Face faces[] = {{PadInput::Triangle, 352, 44, "Y", palette::kGold}, {PadInput::Circle, 368, 60, "B", palette::kBad},
+                          {PadInput::Cross, 352, 76, "A", palette::kGood}, {PadInput::Square, 336, 60, "X", palette::kSky}};
     for (const auto &face : faces) {
         const bool on = held(face.input);
         const ImVec2 c = at(face.x, face.y);
-        list->AddCircleFilled(c, 10.5f * k, on ? faceColor(face.input) : button);
-        faceSymbol(list, face.input, c, 21.0f * k, on ? well : faceColor(face.input));
+        list->AddCircleFilled(c, 9.0f * k, on ? face.color : button);
+        label(list, c, 10.5f * k, on ? well : face.color, face.name);
         if (highlight == face.input)
-            list->AddCircle(c, 14.0f * k, ring, 0, 2.5f);
+            list->AddCircle(c, 12.5f * k, ring, 0, 2.5f);
     }
 
-    // Select and Start, and the analog LED between the sticks.
-    struct Small { PadInput input; float x0, y0, x1, y1; };
-    const Small smalls[] = {{PadInput::Select, 128, 68, 150, 77}, {PadInput::Start, 170, 68, 192, 77}};
+    // View and Menu, beside the screen: small flat keys.
+    struct Small { PadInput input; float x, y; };
+    const Small smalls[] = {{PadInput::Select, 76, 42}, {PadInput::Start, 324, 42}};
     for (const auto &small : smalls) {
         const bool on = held(small.input);
-        list->AddRectFilled(at(small.x0, small.y0), at(small.x1, small.y1), on ? lit : button, 4.5f * k);
+        const ImVec2 lo = at(small.x - 8, small.y - 4), hi = at(small.x + 8, small.y + 4);
+        list->AddRectFilled(lo, hi, on ? lit : button, 2.5f * k);
         if (highlight == small.input)
-            list->AddRect(at(small.x0 - 3, small.y0 - 3), at(small.x1 + 3, small.y1 + 3), ring, 6.0f * k, 2.5f);
-    }
-    list->AddCircleFilled(at(160, 97), 3.2f * k, IM_COL32(236, 64, 64, 255));
-
-    // Sticks, each knob pushed by the stick's live position.
-    const auto stickByte = [&](int shift) { return (static_cast<float>((pad.sticks >> shift) & 0xFFu) - 128.0f) / 128.0f; };
-    struct Stick { float x, y, dx, dy; PadInput click, first; };
-    const Stick sticks[] = {{126, 130, stickByte(8), stickByte(0), PadInput::L3, PadInput::LeftStickUp},
-                            {194, 130, stickByte(24), stickByte(16), PadInput::R3, PadInput::RightStickUp}};
-    for (const auto &s : sticks) {
-        const ImVec2 base = at(s.x, s.y);
-        list->AddCircleFilled(base, 22.0f * k, well);
-        const ImVec2 knob(base.x + s.dx * 9.0f * k, base.y + s.dy * 9.0f * k);
-        const bool on = held(s.click);
-        list->AddCircleFilled(knob, 15.0f * k, on ? lit : button);
-        list->AddCircle(knob, 10.0f * k, on ? well : IM_COL32(255, 255, 255, 50), 0, 1.5f);
-        const bool ringed = highlight == s.click ||
-                            (highlight >= s.first && static_cast<int>(highlight) < static_cast<int>(s.first) + 4);
-        if (ringed)
-            list->AddCircle(base, 25.0f * k, ring, 0, 2.5f);
-        if (highlight >= s.first && static_cast<int>(highlight) < static_cast<int>(s.first) + 4) {
-            const int direction = static_cast<int>(highlight) - static_cast<int>(s.first);
-            const ImVec2 offsets[4] = {{0, -33}, {0, 33}, {-33, 0}, {33, 0}};
-            arrow(list, ImVec2(base.x + offsets[direction].x * k, base.y + offsets[direction].y * k), 9.0f * k,
-                  direction, ring);
-        }
+            list->AddRect(ImVec2(lo.x - 3, lo.y - 3), ImVec2(hi.x + 3, hi.y + 3), ring, 4.0f * k, 2.5f);
     }
 }
 
