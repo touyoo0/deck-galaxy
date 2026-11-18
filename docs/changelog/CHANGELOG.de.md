@@ -10,45 +10,24 @@ Englisch.
 
 ### Added
 
-- Steam-Deck-Fork: Der Installer, der Startbildschirm, die Einstellungen
-  (ihre Seiten, Optionen und Hilfetexte), das Beenden-Fenster und die
-  Update-Meldungen gibt es auf Englisch, Französisch, Deutsch, Spanisch und
-  Italienisch. Die Sprache ist die von Steam (sonst die des Systems), bis du
-  eine wählst: mit der Liste oben rechts im Installer oder im Spiel unter
-  Einstellungen > Oberfläche > Menüsprache. Auch die Versionshinweise der
-  letzten drei Versionen sind übersetzt (`docs/changelog/`); eine Version
-  ohne Übersetzung erscheint auf Englisch.
+- Installer, Startbildschirm, Einstellungen, Beenden-Fenster und Update-Meldungen gibt es auf Englisch, Französisch, Deutsch, Spanisch und Italienisch. Die Sprache ist die von Steam (sonst die des Systems), bis du eine wählst: oben rechts im Installer oder im Spiel unter Einstellungen > Oberfläche > Menüsprache. Auch die Hinweise der letzten drei Versionen sind übersetzt (`docs/changelog/`).
 
 ## 0.9.0 - 2026-11-18
 
 ### Changed
 
-- Steam-Deck-Fork: Die Versionshinweise auf dem Startbildschirm zeigen jedes
-  Datum als „18. Nov. 2026“.
+- Die Versionshinweise des Startbildschirms zeigen Daten als „18 Nov. 2026“.
 
 ### Added
 
-- Steam-Deck-Fork: Der Startbildschirm hat eine Schaltfläche Optionen über
-  Beenden, die die Einstellungen über den Versionshinweisen öffnet, ohne die
-  obere Leiste des Menüs.
+- Ein Optionen-Knopf auf dem Startbildschirm, über Beenden, öffnet die Einstellungen.
 
 ### Removed
 
-- Steam-Deck-Fork: Die Optionen, die auf dem Deck nichts bedeuten, sind aus
-  dem Menü und aus settings.ini verschwunden: der Fenstermodus, vertikale
-  Synchronisation, interne Auflösungen über 2x, der Nearest-Filter, Ränder,
-  ganzzahlige Skalierung, Ton aus und Ton aus im Hintergrund, der
-  Tastatur-Schalter, die Controller-Auswahl und die Tastaturbelegung, die drei
-  Optionen der Maus-Kamera, Tasten im Spieltext (immer an), der native
-  Renderer, die Seite Texturen, Mauszeiger im Leerlauf ausblenden (immer an)
-  und die Position der Bildraten-Anzeige (oben rechts).
+- Optionen ohne Sinn auf dem Deck: Fenstermodus, vertikale Synchronisierung, interne Auflösungen über 2x, Nearest-Filter, Ränder, ganzzahlige Skalierung, Stummschalten und Im Hintergrund stummschalten, Tastatur-Schalter, Controller-Auswahl, Tastenbelegung, die drei Optionen der Maus-Kamera, Tasten im Spieltext (immer an), nativer Renderer, Seite Texturen, Inaktiven Mauszeiger ausblenden (immer an) und Position des Bildraten-Zählers (oben rechts).
 
 ## 0.8.0 - 2026-11-18
 
 ### Changed
 
-- Steam-Deck-Fork: Das Bild ist immer 16:10, das Format des Deck-Bildschirms.
-  Die Optionen Seitenverhältnis und Breitbild entfallen: Das Spiel wird von
-  Anfang an breit gezeichnet, und die Menüs und die Bildschirme vor dem Spiel
-  (Intro, Titel, Laden), für 4:3 gezeichnet, werden auf 16:10 gestreckt, statt
-  mit Balken gezeigt zu werden. Auch ein neues Fenster öffnet sich in 16:10.
+- Das Bild ist immer 16:10, der Bildschirm des Decks. Die Optionen Seitenverhältnis und Breitbild entfallen: Das Spiel wird breit gezeichnet, und die 4:3-Menüs und -Bildschirme vor dem Spiel werden auf 16:10 gedehnt statt mit Balken gezeigt.

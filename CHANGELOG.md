@@ -6,119 +6,95 @@
 
 ### Added
 
-- Steam Deck fork: the installer, the home screen, the settings (their pages,
-  options and help texts), the quit box and the update messages are in
-  English, French, German, Spanish and Italian. The language is Steam's (else
-  the system's locale) until you pick one: with the list in the installer's
-  top right corner, or in the game in Settings > Interface > Menu language.
-  The release notes of the last three versions are translated too
-  (`docs/changelog/`); a version without a translation shows in English.
+- The installer, the home screen, the settings, the quit box and the update
+  messages are in English, French, German, Spanish and Italian. The language
+  is Steam's (else the system's) until you pick one: top right of the
+  installer, or Settings > Interface > Menu language in the game. The release
+  notes of the last three versions are translated too (`docs/changelog/`).
 
 ## 0.9.0 - 2026-11-18
 
 ### Changed
 
-- Steam Deck fork: the release notes on the home screen show each date as
-  "18 nov. 2026".
+- The home screen's release notes show dates as "18 nov. 2026".
 
 ### Added
 
-- Steam Deck fork: the home screen has an Options button, above Quit, that
-  opens the settings, over the release notes, without the menu's top bar.
+- An Options button on the home screen, above Quit, opens the settings.
 
 ### Removed
 
-- Steam Deck fork: the options that mean nothing on the Deck are gone from
-  the menu and from settings.ini: window mode, vertical sync, internal
-  resolutions above 2x, the Nearest filter, Borders, Integer scaling, Mute
-  and Mute in the background, the Keyboard switch, the controller picker
-  and the keyboard bindings, the mouse camera's three options, Buttons in
-  the game's text (always on), Native renderer,
-  the Textures page, Hide the idle mouse cursor (always on) and
-  the frame-rate counter's position (top right).
+- Options that mean nothing on the Deck: window mode, vertical sync,
+  internal resolutions above 2x, Nearest filter, Borders, Integer scaling,
+  Mute and Mute in the background, the Keyboard switch, the controller
+  picker, keyboard bindings, the mouse camera's three options, Buttons in
+  the game's text (always on), Native renderer, the Textures page, Hide the
+  idle mouse cursor (always on) and the frame-rate counter's position (top
+  right).
 
 ## 0.8.0 - 2026-11-18
 
 ### Changed
 
-- Steam Deck fork: the picture is always 16:10, the Deck's screen. The
-  Aspect ratio and Widescreen options are gone: the game is drawn wide
-  from the start, and the menus and the screens before the game (opening,
-  title, loading), drawn for 4:3, are stretched to 16:10 instead of shown
-  with bars. A new window opens at 16:10 too.
+- The picture is always 16:10, the Deck's screen. The Aspect ratio and
+  Widescreen options are gone: the game is drawn wide, and the 4:3 menus and
+  screens before the game are stretched to 16:10 instead of barred.
 
 ## 0.7.0 - 2026-11-18
 
 ### New
 
-- Steam Deck fork: RetroAchievements. The game's 130 achievements are
-  checked as you play, and a notice with the achievement's badge shows when
-  one is earned. Sign in once, in the installer (the option "Earn the
-  game's 130 achievements") or in the game: F1, Settings, Achievements. That
-  page also lists all 130 with their badges, points and descriptions (the
-  earned ones first), turns the tracking on or off, and signs out.
-  Unlocks count in softcore: RetroAchievements does not know this game as
-  an emulator yet, so hardcore is not available. Nothing from the game is
-  sent but the unlocks.
+- RetroAchievements: the game's 130 achievements are tracked as you play,
+  with a notice when one is earned. Sign in once, in the installer or in the
+  game (F1 > Settings > Achievements), where all 130 are listed. Softcore
+  only; nothing but the unlocks is sent.
 
 ## 0.6.2 - 2026-11-18
 
 ### Changed
 
-- Steam Deck fork: while the home screen's notes are being read, the buttons
-  on the left show no selection (the notes' border is gold instead).
+- While the home screen's notes are being read, the buttons show no
+  selection (the notes' border turns gold).
 
 ## 0.6.1 - 2026-11-18
 
 ### New
 
-- Steam Deck fork: the home screen's notes can be read with the controller:
-  Right (d-pad) from the buttons goes into them, Up and Down scroll (L1 and
-  R1 a page), Left or B goes back to the buttons. The right stick and the
-  mouse wheel still scroll them.
+- The home screen's notes can be read with the controller: Right goes into
+  them, Up and Down scroll (L1 and R1 a page), Left or B goes back.
 
 ## 0.6.0 - 2026-11-18
 
 ### New
 
-- Steam Deck fork: the home screen shows the notes of the last versions
-  ("What's new", from this file) on the right; the mouse wheel or the right
-  stick scrolls them.
+- The home screen shows the notes of the last versions ("What's new") on the
+  right; the mouse wheel or the right stick scrolls them.
 
 ## 0.5.0 - 2026-11-18
 
 ### New
 
-- Steam Deck fork: the installer comes as an AppImage
-  (`RogueGalaxy-Setup-x86_64.AppImage`, built by
-  `tools/release/build_appimage.sh`): download it and double-click.
-- Steam Deck fork: the installer has the game's look: artwork of the game in
-  the background (a still picture), one page for the disc, the folder and the options (the
-  European disc is named by its serial, SCES-54552). Closing the window
-  while it builds asks first, then really stops the build, in the container
-  too, and deletes the folder it had created. The Deck does not sleep or dim
-  while it installs. A picture of your own in
-  `~/.local/share/RogueGalaxy/theme/` replaces the background.
-- Steam Deck fork: when the installer adds the game to Steam, it gives the
-  entry its pictures (capsule, portrait, banner, logo, icon), as a game from
-  the store has. A picture you already set is kept. Steam shows them after a
-  restart (game mode does it).
-- Steam Deck fork: a new home screen: the game's artwork behind it, slowly
-  moving, with glowing engines, light streaks and drifting stars; the game's
-  logo; large buttons (Play, Update, Quit) where the selected one turns
-  orange, and a spinner while it checks or updates. A build without
-  `installer/art/home.jpg` draws a plain sky, and one without
-  `installer/art/logo-home.png` writes the title in text.
+- The installer comes as an AppImage (`RogueGalaxy-Setup-x86_64.AppImage`):
+  download it and double-click.
+- The installer has the game's look: artwork background, one page for the
+  disc, the folder and the options. Closing it mid-build asks first, then
+  stops the build and deletes the folder it created. The Deck stays awake
+  while it installs. A picture in `~/.local/share/RogueGalaxy/theme/`
+  replaces the background.
+- Adding the game to Steam also sets its pictures (capsule, portrait, banner,
+  logo, icon); ones you already set are kept.
+- A new home screen: animated artwork, the game's logo, and large buttons
+  (Play, Update, Quit) with a spinner while it checks or updates.
 
 ## 0.4.0 - 2026-11-17
 
 ### New
 
-- Steam Deck fork: `installer/RogueGalaxy-Setup.py`, a window to run once in
-  desktop mode: it asks for the disc image and the folder, builds the game
-  and adds it to Steam.
-- Steam Deck fork: the game opens on a home screen (Play, Update, Quit) and
-  updates itself from there, with a progress bar in the game's window.
+- `installer/RogueGalaxy-Setup.py`: a window to run once in desktop mode. It
+  asks for the disc image and the folder, builds the game and adds it to
+  Steam.
+- The game opens on a home screen (Play, Update, Quit) and updates itself
+  from there, with a progress bar.
 - Linux and the Steam Deck (untested): `install.sh` builds the game for
   Linux from your disc image, and `rogue-galaxy.sh` starts it. In a
   launcher such as QuiverLauncher, Play builds the game the first time, in
