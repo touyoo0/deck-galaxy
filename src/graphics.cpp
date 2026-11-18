@@ -62,6 +62,7 @@
 #include "runtime/ps2_native_iop.h"
 #include "runtime/ps2_pad_host.h"
 #include "ui/ui_overlay.h"
+#include "ui/ui_text.h"
 
 #include <cctype>
 #include <cmath>
@@ -802,7 +803,8 @@ bool pump(void *userData)
         if (const rg::updates::Release newer = rg::updates::newer(); !newer.version.empty())
         {
             releaseTold = true;
-            g_menu->notify("Version " + newer.version + " is out: run Update.bat, or see F1 > Rogue Galaxy > About", dq8::ui::Icon::Info,
+            g_menu->notify(dq8::ui::Lf("Version %s is out: run Update.bat, or see F1 > Rogue Galaxy > About", newer.version.c_str()),
+                           dq8::ui::Icon::Info,
                            10.0);
         }
     }

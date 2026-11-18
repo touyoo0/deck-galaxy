@@ -5,6 +5,7 @@
 
 #include "gfx/backends/sdlgpu/sdlgpu_input.h"
 #include "ui/ui_style.h"
+#include "ui/ui_text.h"
 #include "ui/ui_widgets.h"
 
 #include <imgui.h>
@@ -45,7 +46,7 @@ public:
         ImGui::EndDisabled();
         if (m_reason) {
             ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextColored(color(palette::kWarn), "%s", m_reason);
+            ImGui::TextColored(color(palette::kWarn), "%s", L(m_reason));
             ImGui::PopTextWrapPos();
         }
     }
@@ -90,7 +91,7 @@ void dialogHeader(Icon kind, const char *title, bool *open) {
     ImGui::SameLine(0.0f, em(0.6f));
     ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.3f);
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(title);
+    ImGui::TextUnformatted(L(title));
     ImGui::PopFont();
     drawIconBeside(room, kind, palette::kGold);
     if (open && closeButtonBeside("##close", room.pos.y, lastItemMiddle()))
@@ -124,7 +125,7 @@ void shortcutRow(const char *const *keys, int count, const char *what, const cha
     }
     ImGui::TableNextColumn();
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(what);
+    ImGui::TextUnformatted(L(what));
 }
 
 std::string conflictWith(const gfx::PadConfig &config, PadInput input, bool keyboard,
@@ -136,7 +137,7 @@ std::string conflictWith(const gfx::PadConfig &config, PadInput input, bool keyb
             continue;
         for (const auto &candidate : config.slots(static_cast<PadInput>(other), keyboard))
             if (candidate == binding)
-                return gfx::padInputName(static_cast<PadInput>(other));
+                return L(gfx::padInputName(static_cast<PadInput>(other)));
     }
     return {};
 }
@@ -328,7 +329,7 @@ void Overlay::drawPadHints(float height) {
         for (const SDL_GamepadButton button : {hint.first, hint.second})
             if (button != kNone)
                 width += bindingChipWidth(gfx::PadBinding::button(button), type, chip) + em(0.25f);
-        const ImVec2 text = ImGui::CalcTextSize(hint.text);
+        const ImVec2 text = ImGui::CalcTextSize(L(hint.text));
         if (x + width + text.x > right)
             break;
         for (const SDL_GamepadButton button : {hint.first, hint.second}) {
@@ -338,7 +339,7 @@ void Overlay::drawPadHints(float height) {
             drawBindingChip(list, binding, type, ImVec2(x, y), chip);
             x += bindingChipWidth(binding, type, chip) + em(0.25f);
         }
-        list->AddText(ImVec2(x + em(0.15f), std::floor(y + (chip - text.y) * 0.5f)), palette::kTextMuted, hint.text);
+        list->AddText(ImVec2(x + em(0.15f), std::floor(y + (chip - text.y) * 0.5f)), palette::kTextMuted, L(hint.text));
         x += em(0.15f) + text.x + em(1.3f);
     }
     ImGui::Dummy(ImVec2(0.0f, height - ImGui::GetStyle().ItemSpacing.y));
@@ -354,8 +355,10 @@ void Overlay::drawDisplayPage() {
         const uint32_t active = m_backend.activeResolutionScale();
         const uint32_t shown = m_pendingScale != 0u ? m_pendingScale : active;
         char preview[96];
+        const std::string waiting =
+            m_pendingScale == 0u ? std::string() : "   " + L(std::string(pausing() ? "when the game resumes" : "applying..."));
         std::snprintf(preview, sizeof(preview), "%u%s   %u %s %u%s", shown, kTimes, 512u * shown, kTimes, 448u * shown,
-                      m_pendingScale == 0u ? "" : pausing() ? "   when the game resumes" : "   applying...");
+                      waiting.c_str());
         if (ImGui::BeginCombo("##scale", preview)) {
             for (uint32_t scale = 1u; scale <= 2u; ++scale) {
                 char item[64];
@@ -401,6 +404,12 @@ void Overlay::drawSoundPage() {
         mutedText("Sound is not available in this build.");
 }
 
+void Overlay::setMenuLanguageChoice(const std::string &setting) {
+    m_settings.menuLanguage = setting;
+    setMenuLanguage(setting);
+    markDirty();
+}
+
 void Overlay::drawInterfacePage() {
     sectionHeader("Menu");
     if (beginSettings("menu")) {
@@ -417,6 +426,14 @@ void Overlay::drawInterfacePage() {
         settingRow("Notifications", "Short messages about controllers, screenshots and changes.");
         if (toggle("notifications", &m_settings.notifications))
             markDirty();
+        settingRow("Menu language", "The language of this menu and of the home screen. It starts as the Steam "
+                                    "Deck's own.");
+        if (ImGui::BeginCombo("##menulanguage", kMenuLanguageNames[menuLanguageIndex()])) {
+            for (int language = 0; language < kMenuLanguageCount; ++language)
+                if (ImGui::Selectable(kMenuLanguageNames[language], menuLanguageIndex() == language))
+                    setMenuLanguageChoice(kMenuLanguageCodes[language]);
+            ImGui::EndCombo();
+        }
         // Not on a Steam Deck: Steam keeps its own button, so View + Menu is
         // the only way to the menu there.
         if (!m_host.steamDeck) {
@@ -489,7 +506,7 @@ void Overlay::drawGameOptions(const std::string &page, const char *emptyText, co
                      [&](const GameOption &option) { return option.page == page; })) {
         // Wrapped at the pane's edge, which a long line would run past.
         ImGui::PushTextWrapPos(0.0f);
-        mutedText("%s", emptyText);
+        mutedText("%s", L(emptyText));
         ImGui::PopTextWrapPos();
         return;
     }
@@ -517,7 +534,7 @@ void Overlay::drawGameOptions(const std::string &page, const char *emptyText, co
             drawGameControl(option);
         }
         if (!reason && waitsForRestart(option))
-            ImGui::TextColored(color(palette::kBad), "Restart the game for this to take effect.");
+            ImGui::TextColored(color(palette::kBad), "%s", L("Restart the game for this to take effect."));
     }
     if (table)
         endSettings();
@@ -555,7 +572,7 @@ void Overlay::drawGameControl(const GameOption &option) {
         int next = value;
         const ImGuiStyle &style = ImGui::GetStyle();
         const float button = ImGui::GetFrameHeight();
-        const float reset = ImGui::CalcTextSize("Default").x + style.FramePadding.x * 2.0f;
+        const float reset = ImGui::CalcTextSize(L("Default")).x + style.FramePadding.x * 2.0f;
         ImGui::PushID(option.key.c_str());
         if (ImGui::Button("-", ImVec2(button, 0.0f)))
             next = value - option.step;
@@ -567,7 +584,7 @@ void Overlay::drawGameControl(const GameOption &option) {
         // is off, as what it would read is hundredths.
         const bool multiplier = option.format == kMultiplierFormat;
         char text[16];
-        const char *format = option.format.empty() ? "%d" : option.format.c_str();
+        const char *format = option.format.empty() ? "%d" : L(option.format.c_str());
         if (multiplier) {
             multiplierText(value, text, sizeof(text));
             format = text;
@@ -579,7 +596,7 @@ void Overlay::drawGameControl(const GameOption &option) {
             next = value + option.step;
         ImGui::SameLine();
         ImGui::BeginDisabled(value == option.defaultNumber);
-        if (ImGui::Button("Default"))
+        if (ImGui::Button(L("Default")))
             next = option.defaultNumber;
         ImGui::EndDisabled();
         ImGui::PopID();
@@ -620,14 +637,14 @@ void Overlay::drawControlsPage() {
         ImGui::SameLine(0.0f, em(1.2f));
         ImGui::BeginGroup();
         ImGui::Dummy(ImVec2(0.0f, em(0.6f)));
-        ImGui::TextUnformatted("Test your bindings");
+        ImGui::TextUnformatted(L("Test your bindings"));
         ImGui::PushTextWrapPos(0.0f);
-        mutedText("%s", "Press anything: the pad lights up with what the game would read.");
+        mutedText("Press anything: the pad lights up with what the game would read.");
         if (padInUse())
             mutedText("%s on a binding changes it; %s clears it.", padButtonName(SDL_GAMEPAD_BUTTON_SOUTH).c_str(),
                       padButtonName(SDL_GAMEPAD_BUTTON_WEST).c_str());
         else
-            mutedText("%s", "Click a binding to change it; right-click to clear it.");
+            mutedText("Click a binding to change it; right-click to clear it.");
         ImGui::PopTextWrapPos();
         ImGui::EndGroup();
     }
@@ -669,8 +686,8 @@ void Overlay::drawBindingTable(bool keyboard) {
     const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_PadOuterX;
     if (ImGui::BeginTable(keyboard ? "##keys" : "##buttons", 3, flags)) {
         ImGui::TableSetupColumn("PS2", ImGuiTableColumnFlags_WidthStretch, 1.25f);
-        ImGui::TableSetupColumn(keyboard ? "Key" : "Button", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-        ImGui::TableSetupColumn("Alternate", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        ImGui::TableSetupColumn(L(keyboard ? "Key" : "Button"), ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        ImGui::TableSetupColumn(L("Alternate"), ImGuiTableColumnFlags_WidthStretch, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Text, color(palette::kTextMuted));
         ImGui::TableHeadersRow();
         ImGui::PopStyleColor();
@@ -680,11 +697,11 @@ void Overlay::drawBindingTable(bool keyboard) {
             ImGui::TableNextColumn();
             ImDrawList *list = ImGui::GetWindowDrawList();
             const ImVec2 at = ImGui::GetCursorScreenPos();
-            const ImVec2 name = ImGui::CalcTextSize(gfx::padInputName(input));
+            const ImVec2 name = ImGui::CalcTextSize(L(gfx::padInputName(input)));
             ImGui::Dummy(ImVec2(chip + em(0.6f) + name.x, chip));
             drawPadGlyph(list, input, ImVec2(at.x + chip * 0.5f, at.y + chip * 0.5f), chip * 0.9f);
             list->AddText(ImVec2(at.x + chip + em(0.6f), std::floor(at.y + (chip - name.y) * 0.5f)), palette::kText,
-                          gfx::padInputName(input));
+                          L(gfx::padInputName(input)));
 
             for (int slot = 0; slot < static_cast<int>(gfx::kBindingSlots); ++slot) {
                 ImGui::TableNextColumn();
@@ -718,8 +735,8 @@ void Overlay::drawBindingTable(bool keyboard) {
                 if (ImGui::BeginItemTooltip()) {
                     ImGui::TextUnformatted(bindingLabel(binding, type).c_str());
                     if (!clash.empty())
-                        ImGui::TextColored(color(palette::kWarn), "Also bound to %s", clash.c_str());
-                    mutedText("%s", "Click to change, right-click to clear");
+                        ImGui::TextColored(color(palette::kWarn), L("Also bound to %s"), clash.c_str());
+                    mutedText("Click to change, right-click to clear");
                     ImGui::EndTooltip();
                 }
                 ImGui::PopID();
@@ -742,7 +759,7 @@ void Overlay::drawBindingTable(bool keyboard) {
 
 void Overlay::drawAbout() {
     centerNextWindow();
-    ImGui::SetNextWindowSize(ImVec2(std::min(ImGui::GetMainViewport()->WorkSize.x - em(2.0f), em(31.0f)), 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(std::min(ImGui::GetMainViewport()->WorkSize.x - em(2.0f), em(38.0f)), 0.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(1.4f), em(1.2f)));
     if (beginWindow("##about", nullptr, kDialogFlags & ~ImGuiWindowFlags_AlwaysAutoResize)) {
         const IconRoom room = iconRoom(em(3.0f));
@@ -758,7 +775,7 @@ void Overlay::drawAbout() {
             mutedText("Version %s (%s)", m_host.version.c_str(), m_host.revision.c_str());
         const auto newer = m_host.newerRelease ? m_host.newerRelease() : std::pair<std::string, std::string>{};
         if (!newer.first.empty())
-            ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(palette::kGold), "Version %s is out",
+            ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(palette::kGold), L("Version %s is out"),
                                newer.first.c_str());
         ImGui::EndGroup();
         drawIconBeside(room, Icon::Disc, palette::kGold);
@@ -766,8 +783,8 @@ void Overlay::drawAbout() {
             m_aboutOpen = false;
         ImGui::Dummy(ImVec2(0.0f, em(0.3f)));
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextUnformatted("A native PC port of Rogue Galaxy, made by statically recompiling the PlayStation 2 "
-                               "game. It plays from your own copy of the game.");
+        ImGui::TextUnformatted(L("A native PC port of Rogue Galaxy, made by statically recompiling the PlayStation 2 "
+                                 "game. It plays from your own copy of the game."));
         ImGui::PopTextWrapPos();
         ImGui::Dummy(ImVec2(0.0f, em(0.3f)));
         if (beginSettings("about")) {
@@ -785,7 +802,7 @@ void Overlay::drawAbout() {
         }
         ImGui::Dummy(ImVec2(0.0f, em(0.3f)));
         if (!newer.first.empty()) {
-            if (iconButton(("Get version " + newer.first).c_str(), Icon::Link, true))
+            if (iconButton(Lf("Get version %s", newer.first.c_str()).c_str(), Icon::Link, true))
                 SDL_OpenURL(newer.second.c_str());
             ImGui::SameLine();
         }
@@ -797,7 +814,7 @@ void Overlay::drawAbout() {
         ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
         ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 0.84f);
         ImGui::PushTextWrapPos(0.0f);
-        mutedText("%s", "Rogue Galaxy is a trademark of Sony Interactive Entertainment. This project is not "
+        mutedText("Rogue Galaxy is a trademark of Sony Interactive Entertainment. This project is not "
                         "affiliated with Sony or Level-5, and includes nothing from the game.");
         ImGui::PopTextWrapPos();
         ImGui::PopFont();
@@ -880,24 +897,24 @@ void Overlay::drawAchievementsPage() {
     ImGui::PushTextWrapPos(0.0f);
     if (account.signedIn) {
         ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(good, "Signed in as %s", account.user.c_str());
+        ImGui::TextColored(good, L("Signed in as %s"), account.user.c_str());
         ImGui::SameLine(0.0f, em(1.0f));
-        if (ImGui::Button("Sign out") && m_host.achievementSignOut)
+        if (ImGui::Button(L("Sign out")) && m_host.achievementSignOut)
             m_host.achievementSignOut();
     } else {
-        ImGui::InputTextWithHint("##ra-user", "RetroAchievements user", m_raUser, sizeof m_raUser);
-        ImGui::InputTextWithHint("##ra-password", "Password", m_raPassword, sizeof m_raPassword,
+        ImGui::InputTextWithHint("##ra-user", L("RetroAchievements user"), m_raUser, sizeof m_raUser);
+        ImGui::InputTextWithHint("##ra-password", L("Password"), m_raPassword, sizeof m_raPassword,
                                  ImGuiInputTextFlags_Password);
         const bool ready = !account.busy && m_raUser[0] != '\0' && m_raPassword[0] != '\0';
         ImGui::BeginDisabled(!ready);
-        if (ImGui::Button("Sign in") && m_host.achievementSignIn) {
+        if (ImGui::Button(L("Sign in")) && m_host.achievementSignIn) {
             m_host.achievementSignIn(m_raUser, m_raPassword);
             std::memset(m_raPassword, 0, sizeof m_raPassword); // kept nowhere
         }
         ImGui::EndDisabled();
     }
     if (!account.message.empty())
-        ImGui::TextColored(account.failed ? bad : muted, "%s", account.message.c_str());
+        ImGui::TextColored(account.failed ? bad : muted, "%s", L(account.message.c_str()));
     if (!account.signedIn)
         mutedText("The password is sent once to retroachievements.org and never kept; only a connection token "
                   "is, on this machine.");
@@ -913,12 +930,12 @@ void Overlay::drawAchievementsPage() {
         drawGameControl(*option);
         ImGui::SameLine(0.0f, em(0.8f));
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(option->label.c_str());
+        ImGui::TextUnformatted(L(option->label.c_str()));
         if (!option->help.empty()) {
             ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 0.84f);
             ImGui::PushStyleColor(ImGuiCol_Text, muted);
             ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextUnformatted(option->help.c_str());
+            ImGui::TextUnformatted(L(option->help.c_str()));
             ImGui::PopTextWrapPos();
             ImGui::PopStyleColor();
             ImGui::PopFont();
@@ -934,10 +951,10 @@ void Overlay::drawAchievementsPage() {
         if (row.earned)
             earnedPoints += row.points;
     }
-    mutedText("%s", list.summary.c_str());
+    mutedText("%s", L(list.summary.c_str()));
     if (!list.rows.empty()) {
         mutedText("%u of %u points", earnedPoints, totalPoints);
-        ImGui::Checkbox("Only the ones still to earn", &m_achievementsLockedOnly);
+        ImGui::Checkbox(L("Only the ones still to earn"), &m_achievementsLockedOnly);
     }
     ImGui::PopTextWrapPos();
     ImGui::Dummy(ImVec2(0.0f, em(0.3f)));

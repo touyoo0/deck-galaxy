@@ -325,6 +325,8 @@ private:
     void rememberWindow(const SDL_WindowEvent &event);
     void applyVolume();
     void applyPause();
+    // The menu's language from the Interface page: "auto" or a code of ui_text.h.
+    void setMenuLanguageChoice(const std::string &setting);
     // A game switch's value: the settings file's, or the option's default;
     // for one not `remembered`, what HostServices::gameOptionState says.
     bool gameOption(const GameOption &option) const;

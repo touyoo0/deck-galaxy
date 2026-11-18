@@ -174,6 +174,17 @@ dq8_embed_art("${CMAKE_CURRENT_SOURCE_DIR}/../../installer/art/logo-home.png" "$
 # The changelog, shown on the home screen (a tree without it shows no panel).
 set(DQ8_HOME_CHANGES_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/home_changes_data.cpp")
 dq8_embed_art("${CMAKE_CURRENT_SOURCE_DIR}/../../CHANGELOG.md" "${DQ8_HOME_CHANGES_SOURCE}" kHomeChangesData)
+# The same notes translated (docs/changelog/CHANGELOG.<code>.md): a version that
+# file lacks is shown in English.
+set(DQ8_HOME_CHANGES_TRANSLATED_SOURCES "")
+foreach(CODE fr de es it)
+    string(SUBSTRING "${CODE}" 0 1 FIRST)
+    string(TOUPPER "${FIRST}" FIRST)
+    string(SUBSTRING "${CODE}" 1 -1 REST)
+    set(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/home_changes_${CODE}_data.cpp")
+    dq8_embed_art("${CMAKE_CURRENT_SOURCE_DIR}/../../docs/changelog/CHANGELOG.${CODE}.md" "${SOURCE}" kHomeChanges${FIRST}${REST})
+    list(APPEND DQ8_HOME_CHANGES_TRANSLATED_SOURCES "${SOURCE}")
+endforeach()
 
 add_library(dq8_ui STATIC
     src/ui/ui_art.cpp
@@ -183,10 +194,15 @@ add_library(dq8_ui STATIC
     src/ui/ui_script.cpp
     src/ui/ui_settings.cpp
     src/ui/ui_style.cpp
+    src/ui/ui_text.cpp
+    src/ui/ui_text_home.cpp
+    src/ui/ui_text_menu.cpp
+    src/ui/ui_text_options.cpp
     src/ui/ui_widgets.cpp
     "${DQ8_UI_FONT_SOURCE}"
     "${DQ8_HOME_ART_SOURCE}"
     "${DQ8_HOME_LOGO_SOURCE}"
     "${DQ8_HOME_CHANGES_SOURCE}"
+    ${DQ8_HOME_CHANGES_TRANSLATED_SOURCES}
 )
 target_link_libraries(dq8_ui PUBLIC dq8_gfx_sdlgpu dq8_imgui)
