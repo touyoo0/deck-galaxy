@@ -6,17 +6,18 @@ zeigt sie in dieser Sprache. Die Überschriften (`## Version - Datum`,
 Übersetzung zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf
 Englisch.
 
-## Unreleased
+## 0.10.0 - 2026-11-18
 
 ### Added
 
-- Steam-Deck-Fork: Der Startbildschirm, die Einstellungen (ihre Seiten,
-  Optionen und Hilfetexte), das Beenden-Fenster und die Update-Meldungen gibt
-  es auf Englisch, Französisch, Deutsch, Spanisch und Italienisch. Die Sprache
-  ist die von Steam (sonst die des Systems), bis du unter Einstellungen >
-  Oberfläche > Menüsprache eine wählst. Auch die Versionshinweise der letzten
-  drei Versionen sind übersetzt (`docs/changelog/`); eine Version ohne
-  Übersetzung erscheint auf Englisch.
+- Steam-Deck-Fork: Der Installer, der Startbildschirm, die Einstellungen
+  (ihre Seiten, Optionen und Hilfetexte), das Beenden-Fenster und die
+  Update-Meldungen gibt es auf Englisch, Französisch, Deutsch, Spanisch und
+  Italienisch. Die Sprache ist die von Steam (sonst die des Systems), bis du
+  eine wählst: mit der Liste oben rechts im Installer oder im Spiel unter
+  Einstellungen > Oberfläche > Menüsprache. Auch die Versionshinweise der
+  letzten drei Versionen sind übersetzt (`docs/changelog/`); eine Version
+  ohne Übersetzung erscheint auf Englisch.
 
 ## 0.9.0 - 2026-11-18
 

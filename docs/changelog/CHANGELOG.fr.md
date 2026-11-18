@@ -5,17 +5,18 @@ les affiche dans cette langue. Les titres (`## version - date`, `### Added`)
 restent comme dans `CHANGELOG.md` : c'est eux qui relient une version à sa
 traduction. Une version absente de ce fichier s'affiche en anglais.
 
-## Unreleased
+## 0.10.0 - 2026-11-18
 
 ### Added
 
-- Fork Steam Deck : l'écran d'accueil, les réglages (leurs pages, options et
-  textes d'aide), la boîte « Quitter » et les messages de mise à jour sont en
-  anglais, français, allemand, espagnol et italien. La langue est celle de
-  Steam (sinon celle du système) tant que vous n'en choisissez pas une dans
-  Réglages > Interface > Langue du menu. Les notes de version des trois
-  dernières versions sont traduites aussi (`docs/changelog/`) ; une version
-  sans traduction s'affiche en anglais.
+- Fork Steam Deck : l'installeur, l'écran d'accueil, les réglages (leurs
+  pages, options et textes d'aide), la boîte « Quitter » et les messages de
+  mise à jour sont en anglais, français, allemand, espagnol et italien. La
+  langue est celle de Steam (sinon celle du système) tant que vous n'en
+  choisissez pas une : avec la liste en haut à droite de l'installeur, ou dans
+  le jeu, dans Réglages > Interface > Langue du menu. Les notes de version des
+  trois dernières versions sont traduites aussi (`docs/changelog/`) ; une
+  version sans traduction s'affiche en anglais.
 
 ## 0.9.0 - 2026-11-18
 
