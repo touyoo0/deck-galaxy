@@ -18,6 +18,17 @@ bool toggle(const char *id, bool *value);
 bool segmented(const char *id, int *value, const char *const *labels, int count,
                const bool *enabled = nullptr);
 
+// A thin track with a knob and its value beside it: ImGui's SliderInt and
+// SliderFloat with the same arguments, restyled.
+bool sliderInt(const char *id, int *value, int minimum, int maximum, const char *format = "%d",
+               ImGuiSliderFlags flags = 0);
+bool sliderFloat(const char *id, float *value, float minimum, float maximum, const char *format = "%.2f",
+                 ImGuiSliderFlags flags = 0);
+
+// ImGui's BeginCombo with a thin chevron in place of its arrow button;
+// EndCombo() when it returns true.
+bool beginCombo(const char *id, const char *preview);
+
 void sectionHeader(const char *title);
 // A two-column table of settings: the label (with an optional chip such as
 // "Experimental" beside it, and help underneath) on the left, the control on

@@ -122,12 +122,12 @@ const TextEntry kTextsOptions[] = {
      "Los cofres aún sin abrir aparecen en los mapas en las partes exploradas, como los muestra el juego cuando se activan todos los puntos de guardado de un planeta. Solo cambia el mapa: nada se guarda en tu partida, y activar todos los puntos de guardado cuenta como antes.",
      "I forzieri non ancora aperti compaiono sulle mappe nelle parti esplorate, come li mostra il gioco una volta attivati tutti i punti di salvataggio di un pianeta. Cambia solo la mappa: nulla entra nel tuo salvataggio, e attivare tutti i punti di salvataggio conta come prima."},
 
-    {"Checks the game's 130 RetroAchievements as you play and shows a notice when one is earned. Sign in above; "
-     "nothing is sent but your unlocks.",
-     "Vérifie les 130 RetroAchievements du jeu pendant que vous jouez et affiche un avis quand l'un est obtenu. Connectez-vous ci-dessus ; rien n'est envoyé hormis vos déblocages.",
-     "Prüft beim Spielen die 130 RetroAchievements des Spiels und zeigt eine Meldung, wenn einer erreicht wird. Melde dich oben an; gesendet werden nur deine Freischaltungen.",
-     "Comprueba los 130 RetroAchievements del juego mientras juegas y muestra un aviso cuando se consigue uno. Inicia sesión arriba; solo se envían tus logros desbloqueados.",
-     "Controlla i 130 RetroAchievements del gioco mentre giochi e mostra un avviso quando se ne ottiene uno. Accedi qui sopra; viene inviato solo ciò che sblocchi."},
+    {"Checks the game's 130 RetroAchievements as you play and shows a notice when one is earned. Turn it on, "
+     "then sign in; nothing is sent but your unlocks.",
+     "Vérifie les 130 RetroAchievements du jeu pendant que vous jouez et affiche un avis quand l'un est obtenu. Activez-le, puis connectez-vous ; rien n'est envoyé hormis vos déblocages.",
+     "Prüft beim Spielen die 130 RetroAchievements des Spiels und zeigt eine Meldung, wenn einer erreicht wird. Schalte es ein und melde dich an; gesendet werden nur deine Freischaltungen.",
+     "Comprueba los 130 RetroAchievements del juego mientras juegas y muestra un aviso cuando se consigue uno. Actívalo e inicia sesión; solo se envían tus logros desbloqueados.",
+     "Controlla i 130 RetroAchievements del gioco mentre giochi e mostra un avviso quando se ne ottiene uno. Attivalo e accedi; viene inviato solo ciò che sblocchi."},
 
     {"Fast transporters", "Transporteurs rapides", "Schnelle Transporter", "Transportadores rápidos",
      "Trasportatori veloci"},

@@ -3,8 +3,9 @@
 #include "ui/ui_style.h"
 #include "ui/ui_text.h"
 
+#include <imgui_internal.h>
+
 #include <algorithm>
-#include <cctype>
 #include <cfloat>
 #include <cmath>
 #include <cstdarg>
@@ -43,8 +44,8 @@ bool beginWindow(const char *name, bool *open, ImGuiWindowFlags flags) {
 
 bool toggle(const char *id, bool *value) {
     const float frame = ImGui::GetFrameHeight();
-    const float height = std::floor(frame * 0.8f);
-    const float width = std::floor(height * 1.9f);
+    const float height = std::floor(frame * 0.78f);
+    const float width = std::floor(height * 1.75f);
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     // InvisibleButton leaves keyboard and gamepad navigation out unless asked.
     const bool pressed = ImGui::InvisibleButton(id, ImVec2(width, frame), ImGuiButtonFlags_EnableNav);
@@ -58,15 +59,79 @@ bool toggle(const char *id, bool *value) {
     ImDrawList *list = ImGui::GetWindowDrawList();
     const ImVec2 min(pos.x, pos.y + (frame - height) * 0.5f);
     const ImVec2 max(min.x + width, min.y + height);
-    const ImU32 off = IM_COL32(255, 255, 255, hovered ? 48 : 34);
-    list->AddRectFilled(min, max, ImGui::GetColorU32(mix(off, withAlpha(palette::kGold, 0.92f), t)), height * 0.5f);
-    list->AddRect(min, max, ImGui::GetColorU32(IM_COL32(255, 255, 255, 70)), height * 0.5f, 1.0f);
+    const ImU32 off = IM_COL32(255, 255, 255, hovered ? 40 : 28);
+    list->AddRectFilled(min, max, ImGui::GetColorU32(mix(off, palette::kGold, t)), height * 0.5f);
     const float radius = height * 0.5f - 3.0f;
     const ImVec2 knob(min.x + height * 0.5f + (width - height) * t, min.y + height * 0.5f);
-    list->AddCircleFilled(ImVec2(knob.x, knob.y + 1.0f), radius, ImGui::GetColorU32(IM_COL32(0, 0, 10, 90)));
-    list->AddCircleFilled(knob, radius,
-                          ImGui::GetColorU32(mix(IM_COL32(205, 210, 230, 255), IM_COL32(255, 255, 255, 255), t)));
+    list->AddCircleFilled(ImVec2(knob.x, knob.y + 1.0f), radius + 0.5f, ImGui::GetColorU32(IM_COL32(0, 0, 0, 60)));
+    list->AddCircleFilled(knob, radius, ImGui::GetColorU32(mix(IM_COL32(214, 218, 230, 255), IM_COL32(255, 255, 255, 255), t)));
     return pressed;
+}
+
+// A slider as a thin track with a knob; the value is written to its right.
+// Built on ImGui's own slider, drawn invisible, so typing, the d-pad and the
+// sticks behave as they always did (Steam Deck fork: added).
+static bool slider(const char *id, ImGuiDataType type, void *value, const void *minimum, const void *maximum,
+                   const char *format, ImGuiSliderFlags flags) {
+    const float frame = ImGui::GetFrameHeight();
+    char text[64];
+    ImGui::DataTypeFormatString(text, sizeof(text), type, value, format ? format : "%d");
+    const float valueWidth = std::max(ImGui::CalcTextSize("100%").x, ImGui::CalcTextSize(text).x) + em(0.9f);
+    const float full = ImGui::GetContentRegionAvail().x;
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, IM_COL32(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_SliderGrab, IM_COL32(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, IM_COL32(0, 0, 0, 0));
+    ImGui::SetNextItemWidth(std::max(frame * 3.0f, full - valueWidth));
+    const bool changed = ImGui::SliderScalar(id, type, value, minimum, maximum, "", flags);
+    ImGui::PopStyleColor(5);
+    const ImGuiID item = ImGui::GetItemID();
+    const ImVec2 min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
+    const bool active = ImGui::IsItemActive();
+    const bool focused = ImGui::IsItemFocused() && ImGui::GetCurrentContext()->NavCursorVisible;
+    const bool hovered = ImGui::IsItemHovered();
+
+    double fraction = 0.0;
+    {
+        const double lo = type == ImGuiDataType_Float ? *static_cast<const float *>(minimum) : *static_cast<const int *>(minimum);
+        const double hi = type == ImGuiDataType_Float ? *static_cast<const float *>(maximum) : *static_cast<const int *>(maximum);
+        const double now = type == ImGuiDataType_Float ? *static_cast<const float *>(value) : *static_cast<const int *>(value);
+        fraction = hi > lo ? std::clamp((now - lo) / (hi - lo), 0.0, 1.0) : 0.0;
+    }
+    ImDrawList *list = ImGui::GetWindowDrawList();
+    const float knobRadius = frame * 0.30f + (active ? 1.5f : 0.0f);
+    const float left = min.x + knobRadius, right = max.x - knobRadius;
+    const float y = std::floor((min.y + max.y) * 0.5f);
+    const float thick = std::max(3.0f, std::floor(frame * 0.14f));
+    const float x = left + static_cast<float>(fraction) * (right - left);
+    if (ImGui::TempInputIsActive(item)) {
+        list->AddRectFilled(min, max, ImGui::GetColorU32(ImGuiCol_FrameBg), ImGui::GetStyle().FrameRounding);
+    } else {
+        list->AddRectFilled(ImVec2(left, y - thick * 0.5f), ImVec2(right, y + thick * 0.5f),
+                            ImGui::GetColorU32(IM_COL32(255, 255, 255, 30)), thick * 0.5f);
+        list->AddRectFilled(ImVec2(left, y - thick * 0.5f), ImVec2(x, y + thick * 0.5f), ImGui::GetColorU32(palette::kGold),
+                            thick * 0.5f);
+        if (focused || hovered || active)
+            list->AddCircleFilled(ImVec2(x, y), knobRadius + em(0.35f), ImGui::GetColorU32(withAlpha(palette::kGold, 0.20f)));
+        list->AddCircleFilled(ImVec2(x, y + 1.0f), knobRadius + 0.5f, ImGui::GetColorU32(IM_COL32(0, 0, 0, 70)));
+        list->AddCircleFilled(ImVec2(x, y), knobRadius, ImGui::GetColorU32(palette::kText));
+    }
+    // The value, right-aligned in the room kept for it.
+    const ImVec2 size = ImGui::CalcTextSize(text);
+    list->AddText(ImVec2(std::floor(max.x + valueWidth - em(0.1f) - size.x), std::floor(y - size.y * 0.5f)),
+                  ImGui::GetColorU32(palette::kText), text);
+    ImGui::SameLine(0.0f, 0.0f);
+    ImGui::Dummy(ImVec2(valueWidth, frame));
+    return changed;
+}
+
+bool sliderInt(const char *id, int *value, int minimum, int maximum, const char *format, ImGuiSliderFlags flags) {
+    return slider(id, ImGuiDataType_S32, value, &minimum, &maximum, format, flags);
+}
+
+bool sliderFloat(const char *id, float *value, float minimum, float maximum, const char *format, ImGuiSliderFlags flags) {
+    return slider(id, ImGuiDataType_Float, value, &minimum, &maximum, format, flags);
 }
 
 bool segmented(const char *id, int *value, const char *const *labels, int count, const bool *enabled) {
@@ -74,13 +139,18 @@ bool segmented(const char *id, int *value, const char *const *labels, int count,
     const float width = ImGui::GetContentRegionAvail().x;
     const float height = ImGui::GetFrameHeight();
     const ImVec2 pos = ImGui::GetCursorScreenPos();
-    const float rounding = ImGui::GetStyle().FrameRounding;
+    const float rounding = height * 0.5f;
     ImDrawList *list = ImGui::GetWindowDrawList();
     // Its colors faded with the style's alpha, under BeginDisabled() too.
-    list->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height), ImGui::GetColorU32(IM_COL32(255, 255, 255, 16)),
+    list->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height), ImGui::GetColorU32(IM_COL32(255, 255, 255, 14)),
                         rounding);
 
     const float segment = width / static_cast<float>(count);
+    // The white plate glides to the choice.
+    const float slid = animate(ImGui::GetID("##plate"), static_cast<float>(*value), 16.0f);
+    const ImVec2 plateMin(pos.x + 3.0f + segment * slid, pos.y + 3.0f);
+    list->AddRectFilled(plateMin, ImVec2(plateMin.x + segment - 6.0f, pos.y + height - 3.0f),
+                        ImGui::GetColorU32(palette::kPlate), rounding - 3.0f);
     bool changed = false;
     for (int index = 0; index < count; ++index) {
         const bool chosen = *value == index;
@@ -97,14 +167,10 @@ bool segmented(const char *id, int *value, const char *const *labels, int count,
         ImGui::EndDisabled();
         ImGui::PopID();
 
-        const ImVec2 min(at.x + 2.0f, at.y + 2.0f), max(at.x + segment - 2.0f, at.y + height - 2.0f);
-        if (chosen) {
-            list->AddRectFilled(min, max, ImGui::GetColorU32(IM_COL32(244, 203, 82, 50)), rounding - 1.0f);
-            list->AddRect(min, max, ImGui::GetColorU32(palette::kGold), rounding - 1.0f, 1.5f);
-        } else if (hovered && usable) {
-            list->AddRectFilled(min, max, palette::kHover, rounding - 1.0f);
-        }
-        const ImU32 color = chosen ? palette::kGold : usable ? palette::kText : withAlpha(palette::kTextMuted, 0.6f);
+        const ImVec2 min(at.x + 3.0f, at.y + 3.0f), max(at.x + segment - 3.0f, at.y + height - 3.0f);
+        if (!chosen && hovered && usable)
+            list->AddRectFilled(min, max, palette::kHover, rounding - 3.0f);
+        const ImU32 color = chosen ? palette::kInk : usable ? palette::kText : withAlpha(palette::kTextMuted, 0.6f);
         list->PushClipRect(min, max, true);
         centeredText(list, min, max, ImGui::GetColorU32(color), L(labels[index]));
         list->PopClipRect();
@@ -115,53 +181,29 @@ bool segmented(const char *id, int *value, const char *const *labels, int count,
     return changed;
 }
 
-// Capitals for a title, accented Latin letters included (UTF-8: "\xC3\xA9" is e acute).
-static std::string upperCase(const std::string &text) {
-    std::string upper;
-    upper.reserve(text.size());
-    for (size_t at = 0; at < text.size(); ++at) {
-        const unsigned char letter = static_cast<unsigned char>(text[at]);
-        if (letter == 0xC3 && at + 1u < text.size()) {
-            const unsigned char next = static_cast<unsigned char>(text[at + 1u]);
-            upper += static_cast<char>(letter);
-            // a grave to o diaeresis, and o slash to thorn: 0x20 below their capitals
-            upper += static_cast<char>((next >= 0xA0 && next <= 0xBE && next != 0xB7) ? next - 0x20 : next);
-            ++at;
-        } else {
-            upper += static_cast<char>(std::toupper(letter));
-        }
-    }
-    return upper;
-}
-
 void sectionHeader(const char *title) {
-    const std::string upper = upperCase(L(title));
-    ImGui::Dummy(ImVec2(0.0f, em(0.3f)));
-    const float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
-    ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 0.82f);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(palette::kGold));
-    ImGui::TextUnformatted(upper.c_str());
+    ImGui::Dummy(ImVec2(0.0f, em(0.5f)));
+    ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 0.86f);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(palette::kTextMuted));
+    ImGui::TextUnformatted(L(title));
     ImGui::PopStyleColor();
     ImGui::PopFont();
-    const ImVec2 min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
-    const float y = std::floor((min.y + max.y) * 0.5f) + 0.5f;
-    if (max.x + em(0.6f) < right)
-        ImGui::GetWindowDrawList()->AddLine(ImVec2(max.x + em(0.6f), y), ImVec2(right, y),
-                                            withAlpha(palette::kGold, 0.28f), 1.0f);
+    ImGui::Dummy(ImVec2(0.0f, em(0.1f)));
 }
 
 bool beginSettings(const char *id) {
-    if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_None))
+    // Rows told apart by a hairline, not by boxes.
+    if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_BordersInnerH))
         return false;
     const float available = ImGui::GetContentRegionAvail().x;
     ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed,
-                            std::clamp(available * 0.38f, em(8.0f), em(15.0f)));
+                            std::clamp(available * 0.42f, em(8.0f), em(17.0f)));
     ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
     return true;
 }
 
 void settingRow(const char *label, const char *help, const char *chipText) {
-    ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetFrameHeight() + em(0.35f));
+    ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetFrameHeight());
     ImGui::TableNextColumn();
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(L(label));
@@ -179,13 +221,14 @@ void settingRow(const char *label, const char *help, const char *chipText) {
         ImGui::PopFont();
     }
     ImGui::TableNextColumn();
+    ImGui::AlignTextToFramePadding();
     ImGui::SetNextItemWidth(-FLT_MIN);
 }
 
 void endSettings() { ImGui::EndTable(); }
 
 bool navItem(const char *label, Icon kind, bool selected) {
-    const float height = em(2.3f);
+    const float height = em(2.5f);
     const float width = ImGui::GetContentRegionAvail().x;
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     ImGui::PushID(label);
@@ -196,18 +239,16 @@ bool navItem(const char *label, Icon kind, bool selected) {
 
     ImDrawList *list = ImGui::GetWindowDrawList();
     const ImVec2 max(pos.x + width, pos.y + height);
-    const float rounding = ImGui::GetStyle().FrameRounding;
+    const float rounding = em(0.7f);
     if (selected)
-        list->AddRectFilled(pos, max, IM_COL32(255, 255, 255, 20), rounding);
+        list->AddRectFilled(pos, max, IM_COL32(255, 255, 255, 24), rounding);
     else if (hovered)
-        list->AddRectFilled(pos, max, palette::kHover, rounding);
-    if (selected)
-        drawCursor(list, ImVec2(pos.x + em(1.05f), y), em(0.62f));
-    const ImU32 color = selected || hovered ? palette::kText : palette::kTextMuted;
-    drawIcon(list, kind, ImVec2(pos.x + em(2.05f), y), em(1.1f), selected ? palette::kGold : color);
+        list->AddRectFilled(pos, max, IM_COL32(255, 255, 255, 12), rounding);
+    const ImU32 color = selected ? palette::kText : hovered ? IM_COL32(214, 219, 232, 255) : palette::kTextMuted;
+    drawIcon(list, kind, ImVec2(pos.x + em(1.35f), y), em(1.05f), selected ? palette::kGold : color);
     const char *shown = L(label);
     const ImVec2 text = ImGui::CalcTextSize(shown);
-    list->AddText(ImVec2(pos.x + em(3.0f), std::floor(y - text.y * 0.5f)), color, shown);
+    list->AddText(ImVec2(pos.x + em(2.55f), std::floor(y - text.y * 0.5f)), color, shown);
     return pressed;
 }
 
@@ -241,16 +282,31 @@ bool beginSubmenu(const char *label) {
     return open;
 }
 
+bool beginCombo(const char *id, const char *preview) {
+    ImDrawList *list = ImGui::GetWindowDrawList();
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const float width = ImGui::CalcItemWidth(), height = ImGui::GetFrameHeight();
+    const bool open = ImGui::BeginCombo(id, preview, ImGuiComboFlags_NoArrowButton);
+    const ImVec2 centre(pos.x + width - height * 0.6f, pos.y + height * 0.5f);
+    const float e = height * 0.13f;
+    list->PathLineTo(ImVec2(centre.x - e * 1.4f, centre.y - e * 0.7f + (open ? e : 0.0f)));
+    list->PathLineTo(ImVec2(centre.x, centre.y + e * 0.7f - (open ? e : 0.0f)));
+    list->PathLineTo(ImVec2(centre.x + e * 1.4f, centre.y - e * 0.7f + (open ? e : 0.0f)));
+    list->PathStroke(ImGui::GetColorU32(palette::kTextMuted), 1.8f);
+    return open;
+}
+
 bool iconButton(const char *label, Icon kind, bool primary) {
     const float iconSize = em(0.95f);
     const ImVec2 padding = ImGui::GetStyle().FramePadding;
     const char *shown = L(label);
     const ImVec2 text = ImGui::CalcTextSize(shown);
     const ImVec2 size(padding.x * 2.0f + iconSize + em(0.45f) + text.x, ImGui::GetFrameHeight());
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, size.y * 0.5f);
     if (primary) {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.96f, 0.80f, 0.32f, 0.88f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.86f, 0.42f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.90f, 0.55f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(palette::kPlate));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.82f, 0.84f, 0.88f, 1.0f));
     }
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     ImGui::PushID(label);
@@ -258,7 +314,8 @@ bool iconButton(const char *label, Icon kind, bool primary) {
     ImGui::PopID();
     if (primary)
         ImGui::PopStyleColor(3);
-    const ImU32 color = primary ? IM_COL32(16, 20, 44, 255) : palette::kText;
+    ImGui::PopStyleVar();
+    const ImU32 color = primary ? palette::kInk : palette::kText;
     ImDrawList *list = ImGui::GetWindowDrawList();
     drawIcon(list, kind, ImVec2(pos.x + padding.x + iconSize * 0.5f, pos.y + size.y * 0.5f), iconSize, color);
     list->AddText(ImVec2(pos.x + padding.x + iconSize + em(0.45f), std::floor(pos.y + (size.y - text.y) * 0.5f)),
@@ -279,9 +336,8 @@ void keycap(const char *text) {
     const ImVec2 max(min.x + width, min.y + height);
     ImDrawList *list = ImGui::GetWindowDrawList();
     const float rounding = height * 0.24f;
-    list->AddRectFilled(ImVec2(min.x, min.y + 2.0f), ImVec2(max.x, max.y + 1.0f), IM_COL32(0, 0, 10, 120), rounding);
-    list->AddRectFilled(min, max, IM_COL32(255, 255, 255, 34), rounding);
-    list->AddRect(min, max, IM_COL32(255, 255, 255, 84), rounding, 1.0f);
+    list->AddRectFilled(min, max, IM_COL32(255, 255, 255, 26), rounding);
+    list->AddRect(min, max, IM_COL32(255, 255, 255, 40), rounding, 1.0f);
     centeredText(list, min, max, palette::kText, text);
     ImGui::PopFont();
 }
@@ -300,8 +356,7 @@ void chip(const char *text, ImU32 color) {
     const ImVec2 min(at.x, std::floor(at.y + (frame - height) * 0.5f));
     const ImVec2 max(min.x + width, min.y + height);
     ImDrawList *list = ImGui::GetWindowDrawList();
-    list->AddRectFilled(min, max, ImGui::GetColorU32(withAlpha(color, 0.14f)), height * 0.5f);
-    list->AddRect(min, max, ImGui::GetColorU32(withAlpha(color, 0.75f)), height * 0.5f, 1.0f);
+    list->AddRectFilled(min, max, ImGui::GetColorU32(withAlpha(color, 0.16f)), height * 0.5f);
     centeredText(list, min, max, ImGui::GetColorU32(color), text);
     ImGui::PopFont();
 }

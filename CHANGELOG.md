@@ -4,6 +4,11 @@
 
 ### Changed
 
+- The home screen and the settings are redrawn: flat dark panels with a
+  hairline edge, a white pill under the selected entry, thin sliders, soft
+  switches and one amber accent, in place of the double white frame, the gold
+  plates and the triangle cursor. The home screen drops its moving sparks and
+  streaks and keeps the picture, the logo and the notes.
 - The home screen's update is no longer a button among Play, Options and Quit:
   it sits at the top of the "What's new" panel, a card with the new version,
   the progress and the errors, a quiet line when there is nothing to do, and a
