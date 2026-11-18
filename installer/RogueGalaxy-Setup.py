@@ -9,6 +9,10 @@ home screen, which updates it, in game mode.
 
 Needs what SteamOS has: python3 with GTK 4 (PyGObject), curl, git, distrobox.
 
+The window speaks English, French, German, Spanish or Italian: the Deck's language to begin with
+(the locale, else Steam's language setting), and a list in the top right corner changes it. --lang CODE
+or RG_LANG=CODE forces one.
+
 For tests: --iso FILE, --dir FOLDER, --zip ARCHIVE (a release's source
 archive instead of the download), --no-steam, --start (skip the pages),
 --shots FOLDER (a PNG of the window; --tour also shows the European option
@@ -90,8 +94,343 @@ checkbutton { color: #f2f3fc; }
 check, radio { background: rgba(16,22,58,0.9); border: 1px solid rgba(127,212,255,0.5); }
 check:checked, radio:checked { background: #f4cb52; color: #1a1500; border-color: #ffe9a0; }
 expander title { color: #b4bde0; }
+dropdown > button { padding: 4px 10px; }
+popover > contents { background: #10163a; color: #f2f3fc; border: 1px solid rgba(127,212,255,0.4);
+                     border-radius: 10px; }
+popover listview, popover row { background: transparent; color: #f2f3fc; }
+popover row:hover, popover row:selected { background: rgba(48,66,160,0.8); }
 textview, textview text { background: #04071a; color: #9ea8cc; font-family: monospace; font-size: 12px; }
 """
+
+
+# ---------------------------------------------------------------- languages
+# Every text of the window, in this order: English, French, German, Spanish, Italian. English is the
+# fallback. The window's language is the Deck's own (see detect_language) and can be changed with the
+# list in the corner. Logs (the "Details" and build/setup.log) stay in English, for reports.
+
+LANGUAGES = (("en", "English"), ("fr", "Français"), ("de", "Deutsch"), ("es", "Español"), ("it", "Italiano"))
+CODES = [code for code, _ in LANGUAGES]
+STEAM_LANGUAGES = {"english": "en", "french": "fr", "german": "de", "spanish": "es", "latam": "es",
+                   "italian": "it"}
+_current = ["en"]
+
+STRINGS = {
+    "window_title": ("Rogue Galaxy: install", "Rogue Galaxy : installation", "Rogue Galaxy: Installation",
+                     "Rogue Galaxy: instalación", "Rogue Galaxy: installazione"),
+    "tagline": ("FOR THE STEAM DECK   ·   INSTALLER", "POUR LE STEAM DECK   ·   INSTALLATEUR",
+                "FÜR DAS STEAM DECK   ·   INSTALLATION", "PARA LA STEAM DECK   ·   INSTALADOR",
+                "PER LO STEAM DECK   ·   INSTALLATORE"),
+    "header_sub": ("Built on this Deck from your own disc image; nothing leaves it.",
+                   "Compilé sur ce Steam Deck à partir de votre propre image disque ; rien n'en sort.",
+                   "Wird auf diesem Steam Deck aus deinem eigenen Disc-Image erstellt; nichts verlässt das Gerät.",
+                   "Se compila en esta Steam Deck a partir de tu propia imagen de disco; nada sale de ella.",
+                   "Compilato su questo Steam Deck dalla tua immagine del disco; nulla esce dal dispositivo."),
+    "language": ("Language", "Langue", "Sprache", "Idioma", "Lingua"),
+    # 1. the disc image
+    "sec_disc": ("Your disc image", "Votre image disque", "Dein Disc-Image", "Tu imagen de disco",
+                 "La tua immagine del disco"),
+    "disc_hint": ("USA release, serial SCUS-97490, an uncompressed .iso (about 7 GB).",
+                  "Version USA, numéro de série SCUS-97490, un .iso non compressé (environ 7 Go).",
+                  "US-Version, Seriennummer SCUS-97490, eine unkomprimierte .iso (etwa 7 GB).",
+                  "Versión USA, número de serie SCUS-97490, un .iso sin comprimir (unos 7 GB).",
+                  "Versione USA, seriale SCUS-97490, un .iso non compresso (circa 7 GB)."),
+    "choose_iso": ("Choose the .iso...", "Choisir le .iso...", "Die .iso wählen...", "Elegir el .iso...",
+                   "Scegli il .iso..."),
+    "iso_dialog": ("Your Rogue Galaxy (USA) disc image", "Votre image disque de Rogue Galaxy (USA)",
+                   "Dein Rogue-Galaxy-Disc-Image (USA)", "Tu imagen de disco de Rogue Galaxy (USA)",
+                   "La tua immagine del disco di Rogue Galaxy (USA)"),
+    "iso_extracted": ("Already extracted in the folder: no image needed.",
+                      "Déjà extrait dans le dossier : aucune image nécessaire.",
+                      "Bereits im Ordner entpackt: kein Image nötig.",
+                      "Ya extraído en la carpeta: no hace falta ninguna imagen.",
+                      "Già estratto nella cartella: nessuna immagine necessaria."),
+    "iso_ok": ("This looks like a disc image. It is checked in full while installing.",
+               "Cela ressemble à une image disque. Elle est vérifiée en entier pendant l'installation.",
+               "Das sieht nach einem Disc-Image aus. Es wird bei der Installation vollständig geprüft.",
+               "Parece una imagen de disco. Se comprueba por completo durante la instalación.",
+               "Sembra un'immagine del disco. Viene verificata per intero durante l'installazione."),
+    "iso_missing": ("That file does not exist.", "Ce fichier n'existe pas.", "Diese Datei existiert nicht.",
+                    "Ese archivo no existe.", "Quel file non esiste."),
+    "iso_ext": ("It must be an uncompressed .iso (turn a .chd or .cso back into an .iso first).",
+                "Ce doit être un .iso non compressé (reconvertissez d'abord un .chd ou un .cso en .iso).",
+                "Es muss eine unkomprimierte .iso sein (wandle eine .chd oder .cso zuerst wieder in eine .iso um).",
+                "Debe ser un .iso sin comprimir (convierte antes un .chd o .cso de nuevo a .iso).",
+                "Deve essere un .iso non compresso (riconverti prima un .chd o .cso in .iso)."),
+    "iso_small": ("That is too small for a PlayStation 2 DVD image.",
+                  "C'est trop petit pour une image de DVD PlayStation 2.",
+                  "Das ist zu klein für ein PlayStation-2-DVD-Image.",
+                  "Es demasiado pequeño para una imagen de DVD de PlayStation 2.",
+                  "È troppo piccolo per un'immagine di DVD PlayStation 2."),
+    "iso_notdisc": ("That is not a disc image.", "Ce n'est pas une image disque.", "Das ist kein Disc-Image.",
+                    "Eso no es una imagen de disco.", "Non è un'immagine del disco."),
+    # 2. where
+    "sec_where": ("Where to install", "Où installer", "Installationsort", "Dónde instalar", "Dove installare"),
+    "where_hint": ("The game, its saves and its build go in one folder.",
+                   "Le jeu, ses sauvegardes et sa compilation vont dans un seul dossier.",
+                   "Spiel, Spielstände und Build liegen in einem Ordner.",
+                   "El juego, sus partidas guardadas y su compilación van en una sola carpeta.",
+                   "Il gioco, i salvataggi e la compilazione stanno in un'unica cartella."),
+    "other_folder": ("Another folder...", "Un autre dossier...", "Anderer Ordner...", "Otra carpeta...",
+                     "Un'altra cartella..."),
+    "folder_dialog": ("Install the game in", "Installer le jeu dans", "Das Spiel installieren in",
+                      "Instalar el juego en", "Installa il gioco in"),
+    "storage_internal": ("Internal storage", "Stockage interne", "Interner Speicher", "Almacenamiento interno",
+                         "Memoria interna"),
+    "storage_sd": ("SD card", "Carte SD", "SD-Karte", "Tarjeta SD", "Scheda SD"),
+    "where_row": ("{label}: {path}   ({free} GB free)", "{label} : {path}   ({free} Go libres)",
+                  "{label}: {path}   ({free} GB frei)", "{label}: {path}   ({free} GB libres)",
+                  "{label}: {path}   ({free} GB liberi)"),
+    "no_room": ("(not enough room)", "(pas assez de place)", "(nicht genug Platz)", "(no hay espacio suficiente)",
+                "(spazio insufficiente)"),
+    "where_note": ("{path}   ({free} GB free)", "{path}   ({free} Go libres)", "{path}   ({free} GB frei)",
+                   "{path}   ({free} GB libres)", "{path}   ({free} GB liberi)"),
+    "where_note_short": ("{path}   ({free} GB free, not enough)", "{path}   ({free} Go libres, insuffisant)",
+                         "{path}   ({free} GB frei, nicht genug)", "{path}   ({free} GB libres, insuficiente)",
+                         "{path}   ({free} GB liberi, insufficiente)"),
+    # 3. options
+    "sec_options": ("Options", "Options", "Optionen", "Opciones", "Opzioni"),
+    "options_hint": ("All can wait: the home screen can add them later.",
+                     "Tout peut attendre : l'écran d'accueil permet de les ajouter plus tard.",
+                     "Alles kann warten: Der Startbildschirm kann sie später hinzufügen.",
+                     "Todo puede esperar: la pantalla de inicio permite añadirlas más tarde.",
+                     "Tutto può aspettare: la schermata iniziale potrà aggiungerle più tardi."),
+    "steam_check": ("Add Rogue Galaxy to Steam (play it from game mode)",
+                    "Ajouter Rogue Galaxy à Steam (jouer depuis le mode jeu)",
+                    "Rogue Galaxy zu Steam hinzufügen (im Spielmodus spielen)",
+                    "Añadir Rogue Galaxy a Steam (jugar desde el modo juego)",
+                    "Aggiungi Rogue Galaxy a Steam (gioca dalla modalità gioco)"),
+    "european_check": ("Add the European disc (SCES-54552) for FR, DE, ES and IT texts",
+                       "Ajouter le disque européen (SCES-54552) pour les textes FR, DE, ES et IT",
+                       "Die europäische Disc (SCES-54552) für FR-, DE-, ES- und IT-Texte hinzufügen",
+                       "Añadir el disco europeo (SCES-54552) para los textos FR, DE, ES e IT",
+                       "Aggiungi il disco europeo (SCES-54552) per i testi FR, DE, ES e IT"),
+    "european_choose": ("Choose the European .iso...", "Choisir le .iso européen...",
+                        "Die europäische .iso wählen...", "Elegir el .iso europeo...", "Scegli il .iso europeo..."),
+    "european_dialog": ("Rogue Galaxy European disc", "Disque européen de Rogue Galaxy",
+                        "Europäische Rogue-Galaxy-Disc", "Disco europeo de Rogue Galaxy",
+                        "Disco europeo di Rogue Galaxy"),
+    "european_none": ("No image chosen", "Aucune image choisie", "Kein Image gewählt", "Ninguna imagen elegida",
+                      "Nessuna immagine scelta"),
+    "ra_check": ("Earn the game's 130 achievements (RetroAchievements account)",
+                 "Obtenir les 130 succès du jeu (compte RetroAchievements)",
+                 "Die 130 Erfolge des Spiels freischalten (RetroAchievements-Konto)",
+                 "Conseguir los 130 logros del juego (cuenta de RetroAchievements)",
+                 "Ottieni i 130 obiettivi del gioco (account RetroAchievements)"),
+    "ra_user": ("RetroAchievements user", "Utilisateur RetroAchievements", "RetroAchievements-Benutzer",
+                "Usuario de RetroAchievements", "Utente RetroAchievements"),
+    "ra_password": ("Password", "Mot de passe", "Passwort", "Contraseña", "Password"),
+    "ra_signin": ("Sign in", "Se connecter", "Anmelden", "Iniciar sesión", "Accedi"),
+    "ra_done": ("Signed in already: it stays as it is.", "Déjà connecté : rien ne change.",
+                "Bereits angemeldet: bleibt unverändert.", "Ya has iniciado sesión: se queda como está.",
+                "Accesso già effettuato: resta com'è."),
+    "ra_hint": ("The password is sent once to retroachievements.org and never kept.",
+                "Le mot de passe est envoyé une seule fois à retroachievements.org et jamais conservé.",
+                "Das Passwort wird einmal an retroachievements.org gesendet und nie gespeichert.",
+                "La contraseña se envía una sola vez a retroachievements.org y nunca se guarda.",
+                "La password viene inviata una sola volta a retroachievements.org e non viene mai conservata."),
+    "ra_need": ("Type the user and the password first.", "Saisissez d'abord l'utilisateur et le mot de passe.",
+                "Gib zuerst Benutzer und Passwort ein.", "Escribe primero el usuario y la contraseña.",
+                "Inserisci prima l'utente e la password."),
+    "ra_signing": ("Signing in...", "Connexion...", "Anmeldung...", "Iniciando sesión...", "Accesso in corso..."),
+    "ra_unreachable": ("RetroAchievements could not be reached. Check the connection, or sign in later (see docs).",
+                       "RetroAchievements est injoignable. Vérifiez la connexion, ou connectez-vous plus tard (voir la doc).",
+                       "RetroAchievements ist nicht erreichbar. Prüfe die Verbindung oder melde dich später an (siehe Doku).",
+                       "No se pudo contactar con RetroAchievements. Comprueba la conexión o inicia sesión más tarde (consulta la documentación).",
+                       "RetroAchievements non è raggiungibile. Controlla la connessione o accedi più tardi (vedi la documentazione)."),
+    "ra_refused": ("Sign-in refused.", "Connexion refusée.", "Anmeldung abgelehnt.",
+                   "Inicio de sesión rechazado.", "Accesso rifiutato."),
+    "ra_signed_as": ("Signed in as {user}.", "Connecté en tant que {user}.", "Angemeldet als {user}.",
+                     "Sesión iniciada como {user}.", "Accesso effettuato come {user}."),
+    "ra_auto": ("The game turns RetroAchievements on by itself.", "Le jeu active RetroAchievements tout seul.",
+                "Das Spiel aktiviert RetroAchievements automatisch.",
+                "El juego activa RetroAchievements por sí solo.", "Il gioco attiva RetroAchievements da solo."),
+    # the line under the cards
+    "miss_iso": ("a disc image (SCUS-97490)", "une image disque (SCUS-97490)", "ein Disc-Image (SCUS-97490)",
+                 "una imagen de disco (SCUS-97490)", "un'immagine del disco (SCUS-97490)"),
+    "miss_folder": ("a folder", "un dossier", "ein Ordner", "una carpeta", "una cartella"),
+    "miss_eu": ("the European disc (SCES-54552), or untick it", "le disque européen (SCES-54552), ou décochez-le",
+                "die europäische Disc (SCES-54552) oder das Häkchen entfernen",
+                "el disco europeo (SCES-54552), o desmárcalo",
+                "il disco europeo (SCES-54552), oppure deseleziona l'opzione"),
+    "miss_ra": ("the RetroAchievements sign-in, or untick it", "la connexion RetroAchievements, ou décochez-la",
+                "die RetroAchievements-Anmeldung oder das Häkchen entfernen",
+                "el inicio de sesión de RetroAchievements, o desmárcalo",
+                "l'accesso a RetroAchievements, oppure deseleziona l'opzione"),
+    "todo": ("Still to do: {items}.", "Reste à faire : {items}.", "Noch zu tun: {items}.", "Pendiente: {items}.",
+             "Ancora da fare: {items}."),
+    "ready": ("Ready: about {gb} GB and 10 to 30 minutes. Keep the Deck plugged in.",
+              "Prêt : environ {gb} Go et 10 à 30 minutes. Gardez le Steam Deck branché.",
+              "Bereit: etwa {gb} GB und 10 bis 30 Minuten. Lass das Steam Deck angeschlossen.",
+              "Listo: unos {gb} GB y de 10 a 30 minutos. Mantén la Steam Deck enchufada.",
+              "Pronto: circa {gb} GB e da 10 a 30 minuti. Tieni lo Steam Deck collegato all'alimentazione."),
+    # the install page
+    "install": ("Install", "Installer", "Installieren", "Instalar", "Installa"),
+    "installing": ("Installing", "Installation en cours", "Installation läuft", "Instalando",
+                   "Installazione in corso"),
+    "install_sub": ("Keep the Deck plugged in. You can leave this window open and do something else.",
+                    "Gardez le Steam Deck branché. Vous pouvez laisser cette fenêtre ouverte et faire autre chose.",
+                    "Lass das Steam Deck angeschlossen. Du kannst dieses Fenster offen lassen und etwas anderes tun.",
+                    "Mantén la Steam Deck enchufada. Puedes dejar esta ventana abierta y hacer otra cosa.",
+                    "Tieni lo Steam Deck collegato all'alimentazione. Puoi lasciare aperta questa finestra e fare altro."),
+    "starting": ("Starting", "Démarrage", "Start", "Iniciando", "Avvio"),
+    "details": ("Details", "Détails", "Details", "Detalles", "Dettagli"),
+    "close": ("Close", "Fermer", "Schließen", "Cerrar", "Chiudi"),
+    "stopped": ("The install stopped", "L'installation s'est arrêtée", "Die Installation wurde abgebrochen",
+                "La instalación se detuvo", "L'installazione si è interrotta"),
+    "done": ("Done", "Terminé", "Fertig", "Hecho", "Fatto"),
+    "done_sub": ("Rogue Galaxy is installed.", "Rogue Galaxy est installé.", "Rogue Galaxy ist installiert.",
+                 "Rogue Galaxy está instalado.", "Rogue Galaxy è installato."),
+    "done_steam": ("It is in your Steam library, under Non-Steam. Switch to game mode and play.",
+                   "Il est dans votre bibliothèque Steam, sous « Non-Steam ». Passez en mode jeu et jouez.",
+                   "Es befindet sich in deiner Steam-Bibliothek unter „Nicht-Steam“. Wechsle in den Spielmodus und spiele.",
+                   "Está en tu biblioteca de Steam, en «No Steam». Cambia al modo juego y a jugar.",
+                   "È nella tua libreria Steam, sotto «Non Steam». Passa alla modalità gioco e gioca."),
+    "done_nosteam": ("Add rogue-galaxy.sh to Steam as a non-Steam game, then switch to game mode and play.",
+                     "Ajoutez rogue-galaxy.sh à Steam comme jeu non-Steam, puis passez en mode jeu et jouez.",
+                     "Füge rogue-galaxy.sh zu Steam als Nicht-Steam-Spiel hinzu, wechsle dann in den Spielmodus und spiele.",
+                     "Añade rogue-galaxy.sh a Steam como juego que no es de Steam, luego cambia al modo juego y a jugar.",
+                     "Aggiungi rogue-galaxy.sh a Steam come gioco non Steam, poi passa alla modalità gioco e gioca."),
+    "done_tail": ("The game opens on a home screen with Play and Update; this installer is not needed any more.",
+                  "Le jeu s'ouvre sur un écran d'accueil avec Jouer et Mettre à jour ; cet installateur n'est plus nécessaire.",
+                  "Das Spiel startet mit einem Startbildschirm mit Spielen und Aktualisieren; dieser Installer wird nicht mehr gebraucht.",
+                  "El juego se abre en una pantalla de inicio con Jugar y Actualizar; este instalador ya no hace falta.",
+                  "Il gioco si apre su una schermata iniziale con Gioca e Aggiorna; questo installatore non serve più."),
+    # cancelling
+    "cancel_q": ("Cancel the installation?", "Annuler l'installation ?", "Installation abbrechen?",
+                 "¿Cancelar la instalación?", "Annullare l'installazione?"),
+    "cancel_detail": ("The build will be stopped. {kept}", "La compilation sera arrêtée. {kept}",
+                      "Der Build wird gestoppt. {kept}", "Se detendrá la compilación. {kept}",
+                      "La compilazione verrà interrotta. {kept}"),
+    "kept_fresh": ("The folder {folder} and everything built in it so far will be deleted.",
+                   "Le dossier {folder} et tout ce qui y a été compilé jusqu'ici seront supprimés.",
+                   "Der Ordner {folder} und alles, was bisher darin erstellt wurde, wird gelöscht.",
+                   "La carpeta {folder} y todo lo compilado en ella hasta ahora se eliminarán.",
+                   "La cartella {folder} e tutto ciò che è stato compilato finora al suo interno verranno eliminati."),
+    "kept_old": ("Your earlier install in this folder stays as it was.",
+                 "Votre installation précédente dans ce dossier reste telle quelle.",
+                 "Deine frühere Installation in diesem Ordner bleibt unverändert.",
+                 "Tu instalación anterior en esta carpeta se queda como estaba.",
+                 "La tua installazione precedente in questa cartella resta com'era."),
+    "keep_installing": ("Keep installing", "Continuer l'installation", "Weiter installieren",
+                        "Seguir instalando", "Continua l'installazione"),
+    "cancel_install": ("Cancel the installation", "Annuler l'installation", "Installation abbrechen",
+                       "Cancelar la instalación", "Annulla l'installazione"),
+    "cancelling": ("Cancelling: stopping the build and deleting what it made",
+                   "Annulation : arrêt de la compilation et suppression de ce qu'elle a produit",
+                   "Abbruch: Build wird gestoppt und Erzeugtes gelöscht",
+                   "Cancelando: se detiene la compilación y se borra lo que generó",
+                   "Annullamento: arresto della compilazione ed eliminazione di ciò che ha prodotto"),
+    # the job
+    "getting_files": ("Getting the game's files", "Récupération des fichiers du jeu",
+                      "Spieldateien werden geholt", "Obteniendo los archivos del juego",
+                      "Recupero dei file del gioco"),
+    "not_empty": ("{target} is not empty. Pick an empty folder, or one with an earlier install.",
+                  "{target} n'est pas vide. Choisissez un dossier vide, ou contenant une installation précédente.",
+                  "{target} ist nicht leer. Wähle einen leeren Ordner oder einen mit einer früheren Installation.",
+                  "{target} no está vacía. Elige una carpeta vacía o una con una instalación anterior.",
+                  "{target} non è vuota. Scegli una cartella vuota o con un'installazione precedente."),
+    "no_release": ("No release yet: cloning the repository ({ref})",
+                   "Pas encore de version : clonage du dépôt ({ref})",
+                   "Noch keine Version: Repository wird geklont ({ref})",
+                   "Aún no hay versión: clonando el repositorio ({ref})",
+                   "Nessuna versione ancora: clonazione del repository ({ref})"),
+    "dl_fail": ("Could not download the game's files. Is the Deck online?",
+                "Impossible de télécharger les fichiers du jeu. Le Steam Deck est-il en ligne ?",
+                "Die Spieldateien konnten nicht heruntergeladen werden. Ist das Steam Deck online?",
+                "No se pudieron descargar los archivos del juego. ¿Está la Steam Deck conectada?",
+                "Impossibile scaricare i file del gioco. Lo Steam Deck è online?"),
+    "downloading": ("Downloading {tag}", "Téléchargement de {tag}", "{tag} wird heruntergeladen",
+                    "Descargando {tag}", "Download di {tag}"),
+    "checksum": ("The download does not match its checksum. Try again.",
+                 "Le téléchargement ne correspond pas à sa somme de contrôle. Réessayez.",
+                 "Der Download stimmt nicht mit seiner Prüfsumme überein. Versuche es erneut.",
+                 "La descarga no coincide con su suma de comprobación. Inténtalo de nuevo.",
+                 "Il download non corrisponde al suo checksum. Riprova."),
+    "unpacking": ("Unpacking", "Décompression", "Entpacken", "Descomprimiendo", "Estrazione"),
+    "not_release": ("That archive is not a game release.", "Cette archive n'est pas une version du jeu.",
+                    "Dieses Archiv ist keine Spielversion.", "Ese archivo no es una versión del juego.",
+                    "Quell'archivio non è una versione del gioco."),
+    "starting_build": ("Starting the build", "Démarrage de la compilation", "Build wird gestartet",
+                       "Iniciando la compilación", "Avvio della compilazione"),
+    "building": ("Building {n}/{m}", "Compilation {n}/{m}", "Build {n}/{m}", "Compilando {n}/{m}",
+                 "Compilazione {n}/{m}"),
+    "build_failed": ("The build failed: {why}\nRunning this installer again goes on where it stopped. The whole log is in build/setup.log.",
+                     "La compilation a échoué : {why}\nRelancer cet installateur reprend là où il s'est arrêté. Le journal complet est dans build/setup.log.",
+                     "Der Build ist fehlgeschlagen: {why}\nWenn du diesen Installer erneut startest, geht es dort weiter, wo er aufgehört hat. Das vollständige Protokoll steht in build/setup.log.",
+                     "La compilación falló: {why}\nSi vuelves a ejecutar este instalador, continúa donde se detuvo. El registro completo está en build/setup.log.",
+                     "La compilazione non è riuscita: {why}\nRieseguendo questo installatore si riprende da dove si era interrotto. Il registro completo è in build/setup.log."),
+    "adding_extra": ("Adding the {label}", "Ajout : {label}", "{label} werden hinzugefügt",
+                     "Añadiendo: {label}", "Aggiunta: {label}"),
+    "extra_japanese": ("Japanese voices and movies", "voix et films japonais", "Japanische Stimmen und Videos",
+                       "voces y películas japonesas", "voci e filmati giapponesi"),
+    "extra_european": ("European texts", "textes européens", "Europäische Texte", "textos europeos",
+                       "testi europei"),
+    "unexpected": ("Unexpected error: {error}", "Erreur inattendue : {error}", "Unerwarteter Fehler: {error}",
+                   "Error inesperado: {error}", "Errore imprevisto: {error}"),
+    "adding_steam": ("Adding the game to Steam", "Ajout du jeu à Steam", "Spiel wird zu Steam hinzugefügt",
+                     "Añadiendo el juego a Steam", "Aggiunta del gioco a Steam"),
+    # what the build script is doing (the bar's text)
+    "ph_container": ("Creating the build container", "Création du conteneur de compilation",
+                     "Build-Container wird erstellt", "Creando el contenedor de compilación",
+                     "Creazione del container di compilazione"),
+    "ph_tools": ("Installing the build tools", "Installation des outils de compilation",
+                 "Build-Werkzeuge werden installiert", "Instalando las herramientas de compilación",
+                 "Installazione degli strumenti di compilazione"),
+    "ph_in_container": ("Building in the container", "Compilation dans le conteneur", "Build im Container",
+                        "Compilando en el contenedor", "Compilazione nel container"),
+    "ph_verify": ("Checking the disc image", "Vérification de l'image disque", "Disc-Image wird geprüft",
+                  "Comprobando la imagen de disco", "Verifica dell'immagine del disco"),
+    "ph_extract": ("Extracting the disc", "Extraction du disque", "Disc wird entpackt", "Extrayendo el disco",
+                   "Estrazione del disco"),
+    "ph_patches": ("Applying the patches", "Application des correctifs", "Patches werden angewendet",
+                   "Aplicando los parches", "Applicazione delle patch"),
+    "ph_recompiler": ("Building the recompiler", "Compilation du recompilateur", "Recompiler wird erstellt",
+                      "Compilando el recompilador", "Compilazione del ricompilatore"),
+    "ph_recompile": ("Recompiling the game", "Recompilation du jeu", "Spiel wird rekompiliert",
+                     "Recompilando el juego", "Ricompilazione del gioco"),
+    "ph_configure": ("Configuring the game's build", "Configuration de la compilation du jeu",
+                     "Build des Spiels wird konfiguriert", "Configurando la compilación del juego",
+                     "Configurazione della compilazione del gioco"),
+    "ph_game": ("Building the game", "Compilation du jeu", "Spiel wird erstellt", "Compilando el juego",
+                "Compilazione del gioco"),
+}
+
+
+def tr(key: str, **values) -> str:
+    """The text for this key in the window's language (English if it has none)."""
+    texts = STRINGS[key]
+    text = texts[CODES.index(_current[0])] if CODES.index(_current[0]) < len(texts) else texts[0]
+    return text.format(**values) if values else text
+
+
+def set_language(code: str) -> None:
+    _current[0] = code if code in CODES else "en"
+
+
+def locale_language(value: str) -> str | None:
+    """'fr_FR.UTF-8' -> 'fr', for a language this window has. None for an unknown one."""
+    code = value.replace("-", "_").split(".")[0].split("_")[0].strip().lower()
+    return code if code in CODES else None
+
+
+def detect_language() -> str:
+    """The Deck's language: RG_LANG, else the system's locale (what desktop mode sets from the Steam Deck's
+    language settings), else Steam's own language setting, else English."""
+    for name in ("RG_LANG", "LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
+        value = next((p for p in os.environ.get(name, "").split(":") if p and p not in ("C", "POSIX")), "")
+        if value:
+            found = locale_language(value)
+            if found:
+                return found
+            break  # a locale this installer has no text for: look at Steam
+    try:
+        text = (Path.home() / ".steam" / "registry.vdf").read_text(errors="replace")
+        match = re.search(r'"language"\s+"(\w+)"', text)
+        if match:
+            return STEAM_LANGUAGES.get(match.group(1).lower(), "en")
+    except OSError:
+        pass
+    return "en"
 
 
 # ---------------------------------------------------------------- helpers
@@ -104,9 +443,14 @@ def free_gb(path: Path) -> float:
     return shutil.disk_usage(probe).free / 2**30
 
 
+def storage_label(code: str) -> str:
+    """The name of a place: "internal" and "sd" are translated, a drive keeps its own name."""
+    return {"internal": lambda: tr("storage_internal"), "sd": lambda: tr("storage_sd")}.get(code, lambda: code)()
+
+
 def storage_choices() -> list[tuple[str, Path]]:
-    """Where the game can go: the Deck's own storage, and each card or drive."""
-    choices = [("Internal storage", Path.home() / "Games" / "RogueGalaxy")]
+    """Where the game can go: the Deck's own storage, and each card or drive (a code for storage_label)."""
+    choices = [("internal", Path.home() / "Games" / "RogueGalaxy")]
     seen = set()
     for base in (Path("/run/media"), Path("/run/media/deck")):
         if not base.is_dir():
@@ -114,7 +458,7 @@ def storage_choices() -> list[tuple[str, Path]]:
         for entry in sorted(base.iterdir()):
             if entry.is_dir() and os.path.ismount(entry) and entry.resolve() not in seen:
                 seen.add(entry.resolve())
-                label = "SD card" if entry.name.upper().startswith("SD") or entry.name == "mmcblk0p1" else entry.name
+                label = "sd" if entry.name.upper().startswith("SD") or entry.name == "mmcblk0p1" else entry.name
                 choices.append((label, entry / "Games" / "RogueGalaxy"))
     return choices
 
@@ -174,27 +518,27 @@ def put_steam_art(art: Path, config: Path, appid: int) -> int:
 
 
 def looks_like_iso(path: Path) -> str | None:
-    """None when it may be the disc image, else what is wrong with it."""
+    """None when it may be the disc image, else the key (of tr) of what is wrong with it."""
     if not path.is_file():
-        return "That file does not exist."
+        return "iso_missing"
     if path.suffix.lower() != ".iso":
-        return "It must be an uncompressed .iso (turn a .chd or .cso back into an .iso first)."
+        return "iso_ext"
     size = path.stat().st_size
     if size < 4 * 2**30:
-        return "That is too small for a PlayStation 2 DVD image."
+        return "iso_small"
     with open(path, "rb") as f:
         f.seek(0x8001)
         if f.read(5) != b"CD001":
-            return "That is not a disc image."
+            return "iso_notdisc"
     return None
 
 
 RA_LOGIN = Path.home() / ".local/share/RogueGalaxy/ra/login.json"
 
 
-def ra_sign_in(user: str, password: str) -> tuple[bool, str]:
+def ra_sign_in(user: str, password: str):
     """Signs in to RetroAchievements and keeps the connection token (never the password) where the game reads
-    it, mode 600. Returns (done, what to tell the player)."""
+    it, mode 600. Returns (done, a function giving what to tell the player, in the window's language)."""
     body = urllib.parse.urlencode({"r": "login2", "u": user, "p": password}).encode()
     request = urllib.request.Request("https://retroachievements.org/dorequest.php", data=body, method="POST",
                                      headers={"User-Agent": "RogueGalaxyRecompiledSetup/1"})
@@ -205,15 +549,17 @@ def ra_sign_in(user: str, password: str) -> tuple[bool, str]:
         except urllib.error.HTTPError as error:  # a refusal comes with a status and the reason as JSON
             reply = json.load(error)
     except (OSError, ValueError):
-        return False, "RetroAchievements could not be reached. Check the connection, or sign in later (see docs)."
+        return False, lambda: tr("ra_unreachable")
     if not reply.get("Success") or not reply.get("Token"):
-        return False, str(reply.get("Error") or "Sign-in refused.")
+        reason = reply.get("Error")  # the service's own words
+        return False, (lambda: str(reason)) if reason else (lambda: tr("ra_refused"))
     RA_LOGIN.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(RA_LOGIN, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump({"user": reply.get("User", user), "token": reply["Token"]}, f)
     os.chmod(RA_LOGIN, 0o600)
-    return True, f"Signed in as {reply.get('User', user)}."
+    name = reply.get("User", user)
+    return True, lambda: tr("ra_signed_as", user=name)
 
 
 class KeepAwake:
@@ -286,16 +632,16 @@ class Job(threading.Thread):
     # What each of install.sh's / setup.py's "== ..." lines is worth on the
     # bar, and where its ninja counter ("[12/340]") fills it.
     PHASES = [
-        ("== Creating the build container", 0.04, 0.10),
-        ("== Installing the build tools", 0.10, 0.16),
-        ("== Building in the container", 0.16, 0.16),
-        ("== verify", 0.16, 0.17),
-        ("== extract", 0.17, 0.24),
-        ("== patches", 0.24, 0.25),
-        ("== build ps2_recomp", 0.25, 0.34),
-        ("== recompile", 0.34, 0.38),
-        ("== configure build/game", 0.38, 0.40),
-        ("== build the game", 0.40, 0.94),
+        ("== Creating the build container", 0.04, 0.10, "ph_container"),
+        ("== Installing the build tools", 0.10, 0.16, "ph_tools"),
+        ("== Building in the container", 0.16, 0.16, "ph_in_container"),
+        ("== verify", 0.16, 0.17, "ph_verify"),
+        ("== extract", 0.17, 0.24, "ph_extract"),
+        ("== patches", 0.24, 0.25, "ph_patches"),
+        ("== build ps2_recomp", 0.25, 0.34, "ph_recompiler"),
+        ("== recompile", 0.34, 0.38, "ph_recompile"),
+        ("== configure build/game", 0.38, 0.40, "ph_configure"),
+        ("== build the game", 0.40, 0.94, "ph_game"),
     ]
 
     def __init__(self, cfg: argparse.Namespace, ui: "Window"):
@@ -346,7 +692,7 @@ class Job(threading.Thread):
             GLib.idle_add(self.ui.on_failed, str(error))
             return
         except Exception as error:  # a bug here must still reach the window
-            GLib.idle_add(self.ui.on_failed, f"Unexpected error: {error}")
+            GLib.idle_add(self.ui.on_failed, tr("unexpected", error=error))
             return
         GLib.idle_add(self.ui.on_done)
 
@@ -436,9 +782,9 @@ class Job(threading.Thread):
     # -- 1. the sources
     def fetch(self) -> None:
         target: Path = self.cfg.dir
-        self.say("Getting the game's files", 0.0)
+        self.say(tr("getting_files"), 0.0)
         if target.exists() and any(target.iterdir()) and not (target / "install.sh").exists():
-            raise Failure(f"{target} is not empty. Pick an empty folder, or one with an earlier install.")
+            raise Failure(tr("not_empty", target=target))
         target.mkdir(parents=True, exist_ok=True)
         if (target / "install.sh").exists():
             self.log("An earlier install is here: going on with it.")
@@ -449,11 +795,11 @@ class Job(threading.Thread):
         if archive:
             self.unpack(Path(archive), target)
             return
-        self.say(f"No release yet: cloning the repository ({REF})", None)
+        self.say(tr("no_release", ref=REF), None)
         status = self.stream(["git", "clone", "--recurse-submodules", "--branch", REF,
                               f"https://github.com/{REPO}.git", str(target)], target.parent)
         if status != 0 or not (target / "install.sh").exists():
-            raise Failure("Could not download the game's files. Is the Deck online?")
+            raise Failure(tr("dl_fail"))
 
     def download_release(self, target: Path) -> Path | None:
         try:
@@ -472,7 +818,7 @@ class Job(threading.Thread):
         name = zips[-1]
         tag = release.get("tag_name", "")
         destination = target.parent / f".{target.name}-download.zip"
-        self.say(f"Downloading {tag}", 0.0)
+        self.say(tr("downloading", tag=tag), 0.0)
         digest = hashlib.sha256()
         with urllib.request.urlopen(assets[name], timeout=30) as response, open(destination, "wb") as out:
             total = int(response.headers.get("Content-Length") or 0)
@@ -484,16 +830,16 @@ class Job(threading.Thread):
                 digest.update(chunk)
                 done += len(chunk)
                 if total:
-                    self.say(f"Downloading {tag}", 0.04 * done / total)
+                    self.say(tr("downloading", tag=tag), 0.04 * done / total)
         with urllib.request.urlopen(assets[name] + ".sha256", timeout=30) as response:
             want = response.read().decode().split()[0]
         if want != digest.hexdigest():
             destination.unlink(missing_ok=True)
-            raise Failure("The download does not match its checksum. Try again.")
+            raise Failure(tr("checksum"))
         return destination
 
     def unpack(self, archive: Path, target: Path) -> None:
-        self.say("Unpacking", 0.04)
+        self.say(tr("unpacking"), 0.04)
         with zipfile.ZipFile(archive) as z:
             members = [i for i in z.infolist() if not i.is_dir()]
             for info in members:
@@ -507,7 +853,7 @@ class Job(threading.Thread):
                 path.write_bytes(z.read(info))
                 path.chmod(((info.external_attr >> 16) & 0o777) or 0o644)
         if not (target / "install.sh").exists():
-            raise Failure("That archive is not a game release.")
+            raise Failure(tr("not_release"))
         # What update.sh keeps to update only what changed, later.
         (target / "build").mkdir(exist_ok=True)
         try:
@@ -523,7 +869,7 @@ class Job(threading.Thread):
     # -- 2. the build
     def build(self) -> None:
         target: Path = self.cfg.dir
-        self.say("Starting the build", 0.04)
+        self.say(tr("starting_build"), 0.04)
         command = ["sh", "install.sh", "--container"]
         if self.cfg.iso:
             command += ["--iso", str(self.cfg.iso)]
@@ -538,28 +884,27 @@ class Job(threading.Thread):
                     except ValueError:
                         return
                     if m:
-                        self.say(f"Building {n}/{m}", self.lo + (self.hi - self.lo) * n / m)
+                        self.say(tr("building", n=n, m=m), self.lo + (self.hi - self.lo) * n / m)
                 return
-            for prefix, lo, hi in self.PHASES:
+            for prefix, lo, hi, key in self.PHASES:
                 if line.startswith(prefix):
                     self.lo, self.hi = lo, hi
-                    self.say(line[3:].split(" (")[0].strip().capitalize(), lo if lo == hi else None)
+                    self.say(tr(key), lo if lo == hi else None)
                     return
 
         status = self.stream(command, target, on_line)
         if status != 0 or not (target / "build/game/src/roguegalaxy").exists():
-            raise Failure(f"The build failed: {self.why()}\nRunning this installer again goes on where it "
-                          "stopped. The whole log is in build/setup.log.")
+            raise Failure(tr("build_failed", why=self.why()))
 
     # -- 3. the optional extras (another disc each)
     def extras(self) -> None:
         for flag, iso, command, label in (
-            ("japanese", self.cfg.japanese, "extract-japanese", "Japanese voices and movies"),
-            ("european", self.cfg.european, "extract-european", "European texts"),
+            ("japanese", self.cfg.japanese, "extract-japanese", tr("extra_japanese")),
+            ("european", self.cfg.european, "extract-european", tr("extra_european")),
         ):
             if not iso:
                 continue
-            self.say(f"Adding the {label}", 0.95)
+            self.say(tr("adding_extra", label=label), 0.95)
             status = self.stream(["distrobox", "enter", "rg-build", "--", "python3", "setup.py", command,
                                   "--iso", str(iso)], self.cfg.dir)
             if status != 0:
@@ -591,7 +936,7 @@ class Job(threading.Thread):
             self.log("The game is already in Steam: not added again.")
             self.steam_art(script, wait=False)
             return
-        self.say("Adding the game to Steam", 0.98)
+        self.say(tr("adding_steam"), 0.98)
         # install.sh wrote the menu entry (named "Rogue Galaxy", with its icon);
         # Steam takes its name, program and folder from it, with no question
         # asked, as long as it is running (desktop mode).
@@ -791,6 +1136,69 @@ class Sky(Gtk.Widget):
             snap.restore()
 
 
+# ---------------------------------------------------------------- the flags
+# Drawn here (an emoji flag needs a font the Deck may not have): three of stripes, and the Union Jack.
+
+FLAG_STRIPES = {  # code: (vertical?, colours, shares of each)
+    "fr": (True, ((0, 85, 164), (255, 255, 255), (239, 65, 53)), (1, 1, 1)),
+    "de": (False, ((0, 0, 0), (221, 0, 0), (255, 206, 0)), (1, 1, 1)),
+    "it": (True, ((0, 146, 70), (255, 255, 255), (206, 43, 55)), (1, 1, 1)),
+    "es": (False, ((170, 21, 27), (241, 191, 0), (170, 21, 27)), (1, 2, 1)),
+}
+
+
+class Flag(Gtk.Widget):
+    __gtype_name__ = "RogueGalaxyFlag"
+
+    def __init__(self) -> None:
+        super().__init__(width_request=27, height_request=18, valign=Gtk.Align.CENTER)
+        self.code = "en"
+
+    def set_code(self, code: str) -> None:
+        self.code = code
+        self.queue_draw()
+
+    def bar(self, snap: Gtk.Snapshot, angle: float, length: float, thick: float, color: Gdk.RGBA) -> None:
+        """A bar through the flag's centre, turned by angle degrees."""
+        snap.save()
+        snap.rotate(angle)
+        snap.append_color(color, rect(-length / 2, -thick / 2, length, thick))
+        snap.restore()
+
+    def do_snapshot(self, snap: Gtk.Snapshot) -> None:
+        w, h = float(self.get_width()), float(self.get_height())
+        if w < 2 or h < 2:
+            return
+        box = Gsk.RoundedRect()
+        box.init_from_rect(rect(0, 0, w, h), 3)
+        snap.push_rounded_clip(box)
+        if self.code in FLAG_STRIPES:
+            vertical, colors, shares = FLAG_STRIPES[self.code]
+            total, at = float(sum(shares)), 0.0
+            for (r, g, b), share in zip(colors, shares):
+                size = (w if vertical else h) * share / total
+                snap.append_color(rgba(r, g, b), rect(at, 0, size, h) if vertical else rect(0, at, w, size))
+                at += size
+        else:  # the Union Jack
+            snap.append_color(rgba(1, 33, 105), rect(0, 0, w, h))
+            snap.save()
+            snap.translate(point(w / 2, h / 2))
+            diagonal = math.degrees(math.atan2(h, w))
+            long = math.hypot(w, h) * 1.2
+            for angle in (diagonal, -diagonal):
+                self.bar(snap, angle, long, h * 0.22, rgba(255, 255, 255))
+                self.bar(snap, angle, long, h * 0.08, rgba(200, 16, 46))
+            self.bar(snap, 0, w * 1.2, h * 0.36, rgba(255, 255, 255))
+            self.bar(snap, 90, h * 1.2, h * 0.36, rgba(255, 255, 255))
+            self.bar(snap, 0, w * 1.2, h * 0.2, rgba(200, 16, 46))
+            self.bar(snap, 90, h * 1.2, h * 0.2, rgba(200, 16, 46))
+            snap.restore()
+        snap.pop()
+        edge = Gsk.RoundedRect()
+        edge.init_from_rect(rect(0, 0, w, h), 3)
+        snap.append_border(edge, [1.0] * 4, [rgba(255, 255, 255, 0.35)] * 4)
+
+
 # ---------------------------------------------------------------- the window
 
 
@@ -798,8 +1206,9 @@ class Window(Gtk.ApplicationWindow):
     """One page for everything to choose, then the same window shows the install."""
 
     def __init__(self, app: Gtk.Application, cfg: argparse.Namespace):
-        super().__init__(application=app, title="Rogue Galaxy: install")
+        super().__init__(application=app, title=tr("window_title"))
         self.cfg = cfg
+        self.live_texts: dict = {}  # widget -> function giving its text, run again when the language changes
         self.custom_dir: Path | None = None
         self.job: Job | None = None
         self.pulse_id = 0
@@ -815,8 +1224,11 @@ class Window(Gtk.ApplicationWindow):
         self.stack.add_named(self.build_install(), "install")
         root = Gtk.Overlay(child=Sky())
         root.add_overlay(self.stack)
+        self.language_box = self.build_language_picker()
+        root.add_overlay(self.language_box)
         self.set_child(root)
-        self.update_buttons()
+        self.live(self, lambda: tr("window_title"))
+        self.retranslate()
         if cfg.shots:
             GLib.timeout_add(700, self.shoot, "setup")
             if cfg.tour:
@@ -827,18 +1239,75 @@ class Window(Gtk.ApplicationWindow):
         if cfg.test_cancel:  # a test: cancel as the dialog's second button would
             GLib.timeout_add_seconds(cfg.test_cancel, lambda: self.cancel_install() or False)
 
+    # -- the language: texts that follow it
+    def live(self, widget, fn) -> None:
+        """Gives the widget its text now and again each time the language changes; fn returns the text."""
+        self.live_texts[widget] = fn
+        self.apply_text(widget, fn())
+
+    @staticmethod
+    def apply_text(widget, text: str) -> None:
+        if isinstance(widget, Gtk.Label):
+            widget.set_text(text)
+        elif isinstance(widget, Gtk.Window):
+            widget.set_title(text)
+        elif isinstance(widget, (Gtk.Entry, Gtk.PasswordEntry)):
+            widget.set_property("placeholder-text", text)
+        else:  # a button, a check button, an expander
+            widget.set_label(text)
+
+    def retranslate(self) -> None:
+        for widget, fn in list(self.live_texts.items()):
+            self.apply_text(widget, fn())
+        self.language_drop.set_tooltip_text(tr("language"))
+        self.update_buttons()
+
+    def build_language_picker(self) -> Gtk.Widget:
+        """The list in the top right corner, at the Deck's language to begin with."""
+        by_name = {name: code for code, name in LANGUAGES}
+        factory = Gtk.SignalListItemFactory()  # a flag and the name, in the button and in the list
+
+        def setup(_factory, item) -> None:
+            row = Gtk.Box(spacing=10)
+            row.append(Flag())
+            row.append(Gtk.Label(xalign=0))
+            item.set_child(row)
+
+        def bind(_factory, item) -> None:
+            name = item.get_item().get_string()
+            flag = item.get_child().get_first_child()
+            flag.set_code(by_name[name])
+            flag.get_next_sibling().set_text(name)
+
+        factory.connect("setup", setup)
+        factory.connect("bind", bind)
+        self.language_drop = Gtk.DropDown(model=Gtk.StringList.new([name for _, name in LANGUAGES]),
+                                          selected=CODES.index(_current[0]), factory=factory)
+        self.language_drop.connect("notify::selected", self.on_language)
+        box = Gtk.Box(halign=Gtk.Align.END, valign=Gtk.Align.START, margin_top=14, margin_end=18)
+        box.append(self.language_drop)
+        return box
+
+    def on_language(self, *_) -> None:
+        code = CODES[self.language_drop.get_selected()]
+        if code != _current[0]:
+            set_language(code)
+            self.retranslate()
+
     # -- building blocks
     def section(self, number: int, title: str, hint: str, action: Gtk.Widget | None = None) -> Gtk.Box:
-        """A card with a numbered heading; the content is appended to it."""
+        """A card with a numbered heading; the content is appended to it. Title and hint are keys of tr."""
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         card.add_css_class("card")
         head = Gtk.Box(spacing=12)
         badge = Gtk.Label(label=str(number), valign=Gtk.Align.CENTER)
         badge.add_css_class("badge")
         texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, hexpand=True)
-        name = Gtk.Label(label=title, xalign=0)
+        name = Gtk.Label(label="", xalign=0)
         name.add_css_class("section")
-        note = Gtk.Label(label=hint, xalign=0, wrap=True, max_width_chars=58)
+        self.live(name, lambda: tr(title))
+        note = Gtk.Label(label="", xalign=0, wrap=True, max_width_chars=58)
+        self.live(note, lambda: tr(hint))
         note.add_css_class("muted")
         card.note = note  # the hint, for a card whose hint says what was chosen
         texts.append(name)
@@ -852,15 +1321,18 @@ class Window(Gtk.ApplicationWindow):
         return card
 
     def header(self, text: str | None = None) -> Gtk.Box:
+        """The title block; text is the key of its subtitle, if any."""
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         brand = Gtk.Label(label="ROGUE GALAXY", xalign=0)
         brand.add_css_class("brand")
-        tagline = Gtk.Label(label="FOR THE STEAM DECK   \u00b7   INSTALLER", xalign=0)
+        tagline = Gtk.Label(label="", xalign=0)
+        self.live(tagline, lambda: tr("tagline"))
         tagline.add_css_class("tagline")
         box.append(brand)
         box.append(tagline)
         if text:
-            sub = Gtk.Label(label=text, xalign=0, wrap=True, max_width_chars=58, margin_top=4)
+            sub = Gtk.Label(label="", xalign=0, wrap=True, max_width_chars=58, margin_top=4)
+            self.live(sub, lambda: tr(text))
             sub.add_css_class("subtitle")
             box.append(sub)
         return box
@@ -875,36 +1347,40 @@ class Window(Gtk.ApplicationWindow):
     def build_setup(self) -> Gtk.Widget:
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6,
                           margin_top=6, margin_bottom=2, margin_start=56, margin_end=24)
-        content.append(self.header("Built on this Deck from your own disc image; nothing leaves it."))
+        content.append(self.header("header_sub"))
 
         # 1. the disc image: the button in the heading, the hint says what was chosen
-        choose = Gtk.Button(label="Choose the .iso...")
-        choose.connect("clicked", lambda *_: self.pick_file(self.set_iso, "Your Rogue Galaxy (USA) disc image"))
-        card = self.section(1, "Your disc image", "USA release, serial SCUS-97490, an uncompressed .iso (about 7 GB).",
-                            choose)
+        choose = Gtk.Button()
+        self.live(choose, lambda: tr("choose_iso"))
+        choose.connect("clicked", lambda *_: self.pick_file(self.set_iso, tr("iso_dialog")))
+        card = self.section(1, "sec_disc", "disc_hint", choose)
         self.iso_label = card.note
         self.iso_state = Gtk.Label(label="", xalign=0, wrap=True, max_width_chars=58, visible=False)
         card.append(self.iso_state)
         if self.cfg.dir_ready:
-            self.iso_label.set_text("Already extracted in the folder: no image needed.")
+            self.live(self.iso_label, lambda: tr("iso_extracted"))
         content.append(card)
 
         # 2. where
-        other = Gtk.Button(label="Another folder...")
+        other = Gtk.Button()
+        self.live(other, lambda: tr("other_folder"))
         other.connect("clicked", lambda *_: self.pick_folder(self.set_folder))
-        card = self.section(2, "Where to install", "The game, its saves and its build go in one folder.", other)
+        card = self.section(2, "sec_where", "where_hint", other)
         self.where_buttons: list[tuple[Gtk.CheckButton, Path]] = []
         group = None
-        for label, path in storage_choices():
+        for code, path in storage_choices():
             free = free_gb(path)
-            row = Gtk.CheckButton(label=f"{label}: {path}   ({free:.0f} GB free)")
+            row = Gtk.CheckButton()
+            full = free < NEED_GB
+            self.live(row, lambda code=code, path=path, free=free, full=full:
+                      tr("where_row", label=storage_label(code), path=path, free=f"{free:.0f}")
+                      + (("   " + tr("no_room")) if full else ""))
             if group is None:
                 group = row
             else:
                 row.set_group(group)
-            if free < NEED_GB:
+            if full:
                 row.set_sensitive(False)
-                row.set_label(row.get_label() + "   (not enough room)")
             card.append(row)
             self.where_buttons.append((row, path))
         usable = [(b, p) for b, p in self.where_buttons if b.get_sensitive()]
@@ -917,18 +1393,20 @@ class Window(Gtk.ApplicationWindow):
         content.append(card)
 
         # 3. options
-        card = self.section(3, "Options", "All can wait: the home screen can add them later.")
-        self.steam_check = Gtk.CheckButton(label="Add Rogue Galaxy to Steam (play it from game mode)")
+        card = self.section(3, "sec_options", "options_hint")
+        self.steam_check = Gtk.CheckButton()
+        self.live(self.steam_check, lambda: tr("steam_check"))
         self.steam_check.set_active(self.cfg.steam)
-        self.european_check = Gtk.CheckButton(label="Add the European disc (SCES-54552) for FR, DE, ES and IT texts")
+        self.european_check = Gtk.CheckButton()
+        self.live(self.european_check, lambda: tr("european_check"))
         self.european_check.set_active(bool(self.cfg.european))
         self.european_check.connect("toggled", lambda *_: self.on_european_toggled())
         row = Gtk.Box(spacing=12, margin_start=28)
-        eu = Gtk.Button(label="Choose the European .iso...")
-        eu.connect("clicked", lambda *_: self.pick_file(self.set_european, "Rogue Galaxy European disc"))
-        self.european_label = Gtk.Label(label=self.cfg.european.name if self.cfg.european else
-                                        "No image chosen",
-                                        xalign=0, hexpand=True, wrap=True, max_width_chars=58)
+        eu = Gtk.Button()
+        self.live(eu, lambda: tr("european_choose"))
+        eu.connect("clicked", lambda *_: self.pick_file(self.set_european, tr("european_dialog")))
+        self.european_label = Gtk.Label(label="", xalign=0, hexpand=True, wrap=True, max_width_chars=58)
+        self.live(self.european_label, self.european_text)
         self.european_label.add_css_class("muted")
         row.append(eu)
         row.append(self.european_label)
@@ -936,21 +1414,24 @@ class Window(Gtk.ApplicationWindow):
                                             child=row, reveal_child=self.european_check.get_active())
         # The achievements: ticking it shows the sign-in fields (RetroAchievements account).
         self.ra_done = RA_LOGIN.exists()
-        self.ra_check = Gtk.CheckButton(label="Earn the game's 130 achievements (RetroAchievements account)")
+        self.ra_check = Gtk.CheckButton()
+        self.live(self.ra_check, lambda: tr("ra_check"))
         self.ra_check.set_active(self.ra_done)
         self.ra_check.connect("toggled", lambda *_: self.on_ra_toggled())
-        self.ra_user = Gtk.Entry(placeholder_text="RetroAchievements user", hexpand=True)
-        self.ra_password = Gtk.PasswordEntry(placeholder_text="Password", show_peek_icon=True, hexpand=True)
-        self.ra_button = Gtk.Button(label="Sign in")
+        self.ra_user = Gtk.Entry(hexpand=True)
+        self.live(self.ra_user, lambda: tr("ra_user"))
+        self.ra_password = Gtk.PasswordEntry(show_peek_icon=True, hexpand=True)
+        self.live(self.ra_password, lambda: tr("ra_password"))
+        self.ra_button = Gtk.Button()
+        self.live(self.ra_button, lambda: tr("ra_signin"))
         self.ra_button.connect("clicked", lambda *_: self.on_ra_sign_in())
         self.ra_password.connect("activate", lambda *_: self.on_ra_sign_in())
         row = Gtk.Box(spacing=12)
         row.append(self.ra_user)
         row.append(self.ra_password)
         row.append(self.ra_button)
-        self.ra_state = Gtk.Label(label="Signed in already: it stays as it is." if self.ra_done else
-                                  "The password is sent once to retroachievements.org and never kept.",
-                                  xalign=0, wrap=True, max_width_chars=58)
+        self.ra_state = Gtk.Label(label="", xalign=0, wrap=True, max_width_chars=58)
+        self.live(self.ra_state, lambda: tr("ra_done" if self.ra_done else "ra_hint"))
         self.ra_state.add_css_class("good" if self.ra_done else "muted")
         ra_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, margin_start=28)
         ra_box.append(row)
@@ -971,7 +1452,8 @@ class Window(Gtk.ApplicationWindow):
 
         scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True, child=content)
         bar = Gtk.Box(margin_top=4, margin_bottom=12, halign=Gtk.Align.CENTER)  # the button, centred in the window
-        self.install_button = Gtk.Button(label="Install", halign=Gtk.Align.CENTER)
+        self.install_button = Gtk.Button(halign=Gtk.Align.CENTER)
+        self.live(self.install_button, lambda: tr("install"))
         self.install_button.add_css_class("suggested-action")
         self.install_button.connect("clicked", lambda *_: self.begin())
         bar.append(self.install_button)
@@ -986,16 +1468,18 @@ class Window(Gtk.ApplicationWindow):
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, width_request=720, vexpand=True,
                           hexpand=False, margin_top=22, margin_bottom=18, margin_start=56, margin_end=24)
         content.append(self.header())
-        self.install_title = Gtk.Label(label="Installing", xalign=0, margin_top=14)
+        self.install_title = Gtk.Label(label="", xalign=0, margin_top=14)
+        self.live(self.install_title, lambda: tr("installing"))
         self.install_title.add_css_class("title")
-        self.install_sub = Gtk.Label(label="Keep the Deck plugged in. You can leave this window open and do "
-                                           "something else.", xalign=0, wrap=True, max_width_chars=58)
+        self.install_sub = Gtk.Label(label="", xalign=0, wrap=True, max_width_chars=58)
+        self.live(self.install_sub, lambda: tr("install_sub"))
         self.install_sub.add_css_class("subtitle")
         content.append(self.install_title)
         content.append(self.install_sub)
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         card.add_css_class("card")
-        self.step_label = Gtk.Label(label="Starting", xalign=0)
+        self.step_label = Gtk.Label(label="", xalign=0)
+        self.live(self.step_label, lambda: tr("starting"))
         self.bar = Gtk.ProgressBar()
         self.fail_label = Gtk.Label(label="", xalign=0, wrap=True, max_width_chars=58, visible=False)
         self.fail_label.add_css_class("bad")
@@ -1005,12 +1489,14 @@ class Window(Gtk.ApplicationWindow):
         card.append(self.fail_label)
         card.append(self.done_label)
         content.append(card)
-        expander = Gtk.Expander(label="Details", vexpand=True)
+        expander = Gtk.Expander(vexpand=True)
+        self.live(expander, lambda: tr("details"))
         self.log_view = Gtk.TextView(editable=False, monospace=True, wrap_mode=Gtk.WrapMode.CHAR)
         self.log_scroll = Gtk.ScrolledWindow(min_content_height=200, child=self.log_view)
         expander.set_child(self.log_scroll)
         content.append(expander)
-        self.close_button = Gtk.Button(label="Close", halign=Gtk.Align.CENTER, visible=False, margin_bottom=16)
+        self.close_button = Gtk.Button(halign=Gtk.Align.CENTER, visible=False, margin_bottom=16)
+        self.live(self.close_button, lambda: tr("close"))
         self.close_button.add_css_class("suggested-action")
         self.close_button.connect("clicked", lambda *_: self.get_application().quit())
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -1022,10 +1508,10 @@ class Window(Gtk.ApplicationWindow):
     def on_ra_sign_in(self) -> None:
         user, password = self.ra_user.get_text().strip(), self.ra_password.get_text()
         if not user or not password:
-            self.show_ra("Type the user and the password first.", False)
+            self.show_ra(lambda: tr("ra_need"), False)
             return
         self.ra_button.set_sensitive(False)
-        self.show_ra("Signing in...", True)
+        self.show_ra(lambda: tr("ra_signing"), True)
 
         def work() -> None:
             done, message = ra_sign_in(user, password)
@@ -1037,18 +1523,21 @@ class Window(Gtk.ApplicationWindow):
         self.ra_reveal.set_reveal_child(self.ra_check.get_active())
         self.update_buttons()
 
-    def on_ra_answer(self, done: bool, message: str) -> bool:
+    def on_ra_answer(self, done: bool, message) -> bool:
+        """message: a function giving the text to show, in the window's language."""
         self.ra_button.set_sensitive(True)
+        text = message
         if done:
             self.ra_done = True
             self.ra_password.set_text("")  # not kept anywhere
-            message += " The game turns RetroAchievements on by itself."
-        self.show_ra(message, done)
+            text = lambda: message() + " " + tr("ra_auto")  # noqa: E731
+        self.show_ra(text, done)
         self.update_buttons()
         return False
 
-    def show_ra(self, text: str, good: bool) -> None:
-        self.ra_state.set_text(text)
+    def show_ra(self, text, good: bool) -> None:
+        """text: a function giving the line to show."""
+        self.live(self.ra_state, text)
         for name in ("good", "bad", "muted"):
             self.ra_state.remove_css_class(name)
         self.ra_state.add_css_class("good" if good else "bad")
@@ -1059,7 +1548,7 @@ class Window(Gtk.ApplicationWindow):
         dialog.open(self, None, lambda d, r: self.picked(d, r, callback, False))
 
     def pick_folder(self, callback) -> None:
-        dialog = Gtk.FileDialog(title="Install the game in")
+        dialog = Gtk.FileDialog(title=tr("folder_dialog"))
         dialog.select_folder(self, None, lambda d, r: self.picked(d, r, callback, True))
 
     def picked(self, dialog, result, callback, folder: bool) -> None:
@@ -1071,10 +1560,10 @@ class Window(Gtk.ApplicationWindow):
             callback(Path(file.get_path()))
 
     def set_iso(self, path: Path) -> None:
-        problem = looks_like_iso(path)
+        problem = looks_like_iso(path)  # None, or the key of what is wrong
         self.cfg.iso = None if problem else path
-        self.iso_label.set_text(str(path))
-        self.iso_state.set_text(problem or "This looks like a disc image. It is checked in full while installing.")
+        self.live(self.iso_label, lambda: str(path))
+        self.live(self.iso_state, lambda: tr(problem or "iso_ok"))
         self.iso_state.set_visible(True)
         for cls in ("good", "bad"):
             self.iso_state.remove_css_class(cls)
@@ -1088,13 +1577,17 @@ class Window(Gtk.ApplicationWindow):
             row.set_active(False)
         enough = free >= NEED_GB
         self.where_note.set_visible(True)
-        self.where_note.set_text(f"{self.custom_dir}   ({free:.0f} GB free"
-                                 + ("" if enough else ", not enough") + ")")
+        folder = self.custom_dir
+        self.live(self.where_note, lambda: tr("where_note" if enough else "where_note_short",
+                                              path=folder, free=f"{free:.0f}"))
         self.update_buttons()
+
+    def european_text(self) -> str:
+        return self.cfg.european.name if self.cfg.european else tr("european_none")
 
     def set_european(self, path: Path) -> None:
         self.cfg.european = path
-        self.european_label.set_text(path.name)
+        self.apply_text(self.european_label, self.european_text())
         self.update_buttons()
 
     def on_european_toggled(self) -> None:
@@ -1113,16 +1606,15 @@ class Window(Gtk.ApplicationWindow):
     def update_buttons(self) -> None:
         missing = []
         if self.cfg.iso is None and not self.cfg.dir_ready:
-            missing.append("a disc image (SCUS-97490)")
+            missing.append(tr("miss_iso"))
         if self.chosen_dir() is None and not self.cfg.dir:
-            missing.append("a folder")
+            missing.append(tr("miss_folder"))
         if self.european_check.get_active() and self.cfg.european is None:
-            missing.append("the European disc (SCES-54552), or untick it")
+            missing.append(tr("miss_eu"))
         if self.ra_check.get_active() and not self.ra_done:
-            missing.append("the RetroAchievements sign-in, or untick it")
+            missing.append(tr("miss_ra"))
         self.install_button.set_sensitive(not missing)
-        self.summary.set_text("Still to do: " + ", ".join(missing) + "." if missing else
-                              f"Ready: about {NEED_GB} GB and 10 to 30 minutes. Keep the Deck plugged in.")
+        self.summary.set_text(tr("todo", items=", ".join(missing)) if missing else tr("ready", gb=NEED_GB))
 
     def begin(self) -> None:
         self.cfg.dir = self.cfg.dir or self.chosen_dir()
@@ -1131,6 +1623,7 @@ class Window(Gtk.ApplicationWindow):
         if not self.european_check.get_active():
             self.cfg.european = None
         self.stack.set_visible_child_name("install")
+        self.language_box.set_visible(False)  # the progress lines are written in the language chosen now
         self.pulse_id = GLib.timeout_add(120, self.pulse)
         self.job = Job(self.cfg, self)
         self.running = True
@@ -1144,11 +1637,10 @@ class Window(Gtk.ApplicationWindow):
             return self.cancelling  # not building: close; being cancelled: wait for the end
         job = self.job
         where = job.cfg.dir if job else None
-        kept = ("The folder " + str(where) + " and everything built in it so far will be deleted."
-                if job and job.fresh else "Your earlier install in this folder stays as it was.")
-        dialog = Gtk.AlertDialog(message="Cancel the installation?",
-                                 detail="The build will be stopped. " + kept,
-                                 buttons=["Keep installing", "Cancel the installation"],
+        kept = tr("kept_fresh", folder=where) if job and job.fresh else tr("kept_old")
+        dialog = Gtk.AlertDialog(message=tr("cancel_q"),
+                                 detail=tr("cancel_detail", kept=kept),
+                                 buttons=[tr("keep_installing"), tr("cancel_install")],
                                  cancel_button=0, default_button=0, modal=True)
         dialog.choose(self, None, self.on_close_answer)
         return True
@@ -1173,7 +1665,7 @@ class Window(Gtk.ApplicationWindow):
         if not self.running or self.cancelling or not self.job:
             return
         self.cancelling = True
-        self.step_label.set_text("Cancelling: stopping the build and deleting what it made")
+        self.step_label.set_text(tr("cancelling"))
         self.pulsing = True
         threading.Thread(target=self.job.cancel, daemon=True).start()
 
@@ -1215,7 +1707,7 @@ class Window(Gtk.ApplicationWindow):
         self.pulsing = False
         self.fail_label.set_text(message)
         self.fail_label.set_visible(True)
-        self.step_label.set_text("The install stopped")
+        self.step_label.set_text(tr("stopped"))
         self.close_button.set_visible(True)
         if self.cfg.shots:
             GLib.timeout_add(500, self.shoot, "failed")
@@ -1226,14 +1718,11 @@ class Window(Gtk.ApplicationWindow):
         self.release_awake()
         self.pulsing = False
         self.bar.set_fraction(1.0)
-        self.install_title.set_text("Done")
-        self.install_sub.set_text("Rogue Galaxy is installed.")
+        self.install_title.set_text(tr("done"))
+        self.install_sub.set_text(tr("done_sub"))
         self.step_label.set_visible(False)
-        steam = ("It is in your Steam library, under Non-Steam. Switch to game mode and play. "
-                 if self.cfg.steam else "Add rogue-galaxy.sh to Steam as a non-Steam game, then switch to game "
-                                        "mode and play. ")
-        self.done_label.set_text(steam + "The game opens on a home screen with Play and Update; this installer "
-                                         "is not needed any more.")
+        steam = tr("done_steam" if self.cfg.steam else "done_nosteam")
+        self.done_label.set_text(steam + " " + tr("done_tail"))
         self.done_label.set_visible(True)
         self.close_button.set_visible(True)
         return False
@@ -1284,6 +1773,7 @@ def main() -> int:
     ap.add_argument("--european", type=Path)
     ap.add_argument("--no-steam", dest="steam", action="store_false")
     ap.add_argument("--start", action="store_true", help="skip the pages and install now (needs --dir)")
+    ap.add_argument("--lang", choices=CODES, help="the window's language (else the Deck's, or RG_LANG)")
     ap.add_argument("--shots", help="save a PNG of each page in this folder")
     ap.add_argument("--tour", action="store_true", help="with --shots, show each page in turn")
     ap.add_argument("--test-cancel", type=int, default=0, metavar="SECONDS",
@@ -1291,6 +1781,7 @@ def main() -> int:
     cfg = ap.parse_args()
     if cfg.start and not cfg.dir:
         ap.error("--start needs --dir")
+    set_language(cfg.lang or detect_language())
     # An already extracted disc in the folder needs no image.
     cfg.dir_ready = bool(cfg.dir and (cfg.dir / "disc" / "manifest.json").exists())
     return App(cfg).run([sys.argv[0]])
