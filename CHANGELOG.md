@@ -2,13 +2,17 @@
 
 ## Unreleased
 
+## 0.10.0 - 2026-11-18
+
 ### Added
 
-- Steam Deck fork: the home screen, the settings (their pages, options and
-  help texts), the quit box and the update messages are in English, French,
-  German, Spanish and Italian. The language is Steam's (else the system's
-  locale) until you pick one in Settings > Interface > Menu language. The release notes of the last three versions are
-  translated too (`docs/changelog/`); a version without a translation shows in English.
+- Steam Deck fork: the installer, the home screen, the settings (their pages,
+  options and help texts), the quit box and the update messages are in
+  English, French, German, Spanish and Italian. The language is Steam's (else
+  the system's locale) until you pick one: with the list in the installer's
+  top right corner, or in the game in Settings > Interface > Menu language.
+  The release notes of the last three versions are translated too
+  (`docs/changelog/`); a version without a translation shows in English.
 
 ## 0.9.0 - 2026-11-18
 
