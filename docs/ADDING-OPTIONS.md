@@ -163,7 +163,24 @@ lists in `src/settings_pages.cpp` puts the option there too:
 An option that is not there is listed in [OPTIONS.md](OPTIONS.md), "In the
 game's own menu", among the ones in F1 alone.
 
-## 4. The docs
+## 4. The translations
+
+The menu speaks English, French, German, Spanish and Italian. A text in the
+code is its English wording, and `L()` (`ui_text.h`) gives the menu's
+language's. Add a row for the option's label and its help (and its section,
+its `format`, and the line `gameOptionBlocked` returns) to
+`thirdparty/dq8-gfx/src/ui/ui_text_options.cpp`: the English text exactly as
+written in `src/graphics.cpp`, then French, German, Spanish and Italian
+(an empty text shows the English). Run the game with `RG_LANG=fr`
+(and `de`, `es`, `it`) and `RG_LANG_MISSING=1`: each text still without a
+translation is logged as a `[lang]` line.
+
+The release notes on the home screen are translated by version: when a
+release is cut, copy the new version's entry into
+`docs/changelog/CHANGELOG.<code>.md` (headings as in `CHANGELOG.md`), and
+translate its bullets. A version that file lacks shows in English.
+
+## 5. The docs
 
 - [OPTIONS.md](OPTIONS.md): a row in its section's table, in the menu's
   order, saying what it does and its default when that is on.
@@ -185,7 +202,8 @@ game's own menu", among the ones in F1 alone.
 5. `src/settings_pages.cpp` (optional): the row in its page, and its names
    in `kLocal`.
 6. `docs/OPTIONS.md`, `docs/DEVELOPMENT.md`, `CHANGELOG.md`.
-7. Try it: flip it in F1 and see the game change; restart and see it kept
+7. `ui_text_options.cpp`: the option's texts in the four languages.
+8. Try it: flip it in F1 and see the game change; restart and see it kept
    (`~/.local/share/RogueGalaxy/Recompiled/settings.ini`, `[game]`); run once
    with the `RG_` variable; flip it on the game's Settings screen if it is
    there.

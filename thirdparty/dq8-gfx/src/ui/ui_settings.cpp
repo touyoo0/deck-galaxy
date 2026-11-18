@@ -117,6 +117,9 @@ void apply(Settings &s, const std::string &section, const std::string &key, cons
         if (key == "ui_scale") parseNumber(value, s.uiScale, 50, 250);
         else if (key == "show_fps") parseBool(value, s.showFps);
         else if (key == "notifications") parseBool(value, s.notifications);
+        else if (key == "language" && (value == "auto" || value == "en" || value == "fr" || value == "de" ||
+                                       value == "es" || value == "it"))
+            s.menuLanguage = value;
         else if (key == "pause_in_menu") parseBool(value, s.pauseInMenu);
         else if (key == "pause_in_background") parseBool(value, s.pauseInBackground);
     } else if (section == "game") {
@@ -168,6 +171,7 @@ std::string serializeSettings(const Settings &s) {
     }
     out << "\n[interface]\nui_scale = " << s.uiScale << "\nshow_fps = " << flag(s.showFps)
         << "\nnotifications = " << flag(s.notifications)
+        << "\nlanguage = " << s.menuLanguage
         << "\npause_in_menu = " << flag(s.pauseInMenu)
         << "\npause_in_background = " << flag(s.pauseInBackground) << '\n'
         << "\n[game]\nfast_forward_speed = " << s.fastForwardSpeed << '\n';

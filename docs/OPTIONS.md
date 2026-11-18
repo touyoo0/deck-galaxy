@@ -39,8 +39,10 @@ Settings has seven pages, written here as F1 > Settings > Game and so on:
 - **Game**: the game options below.
 - **Language**: the text's language and the undub, [below](#language).
 - **Achievements**: the account and the list.
-- **Interface**: the menu's size, notifications, pause and fast-forward,
-  the frame-rate counter.
+- **Interface**: the menu's size, notifications, the menu's language (the Deck's
+  to begin with; English, French, German, Spanish or Italian: the home
+  screen and the menu; the game's own text is Language > Text), pause and
+  fast-forward, the frame-rate counter.
 
 An option that does nothing as things stand stays on its page, greyed
 out, with a line under it saying what would make it work: the undub until

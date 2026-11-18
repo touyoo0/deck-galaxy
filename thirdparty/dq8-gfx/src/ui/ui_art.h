@@ -20,5 +20,8 @@ bool fileTexture(const char *path, ImTextureRef &texture, ImVec2 &size);
 
 // The embedded CHANGELOG.md as text; empty when the build has none.
 const char *homeChangelog(unsigned int &size);
+// The same notes in a language of the menu (1 French, 2 German, 3 Spanish, 4
+// Italian; 0 the English ones); empty when the build has no such file.
+const char *homeChangelogIn(int language, unsigned int &size);
 
 } // namespace dq8::ui

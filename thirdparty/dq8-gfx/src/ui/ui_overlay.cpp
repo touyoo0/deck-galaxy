@@ -3,6 +3,7 @@
 #include "gfx/backends/sdlgpu/sdlgpu_input.h"
 #include "ui/ui_art.h"
 #include "ui/ui_style.h"
+#include "ui/ui_text.h"
 #include "ui/ui_widgets.h"
 
 #include <imgui.h>
@@ -61,7 +62,7 @@ std::string reservedKeysText(const std::vector<HostServices::Shortcut> &game) {
         while (last + 1 < functions.size() && functions[last + 1] == functions[last] + 1)
             ++last;
         if (last - first >= 2) {
-            parts.push_back("F" + std::to_string(functions[first]) + " to F" + std::to_string(functions[last]));
+            parts.push_back(Lf("F%d to F%d", functions[first], functions[last]));
         } else {
             for (size_t index = first; index <= last; ++index)
                 parts.push_back("F" + std::to_string(functions[index]));
@@ -71,7 +72,7 @@ std::string reservedKeysText(const std::vector<HostServices::Shortcut> &game) {
     parts.insert(parts.end(), others.begin(), others.end());
     std::string text;
     for (size_t index = 0; index < parts.size(); ++index)
-        text += (index == 0 ? "" : index + 1 == parts.size() ? " and " : ", ") + parts[index];
+        text += (index == 0 ? "" : index + 1 == parts.size() ? L(" and ") : ", ") + parts[index];
     return text;
 }
 
@@ -139,6 +140,7 @@ bool Overlay::initialize(SDL_Window *window, SDL_GPUTextureFormat format, std::s
         return false;
     }
     m_rendererReady = true;
+    setMenuLanguage(m_settings.menuLanguage);
     updateScale();
     loadScript();
     // Guide is often the system's (Steam, the Xbox Game Bar), so Back + Start
@@ -153,6 +155,7 @@ bool Overlay::initialize(SDL_Window *window, SDL_GPUTextureFormat format, std::s
 }
 
 void Overlay::applySettings() {
+    setMenuLanguage(m_settings.menuLanguage);
     m_backend.setDisplayOptions(m_settings.display);
     m_backend.padInput().setConfig(m_settings.pad);
     if (m_window && m_window == m_backend.window() && m_settings.fullscreen)
@@ -340,6 +343,7 @@ void Overlay::toggleBarFocus() {
 void Overlay::notify(std::string text, Icon kind, double seconds, std::string picture) {
     if (!m_settings.notifications)
         return;
+    text = L(text);
     for (Toast &toast : m_toasts)
         if (toast.text == text) {
             toast.startedAt = std::max(toast.startedAt, now() - 0.2);
@@ -364,7 +368,7 @@ void Overlay::setUserPaused(bool paused) {
 
 std::string Overlay::speedLabel(float speed) const {
     if (speed <= 0.0f)
-        return "Unlimited";
+        return L("Unlimited");
     char text[16];
     std::snprintf(text, sizeof(text), "%g\xC3\x97", static_cast<double>(speed));
     return text;
@@ -375,7 +379,7 @@ void Overlay::setFastForward(bool on) {
         return;
     m_fastForward = on;
     m_host.setSpeed(on ? m_settings.fastForwardSpeed : 1.0);
-    notify(on ? "Fast-forward: " + speedLabel(m_settings.fastForwardSpeed) : std::string("Normal speed"),
+    notify(on ? Lf("Fast-forward: %s", speedLabel(m_settings.fastForwardSpeed).c_str()) : std::string("Normal speed"),
            on ? Icon::Speed : Icon::Play, 1.5);
 }
 
@@ -399,14 +403,14 @@ bool Overlay::handleEvent(const SDL_Event &event) {
     case SDL_EVENT_GAMEPAD_ADDED: {
         const char *name = SDL_GetGamepadNameForID(event.gdevice.which);
         m_controllerNames.emplace_back(event.gdevice.which, name ? name : "Controller");
-        notify(std::string("Connected: ") + m_controllerNames.back().second, Icon::Controls);
+        notify(Lf("Connected: %s", m_controllerNames.back().second.c_str()), Icon::Controls);
         break;
     }
     case SDL_EVENT_GAMEPAD_REMOVED: {
         const auto it = std::find_if(m_controllerNames.begin(), m_controllerNames.end(),
                                      [&](const auto &entry) { return entry.first == event.gdevice.which; });
         if (it != m_controllerNames.end()) {
-            notify("Disconnected: " + it->second, Icon::Warning);
+            notify(Lf("Disconnected: %s", it->second.c_str()), Icon::Warning);
             m_controllerNames.erase(it);
         }
         break;
@@ -531,7 +535,7 @@ bool Overlay::captureEvent(const SDL_Event &event) {
     if (m_capture.keyboard) {
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
             if (reservedKey(event.key.scancode, m_host.gameShortcuts)) {
-                notify(std::string(SDL_GetScancodeName(event.key.scancode)) + " is kept for a shortcut",
+                notify(Lf("%s is kept for a shortcut", SDL_GetScancodeName(event.key.scancode)),
                        Icon::Warning);
                 return true;
             }
@@ -898,10 +902,10 @@ void Overlay::drawMenuBar() {
 
         const auto beginMenu = [&](const char *label) {
             if (m_showMenu == label) {
-                ImGui::OpenPopup(label);
+                ImGui::OpenPopup(L(label));
                 m_showMenu.clear();
             }
-            return ImGui::BeginMenu(label);
+            return ImGui::BeginMenu(L(label));
         };
         if (beginMenu("Rogue Galaxy")) {
             if (menuItem("About Rogue Galaxy Recompiled"))
@@ -996,16 +1000,16 @@ void Overlay::drawStatus() {
     const auto active = std::find_if(controllers.begin(), controllers.end(),
                                      [](const gfx::ControllerInfo &info) { return info.active; });
     std::string device = active != controllers.end() ? controllerFamilyName(active->type)
-                         : m_settings.pad.keyboardEnabled ? "Keyboard" : "No input";
+                         : m_settings.pad.keyboardEnabled ? L("Keyboard") : L("No input");
     if (active != controllers.end() && active->batteryPercent >= 0 &&
         (active->power == SDL_POWERSTATE_ON_BATTERY || active->power == SDL_POWERSTATE_CHARGING))
         device += " " + std::to_string(active->batteryPercent) + "%";
     char fps[32] = "- FPS";
     if (!pausing())
         std::snprintf(fps, sizeof(fps), "%.0f FPS", m_fps);
-    std::string state = pausing() ? "Paused" : "";
+    std::string state = pausing() ? L("Paused") : "";
     if (m_fastForward)
-        state += (state.empty() ? "" : "  ") + std::string("Fast ") + speedLabel(m_settings.fastForwardSpeed);
+        state += (state.empty() ? "" : "  ") + Lf("Fast %s", speedLabel(m_settings.fastForwardSpeed).c_str());
 
     const ImGuiStyle &style = ImGui::GetStyle();
     const float iconSize = em(1.05f);
@@ -1034,7 +1038,7 @@ void Overlay::drawStatus() {
 // Quit, from the page list or the top bar, asked first: a stray press would
 // lose what was not saved. B or Esc answers no.
 void Overlay::drawQuitPrompt() {
-    constexpr const char *kName = "Quit?##quit";
+    constexpr const char *kName = "Quit?##quit"; // the id; the title is not drawn
     if (m_quitAsk) {
         ImGui::OpenPopup(kName);
         m_quitAsk = false;
@@ -1048,17 +1052,17 @@ void Overlay::drawQuitPrompt() {
     if (ImGui::BeginPopupModal(kName, nullptr, flags)) {
         decorateWindow();
         ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.2f);
-        ImGui::TextUnformatted("Quit Rogue Galaxy?");
+        ImGui::TextUnformatted(L("Quit Rogue Galaxy?"));
         ImGui::PopFont();
         mutedText("Progress since your last save is lost.");
         ImGui::Dummy(ImVec2(0.0f, em(0.6f)));
         // Cancel first: it is where the cursor starts.
         const ImVec2 buttonSize(em(7.0f), 0.0f);
-        if (ImGui::Button("Cancel", buttonSize) || m_cancelQuit)
+        if (ImGui::Button(L("Cancel"), buttonSize) || m_cancelQuit)
             ImGui::CloseCurrentPopup();
         ImGui::SetItemDefaultFocus();
         ImGui::SameLine();
-        if (ImGui::Button("Quit", buttonSize)) {
+        if (ImGui::Button(L("Quit"), buttonSize)) {
             SDL_Event quit{};
             quit.type = SDL_EVENT_QUIT;
             SDL_PushEvent(&quit);
@@ -1096,14 +1100,39 @@ ImU32 mix(ImU32 a, ImU32 b, float t) {
     return lerp(IM_COL32_R_SHIFT) | lerp(IM_COL32_G_SHIFT) | lerp(IM_COL32_B_SHIFT) | lerp(IM_COL32_A_SHIFT);
 }
 
+// What the update says it is doing, in the menu's language: update.sh and the
+// host write English, some with a version or a count after it.
+std::string updateText(const std::string &text) {
+    static const struct {
+        const char *prefix;
+        const char *format;
+    } kWithValue[] = {{"Downloading ", "Downloading %s"}, {"Building ", "Building %s"}, {"Updated to ", "Updated to %s"}};
+    for (const auto &entry : kWithValue)
+        if (text.rfind(entry.prefix, 0) == 0 && text.size() > std::strlen(entry.prefix))
+            return Lf(entry.format, text.c_str() + std::strlen(entry.prefix));
+    return L(text);
+}
+
 // Text with tracking and a soft shadow; `size` in pixels. Returns its width.
 float trackedText(ImDrawList *list, ImVec2 at, float size, float tracking, ImU32 from, ImU32 to, const char *text,
                   float fade) {
     ImFont *font = ImGui::GetFont();
-    const size_t count = std::strlen(text);
+    // One letter at a time, a letter being a whole UTF-8 sequence (accents).
+    const auto lengthAt = [&](size_t offset) {
+        const unsigned char lead = static_cast<unsigned char>(text[offset]);
+        const size_t length = lead >= 0xF0 ? 4u : lead >= 0xE0 ? 3u : lead >= 0xC0 ? 2u : 1u;
+        return std::min(length, std::strlen(text + offset));
+    };
+    size_t count = 0;
+    for (size_t offset = 0; text[offset] != '\0'; offset += lengthAt(offset))
+        ++count;
     float x = at.x;
+    size_t byte = 0;
     for (size_t i = 0; i < count; ++i) {
-        const char glyph[2] = {text[i], 0};
+        char glyph[5] = {};
+        const size_t length = lengthAt(byte);
+        std::memcpy(glyph, text + byte, length);
+        byte += length;
         const float t = count > 1 ? static_cast<float>(i) / static_cast<float>(count - 1) : 0.0f;
         const float advance = font->CalcTextSizeA(size, FLT_MAX, 0.0f, glyph).x;
         list->AddText(font, size, ImVec2(x + size * 0.04f, at.y + size * 0.05f), IM_COL32(0, 0, 10, static_cast<int>(150 * fade)),
@@ -1227,29 +1256,33 @@ std::string plainMarkdown(const std::string &in) {
     return out;
 }
 
-// "2026-11-18" -> "18 nov. 2026"; anything else is shown as written.
+// "2026-11-18" -> "18 nov. 2026" (in the menu's language); anything else is
+// shown as written.
 std::string shortDate(const std::string &iso) {
-    static const char *const kMonths[] = {"jan.", "feb.", "mar.", "apr.", "may", "jun.",
-                                          "jul.", "aug.", "sep.", "oct.", "nov.", "dec."};
+    static const char *const kMonths[5][12] = {
+        {"jan.", "feb.", "mar.", "apr.", "may", "jun.", "jul.", "aug.", "sep.", "oct.", "nov.", "dec."},
+        {"janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."},
+        {"Jan.", "Feb.", "März", "Apr.", "Mai", "Juni", "Juli", "Aug.", "Sept.", "Okt.", "Nov.", "Dez."},
+        {"ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sept", "oct", "nov", "dic"},
+        {"gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"}};
     int y = 0, m = 0, d = 0;
     char extra = 0;
     if (std::sscanf(iso.c_str(), "%d-%d-%d%c", &y, &m, &d, &extra) != 3 || m < 1 || m > 12 || d < 1 || d > 31)
         return iso;
-    return std::to_string(d) + " " + kMonths[m - 1] + " " + std::to_string(y);
+    const int language = menuLanguageIndex();
+    return std::to_string(d) + (language == 2 ? ". " : " ") + kMonths[language][m - 1] + " " + std::to_string(y);
 }
 
-const std::vector<ChangeLine> &changelogLines() {
-    static std::vector<ChangeLine> lines;
-    static bool parsed = false;
-    if (parsed)
-        return lines;
-    parsed = true;
-    unsigned int size = 0;
-    const char *data = homeChangelog(size);
-    if (size <= 1u)
-        return lines;
-    const std::string text(data, size);
-    constexpr int kVersions = 3;
+// One version of the notes: its name ("0.9.0", "Unreleased") and its lines.
+struct ChangeBlock {
+    std::string key;
+    std::vector<ChangeLine> lines;
+};
+
+// The first `maxVersions` versions of a CHANGELOG.md, without the install
+// notes and known issues.
+std::vector<ChangeBlock> parseChangelog(const std::string &text, int maxVersions) {
+    std::vector<ChangeBlock> blocks;
     int versions = 0;
     bool skip = false;
     size_t pos = 0;
@@ -1262,7 +1295,7 @@ const std::vector<ChangeLine> &changelogLines() {
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
         if (line.rfind("## ", 0) == 0) {
-            if (++versions > kVersions)
+            if (++versions > maxVersions)
                 break;
             skip = false;
             std::string head = plainMarkdown(line.substr(3));
@@ -1275,22 +1308,57 @@ const std::vector<ChangeLine> &changelogLines() {
             const size_t paren = head.find(" (");
             if (paren != std::string::npos)
                 head.resize(paren);
-            lines.push_back({ChangeLine::Version, head, shortDate(date)});
+            blocks.push_back({head, {{ChangeLine::Version, head, shortDate(date)}}});
+        } else if (blocks.empty()) {
+            continue;
         } else if (line.rfind("### ", 0) == 0) {
             const std::string name = line.substr(4);
             skip = name.rfind("Install", 0) == 0 || name.rfind("Update from", 0) == 0 ||
                    name.rfind("Known issues", 0) == 0 || name.rfind("Highlights", 0) == 0;
-            if (!skip && versions > 0)
-                lines.push_back({ChangeLine::Section, name});
-        } else if (!skip && versions > 0) {
+            if (!skip)
+                blocks.back().lines.push_back({ChangeLine::Section, name});
+        } else if (!skip) {
+            std::vector<ChangeLine> &lines = blocks.back().lines;
             if (line.rfind("- ", 0) == 0)
                 lines.push_back({ChangeLine::Bullet, plainMarkdown(line.substr(2))});
-            else if (line.rfind("  ", 0) == 0 && !lines.empty() && lines.back().kind == ChangeLine::Bullet) {
+            else if (line.rfind("  ", 0) == 0 && lines.back().kind == ChangeLine::Bullet) {
                 size_t first = line.find_first_not_of(' ');
                 if (first != std::string::npos)
                     lines.back().text += " " + plainMarkdown(line.substr(first));
             }
         }
+    }
+    return blocks;
+}
+
+// The last versions' notes in the menu's language: the English ones, each
+// version replaced by its translation (docs/changelog/CHANGELOG.<code>.md)
+// when that file has it.
+const std::vector<ChangeLine> &changelogLines() {
+    static std::vector<ChangeLine> lines;
+    static int built = -1;
+    const int language = menuLanguageIndex();
+    if (built == language)
+        return lines;
+    built = language;
+    lines.clear();
+    unsigned int size = 0;
+    const char *data = homeChangelog(size);
+    if (size <= 1u)
+        return lines;
+    constexpr int kVersions = 3;
+    std::vector<ChangeBlock> translated;
+    if (language != 0) {
+        const char *other = homeChangelogIn(language, size);
+        if (size > 1u)
+            translated = parseChangelog(std::string(other, size), 2 * kVersions);
+    }
+    data = homeChangelog(size);
+    for (ChangeBlock &block : parseChangelog(std::string(data, size), kVersions)) {
+        const auto match = std::find_if(translated.begin(), translated.end(),
+                                        [&](const ChangeBlock &candidate) { return candidate.key == block.key; });
+        const ChangeBlock &chosen = match != translated.end() ? *match : block;
+        lines.insert(lines.end(), chosen.lines.begin(), chosen.lines.end());
     }
     return lines;
 }
@@ -1473,10 +1541,10 @@ void Overlay::drawHome() {
                           reading ? 2.0f : 1.0f);
             const float titleSize = em(1.0f);
             trackedText(list, ImGui::GetCursorScreenPos(), titleSize, em(0.22f), IM_COL32(186, 204, 255, 255),
-                        IM_COL32(186, 204, 255, 255), "WHAT'S NEW", fade);
+                        IM_COL32(186, 204, 255, 255), L("WHAT'S NEW"), fade);
             ImGui::Dummy(ImVec2(0.0f, titleSize * 1.6f));
             if (navOn) {
-                const char *hint = reading ? "Up / Down: scroll    Left: back" : "Right: read";
+                const char *hint = L(reading ? "Up / Down: scroll    Left: back" : "Right: read");
                 const float hintSize = em(0.8f);
                 ImFont *hintFont = ImGui::GetFont();
                 const float hintWidth = hintFont->CalcTextSizeA(hintSize, FLT_MAX, 0.0f, hint).x;
@@ -1511,7 +1579,7 @@ void Overlay::drawHome() {
                         ImGui::Dummy(ImVec2(0.0f, em(0.3f)));
                         ImGui::PushStyleColor(ImGuiCol_Text, palette::kGold);
                         ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.15f);
-                        ImGui::TextUnformatted(line.text.c_str());
+                        ImGui::TextUnformatted(L(line.text.c_str()));
                         ImGui::PopFont();
                         ImGui::PopStyleColor();
                         if (!line.date.empty()) {
@@ -1522,7 +1590,7 @@ void Overlay::drawHome() {
                         }
                     } else if (line.kind == ChangeLine::Section) {
                         ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(186, 204, 255, 255));
-                        ImGui::TextUnformatted(line.text.c_str());
+                        ImGui::TextUnformatted(L(line.text.c_str()));
                         ImGui::PopStyleColor();
                     } else {
                         ImGui::Bullet();
@@ -1587,32 +1655,32 @@ void Overlay::drawHome() {
         y += em(0.7f);
         const float subSize = em(0.95f);
         trackedText(list, ImVec2(top.x, y), subSize, em(0.28f), IM_COL32(186, 204, 255, 255), IM_COL32(186, 204, 255, 255),
-                    "STEAM DECK EDITION", fade);
+                    L("STEAM DECK EDITION"), fade);
         ImGui::Dummy(ImVec2(column, (y + subSize - top.y) + em(1.8f)));
 
         // The buttons.
         const ImVec2 buttonSize(column, em(3.1f));
         ImGui::BeginDisabled(working);
-        if (homeButton("##play", "Play", buttonSize, !working, fade, 0))
+        if (homeButton("##play", L("Play"), buttonSize, !working, fade, 0))
             closeHome();
         ImGui::SetItemDefaultFocus();
         ImGui::EndDisabled();
 
-        std::string label = "Update";
+        std::string label = L("Update");
         if (update.state == State::Available)
-            label = "Update to " + update.version;
+            label = Lf("Update to %s", update.version.c_str());
         else if (update.state == State::UpToDate)
-            label = "Up to date";
+            label = L("Up to date");
         else if (update.state == State::Checking)
-            label = "Checking for updates...";
+            label = L("Checking for updates...");
         else if (update.state == State::Offline)
-            label = "Cannot check for updates";
+            label = L("Cannot check for updates");
         else if (working)
-            label = "Updating...";
+            label = L("Updating...");
         else if (update.state == State::Failed)
-            label = "Update failed: try again";
+            label = L("Update failed: try again");
         else if (update.state == State::Done)
-            label = "Restart to finish";
+            label = L("Restart to finish");
         const bool canUpdate = static_cast<bool>(m_host.startUpdate) &&
                                (update.state == State::Available || update.state == State::Failed);
         const int adornment = (update.state == State::Checking || working) ? 1 : update.state == State::Available ? 2 : 0;
@@ -1624,12 +1692,12 @@ void Overlay::drawHome() {
 
         // Options: the settings window, over the home screen. Back returns here.
         ImGui::BeginDisabled(working);
-        if (homeButton("##options", "Options", buttonSize, !working, fade, 0))
+        if (homeButton("##options", L("Options"), buttonSize, !working, fade, 0))
             openSettings(SettingsPage::Display);
         ImGui::EndDisabled();
 
         ImGui::BeginDisabled(working);
-        if (homeButton("##quit", "Quit", buttonSize, !working, fade, 0)) {
+        if (homeButton("##quit", L("Quit"), buttonSize, !working, fade, 0)) {
             SDL_Event quit{};
             quit.type = SDL_EVENT_QUIT;
             SDL_PushEvent(&quit);
@@ -1658,7 +1726,7 @@ void Overlay::drawHome() {
             }
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + column);
             ImGui::PushStyleColor(ImGuiCol_Text, update.state == State::Failed ? palette::kBad : palette::kText);
-            ImGui::TextUnformatted(update.text.c_str());
+            ImGui::TextUnformatted(updateText(update.text).c_str());
             ImGui::PopStyleColor();
             ImGui::PopTextWrapPos();
         }
@@ -1703,8 +1771,8 @@ void Overlay::drawCapturePrompt() {
             ImGui::SameLine(0.0f, em(1.0f));
             ImGui::BeginGroup();
             ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.2f);
-            ImGui::Text("Press %s for %s", m_capture.keyboard ? "a key" : "a button",
-                        gfx::padInputName(m_capture.input));
+            ImGui::Text(L("Press %s for %s"), L(m_capture.keyboard ? "a key" : "a button"),
+                        L(gfx::padInputName(m_capture.input)));
             ImGui::PopFont();
             if (m_capture.keyboard) {
                 // Wrapped, so the prompt keeps a reading width at any menu size.
@@ -1732,7 +1800,7 @@ void Overlay::drawCapturePrompt() {
                 m_capture.active = false;
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel"))
+            if (ImGui::Button(L("Cancel")))
                 m_capture.active = false;
         }
         ImGui::EndPopup();
@@ -1853,11 +1921,11 @@ void Overlay::drawPauseBanner() {
         ImGui::SameLine(0.0f, em(0.8f));
         ImGui::BeginGroup();
         ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.35f);
-        ImGui::TextUnformatted("Paused");
+        ImGui::TextUnformatted(L("Paused"));
         ImGui::PopFont();
-        mutedText("%s", background && !m_userPaused ? "Until the game's window is active again"
-                        : padInUse()                ? "Open the menu: Game > Pause in the top bar resumes"
-                                                    : "Press F2 to resume");
+        mutedText("%s", L(background && !m_userPaused ? "Until the game's window is active again"
+                          : padInUse()                ? "Open the menu: Game > Pause in the top bar resumes"
+                                                      : "Press F2 to resume"));
         ImGui::EndGroup();
         drawIconBeside(room, Icon::Pause, palette::kGold);
     }
@@ -2011,7 +2079,7 @@ void Overlay::collectSavedScreenshots() {
     }
     for (const auto &[ok, path] : saved) {
         if (ok)
-            notify("Screenshot saved: " + std::filesystem::path(path).filename().string(), Icon::Camera);
+            notify(Lf("Screenshot saved: %s", std::filesystem::path(path).filename().string().c_str()), Icon::Camera);
         else
             notify("The screenshot could not be saved", Icon::Warning);
     }

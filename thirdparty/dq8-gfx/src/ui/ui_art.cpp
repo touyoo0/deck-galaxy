@@ -25,6 +25,8 @@ extern const unsigned char kHomeLogoData[];
 extern const unsigned int kHomeLogoData_size;
 extern const unsigned char kHomeChangesData[];
 extern const unsigned int kHomeChangesData_size;
+extern const unsigned char kHomeChangesFr[], kHomeChangesDe[], kHomeChangesEs[], kHomeChangesIt[];
+extern const unsigned int kHomeChangesFr_size, kHomeChangesDe_size, kHomeChangesEs_size, kHomeChangesIt_size;
 
 namespace dq8::ui {
 
@@ -92,6 +94,16 @@ bool fileTexture(const char *path, ImTextureRef &texture, ImVec2 &size) {
 const char *homeChangelog(unsigned int &size) {
     size = kHomeChangesData_size;
     return reinterpret_cast<const char *>(kHomeChangesData);
+}
+
+const char *homeChangelogIn(int language, unsigned int &size) {
+    switch (language) {
+    case 1: size = kHomeChangesFr_size; return reinterpret_cast<const char *>(kHomeChangesFr);
+    case 2: size = kHomeChangesDe_size; return reinterpret_cast<const char *>(kHomeChangesDe);
+    case 3: size = kHomeChangesEs_size; return reinterpret_cast<const char *>(kHomeChangesEs);
+    case 4: size = kHomeChangesIt_size; return reinterpret_cast<const char *>(kHomeChangesIt);
+    default: return homeChangelog(size);
+    }
 }
 
 bool homeArt(HomePicture which, ImTextureRef &texture, ImVec2 &size) {

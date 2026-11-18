@@ -1,6 +1,7 @@
 #include "ui/ui_widgets.h"
 
 #include "ui/ui_style.h"
+#include "ui/ui_text.h"
 
 #include <algorithm>
 #include <cctype>
@@ -105,7 +106,7 @@ bool segmented(const char *id, int *value, const char *const *labels, int count,
         }
         const ImU32 color = chosen ? palette::kGold : usable ? palette::kText : withAlpha(palette::kTextMuted, 0.6f);
         list->PushClipRect(min, max, true);
-        centeredText(list, min, max, ImGui::GetColorU32(color), labels[index]);
+        centeredText(list, min, max, ImGui::GetColorU32(color), L(labels[index]));
         list->PopClipRect();
     }
     ImGui::SetCursorScreenPos(pos);
@@ -114,10 +115,27 @@ bool segmented(const char *id, int *value, const char *const *labels, int count,
     return changed;
 }
 
+// Capitals for a title, accented Latin letters included (UTF-8: "\xC3\xA9" is e acute).
+static std::string upperCase(const std::string &text) {
+    std::string upper;
+    upper.reserve(text.size());
+    for (size_t at = 0; at < text.size(); ++at) {
+        const unsigned char letter = static_cast<unsigned char>(text[at]);
+        if (letter == 0xC3 && at + 1u < text.size()) {
+            const unsigned char next = static_cast<unsigned char>(text[at + 1u]);
+            upper += static_cast<char>(letter);
+            // a grave to o diaeresis, and o slash to thorn: 0x20 below their capitals
+            upper += static_cast<char>((next >= 0xA0 && next <= 0xBE && next != 0xB7) ? next - 0x20 : next);
+            ++at;
+        } else {
+            upper += static_cast<char>(std::toupper(letter));
+        }
+    }
+    return upper;
+}
+
 void sectionHeader(const char *title) {
-    std::string upper(title);
-    std::transform(upper.begin(), upper.end(), upper.begin(),
-                   [](unsigned char letter) { return static_cast<char>(std::toupper(letter)); });
+    const std::string upper = upperCase(L(title));
     ImGui::Dummy(ImVec2(0.0f, em(0.3f)));
     const float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
     ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 0.82f);
@@ -146,16 +164,16 @@ void settingRow(const char *label, const char *help, const char *chipText) {
     ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetFrameHeight() + em(0.35f));
     ImGui::TableNextColumn();
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(label);
+    ImGui::TextUnformatted(L(label));
     if (chipText) {
         ImGui::SameLine(0.0f, em(0.5f));
-        chip(chipText, palette::kWarn);
+        chip(L(chipText), palette::kWarn);
     }
     if (help) {
         ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 0.84f);
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(palette::kTextMuted));
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextUnformatted(help);
+        ImGui::TextUnformatted(L(help));
         ImGui::PopTextWrapPos();
         ImGui::PopStyleColor();
         ImGui::PopFont();
@@ -187,8 +205,9 @@ bool navItem(const char *label, Icon kind, bool selected) {
         drawCursor(list, ImVec2(pos.x + em(1.05f), y), em(0.62f));
     const ImU32 color = selected || hovered ? palette::kText : palette::kTextMuted;
     drawIcon(list, kind, ImVec2(pos.x + em(2.05f), y), em(1.1f), selected ? palette::kGold : color);
-    const ImVec2 text = ImGui::CalcTextSize(label);
-    list->AddText(ImVec2(pos.x + em(3.0f), std::floor(y - text.y * 0.5f)), color, label);
+    const char *shown = L(label);
+    const ImVec2 text = ImGui::CalcTextSize(shown);
+    list->AddText(ImVec2(pos.x + em(3.0f), std::floor(y - text.y * 0.5f)), color, shown);
     return pressed;
 }
 
@@ -206,7 +225,7 @@ void menuCursor(ImDrawList *list, ImVec2 windowMin, ImVec2 windowSize) {
 } // namespace
 
 bool menuItem(const char *label, const char *shortcut, bool selected, bool enabled) {
-    const bool pressed = ImGui::MenuItem(label, shortcut, selected, enabled);
+    const bool pressed = ImGui::MenuItem(L(label), shortcut, selected, enabled);
     if (enabled && (ImGui::IsItemHovered() || ImGui::IsItemFocused()))
         menuCursor(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(), ImGui::GetWindowSize());
     return pressed;
@@ -216,7 +235,7 @@ bool beginSubmenu(const char *label) {
     // Taken first: once the submenu is open, it is the current window.
     ImDrawList *list = ImGui::GetWindowDrawList();
     const ImVec2 windowMin = ImGui::GetWindowPos(), windowSize = ImGui::GetWindowSize();
-    const bool open = ImGui::BeginMenu(label);
+    const bool open = ImGui::BeginMenu(L(label));
     if (open || ImGui::IsItemHovered() || ImGui::IsItemFocused())
         menuCursor(list, windowMin, windowSize);
     return open;
@@ -225,7 +244,8 @@ bool beginSubmenu(const char *label) {
 bool iconButton(const char *label, Icon kind, bool primary) {
     const float iconSize = em(0.95f);
     const ImVec2 padding = ImGui::GetStyle().FramePadding;
-    const ImVec2 text = ImGui::CalcTextSize(label);
+    const char *shown = L(label);
+    const ImVec2 text = ImGui::CalcTextSize(shown);
     const ImVec2 size(padding.x * 2.0f + iconSize + em(0.45f) + text.x, ImGui::GetFrameHeight());
     if (primary) {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.96f, 0.80f, 0.32f, 0.88f));
@@ -242,7 +262,7 @@ bool iconButton(const char *label, Icon kind, bool primary) {
     ImDrawList *list = ImGui::GetWindowDrawList();
     drawIcon(list, kind, ImVec2(pos.x + padding.x + iconSize * 0.5f, pos.y + size.y * 0.5f), iconSize, color);
     list->AddText(ImVec2(pos.x + padding.x + iconSize + em(0.45f), std::floor(pos.y + (size.y - text.y) * 0.5f)),
-                  color, label);
+                  color, shown);
     return pressed;
 }
 
@@ -289,7 +309,7 @@ void chip(const char *text, ImU32 color) {
 void mutedText(const char *format, ...) {
     va_list args;
     va_start(args, format);
-    ImGui::TextDisabledV(format, args);
+    ImGui::TextDisabledV(L(format), args);
     va_end(args);
 }
 
