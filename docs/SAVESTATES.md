@@ -7,10 +7,13 @@ saves; they do not replace them.
 
 ## Using them
 
-| | Keyboard | Controller (Steam Deck) |
-|---|---|---|
-| Save | F2 | Back (View) + R1 |
-| Load | F3 | Back (View) + L1 |
+| | Keyboard |
+|---|---|
+| Save | F2 |
+| Load | F3 |
+
+On a controller there is no button combination: open the F1 menu (View +
+Menu on a Steam Deck), then **Save states > Save** or **Load**.
 
 Each opens a window with the five slots, each with a picture of the game and
 the time it was saved (or "empty"): **nothing is saved or loaded until you

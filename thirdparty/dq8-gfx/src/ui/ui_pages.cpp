@@ -864,13 +864,6 @@ void Overlay::drawShortcuts() {
             shortcutRow(kBack, 1, "Back, in the menu");
             shortcutRow(kTop, 1, "To the top bar and back");
             shortcutRow(kClear, 1, "Clear a binding (Controls)");
-            // The save states' combos, with Back held (Steam Deck fork: added).
-            if (m_host.saveSlots) {
-                const char *const back = m_host.steamDeck ? "View" : "Back";
-                const char *const saveKeys[] = {back, "R1"}, *const loadKeys[] = {back, "L1"};
-                shortcutRow(saveKeys, 2, "Save");
-                shortcutRow(loadKeys, 2, "Load");
-            }
             ImGui::EndTable();
         }
     }

@@ -538,8 +538,7 @@ std::atomic<unsigned> g_f10Presses{0u};
 std::atomic<unsigned> g_f7Presses{0u};
 // F6 turns the free camera on or off.
 std::atomic<unsigned> g_f6Presses{0u};
-// The save states' slot window for a save (F2, or Back + R1 on a controller)
-// and for a load (F3, or Back + L1).
+// The save states' slot window for a save (F2) and for a load (F3).
 std::atomic<unsigned> g_savePresses{0u};
 std::atomic<unsigned> g_loadPresses{0u};
 
@@ -595,27 +594,6 @@ bool SDLCALL countMarkKeys(void *, SDL_Event *event)
             // Not while the menu waits for a key to bind, which F6 is not
             // (ui_overlay.cpp's reservedKey).
             g_f6Presses.fetch_add(1u, std::memory_order_relaxed);
-        }
-    }
-    else if (event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && !(g_menu && g_menu->capturingBinding()))
-    {
-        // Back held: R1 saves, L1 loads, left and right pick the slot. The
-        // game sees the button too (Select and a shoulder), which it does not
-        // use together.
-        SDL_Gamepad *pad = SDL_GetGamepadFromID(event->gbutton.which);
-        if (pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_BACK))
-        {
-            switch (event->gbutton.button)
-            {
-            case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
-                g_savePresses.fetch_add(1u, std::memory_order_relaxed);
-                break;
-            case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
-                g_loadPresses.fetch_add(1u, std::memory_order_relaxed);
-                break;
-            default:
-                break;
-            }
         }
     }
     return true;

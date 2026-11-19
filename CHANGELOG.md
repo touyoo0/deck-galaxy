@@ -6,7 +6,8 @@
 
 - Save states: five slots that hold the whole game at one moment, loaded at
   once, in the same run or after closing the game. F2 opens the slots to save
-  into and F3 the slots to load from (Back + R1 and Back + L1 on a controller):
+  into and F3 the slots to load from (the menu's Save states has them too, for
+  a controller):
   nothing is saved or loaded until you pick a slot, each with a picture of the
   game and the time, and a used slot asks before it is overwritten. The menu's
   new Save states has the same two entries. A state takes about 10 MB on disk.
