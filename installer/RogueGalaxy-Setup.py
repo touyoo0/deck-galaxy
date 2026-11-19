@@ -482,8 +482,8 @@ def steam_userdata() -> Path:
     return Path(os.environ.get("RG_STEAM_USERDATA") or Path.home() / ".local/share/Steam/userdata")
 
 
-def steam_shortcuts(script: Path) -> list[tuple[Path, int]]:
-    """(an account's config folder, the shortcut's number) for each Steam shortcut that starts this script."""
+def steam_shortcuts(script: Path) -> list[tuple[Path, int, str]]:
+    """(an account's config folder, the shortcut's number, its name) for each Steam shortcut that starts this script."""
     found = []
     for vdf in steam_userdata().glob("*/config/shortcuts.vdf"):
         try:
@@ -493,12 +493,14 @@ def steam_shortcuts(script: Path) -> list[tuple[Path, int]]:
         # Each entry starts with its number (appid); its Exe comes before the next entry's.
         for part in re.split(rb"\x02appid\x00", data)[1:]:
             match = re.search(rb"\x01[Ee]xe\x00(.*?)\x00", part)
+            named = re.search(rb"\x01[Aa]pp[Nn]ame\x00(.*?)\x00", part)
             if len(part) < 4 or not match:
                 continue
             exe = Path(match.group(1).decode(errors="replace").strip('"'))
             try:
                 if exe.exists() and script.exists() and os.path.samefile(exe, script):
-                    found.append((vdf.parent, struct.unpack("<I", part[:4])[0]))
+                    found.append((vdf.parent, struct.unpack("<I", part[:4])[0],
+                                  named.group(1).decode(errors="replace") if named else "Rogue Galaxy"))
             except OSError:
                 continue
     return found
@@ -522,6 +524,66 @@ def put_steam_art(art: Path, config: Path, appid: int) -> int:
             shutil.copyfile(origin, grid / f"{name}{suffix}")
             copied += 1
     return copied
+
+
+# Steam Input: the Deck's back buttons, as keys the game reads (L4 the menu, L5 the pause, R4 quick save,
+# R5 quick load; docs/SAVESTATES.md). Steam names them button_back_left_upper (L4), button_back_left (L5),
+# button_back_right_upper (R4) and button_back_right (R5).
+STEAM_INPUT_KEYS = (("button_back_left_upper", "F1"), ("button_back_left", "F5"),
+                    ("button_back_right_upper", "F2"), ("button_back_right", "F3"))
+STEAM_INPUT_TEMPLATE = "controller_neptune_gamepad_joystick.vdf"  # "Gamepad With Joystick Trackpad"
+
+
+def steam_input_config(template: str) -> str | None:
+    """Steam's own template text with the four keys on the back buttons, or None when it has no such button."""
+    text = template.lstrip("\ufeff")
+    for button, key in STEAM_INPUT_KEYS:
+        text, found = re.subn(
+            r'("%s"\s*\{\s*"activators"\s*\{\s*"Full_Press"\s*\{\s*"bindings"\s*\{)\s*\}' % button,
+            lambda m, key=key: m.group(1) + '\n\t\t\t\t\t\t\t"binding"\t\t"key_press %s, , "\n\t\t\t\t\t\t}' % key,
+            text, count=1)
+        if not found:
+            return None
+    return text.replace('"description" "#Description"', '"description"\t\t"#SettingsController_AutosaveDescription"', 1)
+
+
+def put_steam_input(config: Path, template_dir: Path, name: str) -> bool:
+    """Gives the game's Steam entry a Steam Deck controller layout with the keys above, in the account's
+    Steam Controller Configs folder, as Steam writes a personal layout. A layout already there is the
+    player's: left alone. Returns whether it wrote one."""
+    name = name.lower()  # Steam names the folder after the shortcut, in lower case
+    root = config.parent.parent.parent  # the Steam folder
+    account = config.parent.name
+    base = root / "steamapps" / "common" / "Steam Controller Configs" / account / "config"
+    target = base / name / "controller_neptune.vdf"
+    if target.exists():
+        return False
+    try:
+        template = (template_dir / STEAM_INPUT_TEMPLATE).read_text(encoding="utf-8-sig")
+    except OSError:
+        return False
+    text = steam_input_config(template)
+    if text is None:
+        return False
+    text = text.replace('"title" "#Title"', '"title"\t\t"#Title"', 1)
+    text = text.replace('"controller_type"\t\t"controller_neptune"',
+                        '"progenitor"\t\t"template://%s"\n\t"url"\t\t"autosave://%s"\n'
+                        '\t"export_type"\t\t"unknown"\n\t"controller_type"\t\t"controller_neptune"'
+                        % (STEAM_INPUT_TEMPLATE, target), 1)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+    # Steam keeps which layout a game uses in configset_controller_neptune.vdf.
+    configset = base / "configset_controller_neptune.vdf"
+    try:
+        current = configset.read_text(encoding="utf-8")
+    except OSError:
+        current = '"controller_config"\n{\n}\n'
+    if f'"{name}"' not in current:
+        entry = f'\t"{name}"\n\t{{\n\t\t"autosave"\t\t"1"\n\t}}\n'
+        end = current.rstrip().rfind("}")
+        if end >= 0:
+            configset.write_text(current[:end] + entry + current[end:], encoding="utf-8")
+    return True
 
 
 def looks_like_iso(path: Path) -> str | None:
@@ -942,6 +1004,7 @@ class Job(threading.Thread):
         if self.in_steam(script):
             self.log("The game is already in Steam: not added again.")
             self.steam_art(script, wait=False)
+            self.steam_input(script, wait=False)
             return
         self.say(tr("adding_steam"), 0.98)
         # install.sh wrote the menu entry (named "Rogue Galaxy", with its icon);
@@ -954,6 +1017,7 @@ class Job(threading.Thread):
             return
         self.stream([tool, str(desktop)], self.cfg.dir)
         self.steam_art(script, wait=True)
+        self.steam_input(script, wait=True)
 
     def steam_art(self, script: Path, wait: bool) -> None:
         """The game's pictures in the Steam library (capsule, portrait, hero, logo, icon), like the ones a
@@ -971,9 +1035,26 @@ class Job(threading.Thread):
         if not shortcuts:
             self.log("The game's pictures could not be added to Steam: its shortcut was not found.")
             return
-        copied = sum(put_steam_art(art, config, appid) for config, appid in shortcuts)
+        copied = sum(put_steam_art(art, config, appid) for config, appid, _ in shortcuts)
         self.log(f"Added {copied} pictures to the game's Steam entry." if copied
                  else "The game's Steam entry already has its pictures.")
+
+    def steam_input(self, script: Path, wait: bool) -> None:
+        """The back buttons' keys (L4 menu, L5 pause, R4 quick save, R5 quick load) in the game's Steam entry.
+        Steam rewrites its controller settings when it quits: restart it (game mode does) to see them."""
+        shortcuts = steam_shortcuts(script)
+        for _ in range(15 if wait else 0):
+            if shortcuts:
+                break
+            time.sleep(2)
+            shortcuts = steam_shortcuts(script)
+        if not shortcuts:
+            self.log("The controller layout could not be set: the game's Steam shortcut was not found.")
+            return
+        templates = steam_userdata().parent / "controller_base" / "templates"
+        done = sum(put_steam_input(config, templates, name) for config, _, name in shortcuts)
+        self.log("Set the Steam Deck back buttons: L4 menu, L5 pause, R4 quick save, R5 quick load." if done
+                 else "The game's Steam entry keeps its controller layout.")
 
 
 # ---------------------------------------------------------------- the sky
