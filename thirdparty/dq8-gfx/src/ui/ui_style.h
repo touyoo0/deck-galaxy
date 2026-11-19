@@ -1,6 +1,7 @@
-// The menu's look, kept from DQ8-Recompiled: near-black navy windows edged
-// in white with rounded corners, a white triangle as the cursor, and gold
-// for what is selected or switched on.
+// The menu's look (Rogue Galaxy Steam Deck fork: redesigned): flat, dark,
+// quiet. Near-black panels with a hairline edge and generous rounding, white
+// for what is selected, and one warm accent (kGold, named for what it was)
+// for what is switched on.
 #pragma once
 
 #include <imgui.h>
@@ -8,21 +9,23 @@
 namespace dq8::ui {
 
 namespace palette {
-inline constexpr ImU32 kWindow = IM_COL32(9, 13, 36, 232);
-inline constexpr ImU32 kWindowSolid = IM_COL32(12, 17, 46, 248);
-inline constexpr ImU32 kBorder = IM_COL32(242, 243, 252, 240);
-inline constexpr ImU32 kBorderInner = IM_COL32(255, 255, 255, 46);
-inline constexpr ImU32 kText = IM_COL32(246, 247, 255, 255);
-inline constexpr ImU32 kTextMuted = IM_COL32(158, 168, 204, 255);
-inline constexpr ImU32 kGold = IM_COL32(244, 203, 82, 255);
-inline constexpr ImU32 kGoldSoft = IM_COL32(244, 203, 82, 60);
-inline constexpr ImU32 kSky = IM_COL32(118, 160, 255, 255);
-inline constexpr ImU32 kHover = IM_COL32(110, 140, 255, 52);
-inline constexpr ImU32 kFill = IM_COL32(255, 255, 255, 16);
-inline constexpr ImU32 kFillStrong = IM_COL32(255, 255, 255, 30);
-inline constexpr ImU32 kGood = IM_COL32(112, 222, 142, 255);
-inline constexpr ImU32 kWarn = IM_COL32(246, 182, 64, 255);
-inline constexpr ImU32 kBad = IM_COL32(238, 96, 96, 255);
+inline constexpr ImU32 kWindow = IM_COL32(14, 16, 22, 246);
+inline constexpr ImU32 kWindowSolid = IM_COL32(17, 19, 27, 250);
+inline constexpr ImU32 kBorder = IM_COL32(255, 255, 255, 26);
+inline constexpr ImU32 kBorderInner = IM_COL32(255, 255, 255, 0);
+inline constexpr ImU32 kText = IM_COL32(244, 246, 250, 255);
+inline constexpr ImU32 kTextMuted = IM_COL32(139, 147, 166, 255);
+inline constexpr ImU32 kGold = IM_COL32(255, 189, 89, 255);
+inline constexpr ImU32 kGoldSoft = IM_COL32(255, 189, 89, 48);
+inline constexpr ImU32 kSky = IM_COL32(124, 168, 255, 255);
+inline constexpr ImU32 kHover = IM_COL32(255, 255, 255, 16);
+inline constexpr ImU32 kFill = IM_COL32(255, 255, 255, 14);
+inline constexpr ImU32 kFillStrong = IM_COL32(255, 255, 255, 28);
+inline constexpr ImU32 kInk = IM_COL32(16, 18, 26, 255); // text on a white plate
+inline constexpr ImU32 kPlate = IM_COL32(244, 246, 250, 255); // the white selection plate
+inline constexpr ImU32 kGood = IM_COL32(104, 214, 142, 255);
+inline constexpr ImU32 kWarn = IM_COL32(255, 189, 89, 255);
+inline constexpr ImU32 kBad = IM_COL32(244, 106, 106, 255);
 } // namespace palette
 
 inline ImU32 withAlpha(ImU32 color, float alpha) {
@@ -35,14 +38,13 @@ ImFont *loadFonts();
 // Rebuilds the style at a scale: the display's own times the player's choice.
 void applyStyle(float scale);
 
-// The white double edge of a menu window, drawn over a window's own
+// The soft shadow and hairline of a menu window, drawn over a window's own
 // background. Call right after Begin().
 void decorateWindow(float alpha = 1.0f);
 void drawFrame(ImDrawList *list, ImVec2 min, ImVec2 max, float rounding, float alpha = 1.0f);
 // A soft shadow under a floating window, so it reads over a busy picture.
 void drawShadow(ImDrawList *list, ImVec2 min, ImVec2 max, float rounding, float alpha = 1.0f);
-// The cursor: a white triangle pointing right with its tip at `tip`, nudged
-// back and forth the way the game's own cursor bobs.
+// The marker beside an entry: a small accent bar ending at `tip`.
 void drawCursor(ImDrawList *list, ImVec2 tip, float size, float alpha = 1.0f);
 
 // Heights scale with the font: one "unit" is the current font size.

@@ -89,18 +89,18 @@ bool closeButtonBeside(const char *id, float lineTop, float middle) {
 void dialogHeader(Icon kind, const char *title, bool *open) {
     const IconRoom room = iconRoom(em(1.4f));
     ImGui::SameLine(0.0f, em(0.6f));
-    ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.3f);
+    ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.25f);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(L(title));
     ImGui::PopFont();
-    drawIconBeside(room, kind, palette::kGold);
+    drawIconBeside(room, kind, palette::kTextMuted);
     if (open && closeButtonBeside("##close", room.pos.y, lastItemMiddle()))
         *open = false;
     const ImVec2 at = ImGui::GetCursorScreenPos();
     ImGui::GetWindowDrawList()->AddLine(ImVec2(at.x, at.y + em(0.15f)),
                                         ImVec2(at.x + ImGui::GetContentRegionAvail().x, at.y + em(0.15f)),
-                                        withAlpha(palette::kGold, 0.35f), 1.0f);
-    ImGui::Dummy(ImVec2(0.0f, em(0.5f)));
+                                        IM_COL32(255, 255, 255, 20), 1.0f);
+    ImGui::Dummy(ImVec2(0.0f, em(0.6f)));
 }
 
 void centerNextWindow() {
@@ -154,11 +154,11 @@ void Overlay::drawSettingsWindow() {
         ImGui::SetNextWindowFocus();
         m_focusSettings = false;
     }
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(1.2f), em(1.0f)));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(1.5f), em(1.2f)));
     // Over the home screen's picture and notes: more opaque, to read.
     const bool opaque = m_homeOpen;
     if (opaque)
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(9, 13, 36, 250));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(17, 19, 27, 255));
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
                                    ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                                    ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
@@ -173,7 +173,7 @@ void Overlay::drawSettingsWindow() {
         // the cursor stays in one until Right or A takes it into the page, and
         // Left at the page's edge or Back brings it out. Moving along the
         // list shows each page.
-        const float navWidth = em(12.5f);
+        const float navWidth = em(12.0f);
         ImGui::BeginChild("##nav", ImVec2(navWidth, -hints), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
         m_listPane = ImGui::GetCurrentWindow();
         const bool inList = g.NavWindow == m_listPane;
@@ -219,8 +219,8 @@ void Overlay::drawSettingsWindow() {
         const ImVec2 rule = ImGui::GetCursorScreenPos();
         ImGui::GetWindowDrawList()->AddLine(ImVec2(rule.x, rule.y),
                                             ImVec2(rule.x, rule.y + ImGui::GetContentRegionAvail().y - hints),
-                                            IM_COL32(255, 255, 255, 34), 1.0f);
-        ImGui::SetCursorScreenPos(ImVec2(rule.x + em(0.9f), rule.y));
+                                            IM_COL32(255, 255, 255, 18), 1.0f);
+        ImGui::SetCursorScreenPos(ImVec2(rule.x + em(1.2f), rule.y));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         // One window a page, so each keeps its own scroll and cursor.
         ImGui::PushID(static_cast<int>(m_page));
@@ -319,7 +319,7 @@ void Overlay::drawPadHints(float height) {
     ImDrawList *list = ImGui::GetWindowDrawList();
     const ImVec2 at = ImGui::GetCursorScreenPos();
     const float right = at.x + ImGui::GetContentRegionAvail().x;
-    list->AddLine(ImVec2(at.x, at.y), ImVec2(right, at.y), IM_COL32(255, 255, 255, 34), 1.0f);
+    list->AddLine(ImVec2(at.x, at.y), ImVec2(right, at.y), IM_COL32(255, 255, 255, 18), 1.0f);
     const float chip = std::floor(ImGui::GetFrameHeight() * 0.8f);
     // A clear gap under the rule; what is left goes below the buttons.
     const float y = std::floor(at.y + em(0.8f));
@@ -359,7 +359,7 @@ void Overlay::drawDisplayPage() {
             m_pendingScale == 0u ? std::string() : "   " + L(std::string(pausing() ? "when the game resumes" : "applying..."));
         std::snprintf(preview, sizeof(preview), "%u%s   %u %s %u%s", shown, kTimes, 512u * shown, kTimes, 448u * shown,
                       waiting.c_str());
-        if (ImGui::BeginCombo("##scale", preview)) {
+        if (beginCombo("##scale", preview)) {
             for (uint32_t scale = 1u; scale <= 2u; ++scale) {
                 char item[64];
                 std::snprintf(item, sizeof(item), "%u%s   %u %s %u%s", scale, kTimes, 512u * scale, kTimes,
@@ -394,7 +394,7 @@ void Overlay::drawSoundPage() {
     sectionHeader("Volume");
     if (beginSettings("sound")) {
         settingRow("Master volume");
-        if (ImGui::SliderInt("##volume", &m_settings.volume, 0, 100, "%d%%")) {
+        if (sliderInt("##volume", &m_settings.volume, 0, 100, "%d%%")) {
             applyVolume();
             markDirty();
         }
@@ -418,7 +418,7 @@ void Overlay::drawInterfacePage() {
         // would move the slider away from it.
         if (!ImGui::IsAnyItemActive() || m_uiScaleEdit == 0)
             m_uiScaleEdit = m_settings.uiScale;
-        ImGui::SliderInt("##uiscale", &m_uiScaleEdit, 75, 200, "%d%%");
+        sliderInt("##uiscale", &m_uiScaleEdit, 75, 200, "%d%%");
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             m_settings.uiScale = m_uiScaleEdit;
             markDirty();
@@ -428,7 +428,7 @@ void Overlay::drawInterfacePage() {
             markDirty();
         settingRow("Menu language", "The language of this menu and of the home screen. It starts as the Steam "
                                     "Deck's own.");
-        if (ImGui::BeginCombo("##menulanguage", kMenuLanguageNames[menuLanguageIndex()])) {
+        if (beginCombo("##menulanguage", kMenuLanguageNames[menuLanguageIndex()])) {
             for (int language = 0; language < kMenuLanguageCount; ++language)
                 if (ImGui::Selectable(kMenuLanguageNames[language], menuLanguageIndex() == language))
                     setMenuLanguageChoice(kMenuLanguageCodes[language]);
@@ -581,7 +581,7 @@ void Overlay::drawGameControl(const GameOption &option) {
             multiplierText(value, text, sizeof(text));
             format = text;
         }
-        ImGui::SliderInt("##value", &next, option.minimum, option.maximum, format,
+        sliderInt("##value", &next, option.minimum, option.maximum, format,
                          multiplier ? ImGuiSliderFlags_NoInput : ImGuiSliderFlags_None);
         ImGui::SameLine();
         if (ImGui::Button("+", ImVec2(button, 0.0f)))
@@ -622,7 +622,7 @@ void Overlay::drawControlsPage() {
     sectionHeader("Buttons");
     {
         const float width = ImGui::GetContentRegionAvail().x;
-        const ImVec2 size(std::min(width * 0.56f, em(16.0f)), std::min(width * 0.56f, em(16.0f)) * 0.62f);
+        const ImVec2 size(std::min(width * 0.64f, em(21.0f)), std::min(width * 0.64f, em(21.0f)) * 0.43f);
         const ImVec2 at = ImGui::GetCursorScreenPos();
         ImGui::Dummy(size);
         drawPadDiagram(ImGui::GetWindowDrawList(), at, size, m_backend.padInput().preview(), m_hoveredInput);
@@ -650,13 +650,13 @@ void Overlay::drawControlsPage() {
         bool changed = false;
         settingRow("Dead zone", "Ignores the small drift of a worn stick.");
         float deadZone = config.stickDeadZone * 100.0f;
-        if (ImGui::SliderFloat("##deadzone", &deadZone, 0.0f, 40.0f, "%.0f%%")) {
+        if (sliderFloat("##deadzone", &deadZone, 0.0f, 40.0f, "%.0f%%")) {
             config.stickDeadZone = deadZone / 100.0f;
             changed = true;
         }
         settingRow("Trigger threshold", "How far L2 and R2 travel before they count as pressed.");
         float threshold = config.triggerThreshold * 100.0f;
-        if (ImGui::SliderFloat("##trigger", &threshold, 5.0f, 90.0f, "%.0f%%")) {
+        if (sliderFloat("##trigger", &threshold, 5.0f, 90.0f, "%.0f%%")) {
             config.triggerThreshold = threshold / 100.0f;
             changed = true;
         }
@@ -1023,6 +1023,32 @@ void Overlay::drawAchievementsPage() {
     const ImVec4 good = ImGui::ColorConvertU32ToFloat4(palette::kGood);
     const ImVec4 bad = ImGui::ColorConvertU32ToFloat4(palette::kBad);
 
+    // First the switch, alone while it is off. Turned on, a player not yet
+    // signed in gets the sign-in fields, and one signed in gets the account and
+    // the list. Its switch before its name, and its help across the whole width
+    // (the settings table keeps a help in the name's column).
+    const auto option = std::find_if(m_host.gameOptions.begin(), m_host.gameOptions.end(),
+                                     [](const GameOption &candidate) { return candidate.key == "achievements"; });
+    if (option == m_host.gameOptions.end())
+        return;
+    ImGui::Dummy(ImVec2(0.0f, em(0.3f)));
+    ImGui::AlignTextToFramePadding();
+    drawGameControl(*option);
+    ImGui::SameLine(0.0f, em(0.8f));
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(L(option->label.c_str()));
+    if (!option->help.empty()) {
+        ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 0.84f);
+        ImGui::PushStyleColor(ImGuiCol_Text, muted);
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextUnformatted(L(option->help.c_str()));
+        ImGui::PopTextWrapPos();
+        ImGui::PopStyleColor();
+        ImGui::PopFont();
+    }
+    if (!gameOption(*option))
+        return;
+
     sectionHeader("RetroAchievements account");
     ImGui::PushTextWrapPos(0.0f);
     if (account.signedIn) {
@@ -1037,7 +1063,7 @@ void Overlay::drawAchievementsPage() {
                                  ImGuiInputTextFlags_Password);
         const bool ready = !account.busy && m_raUser[0] != '\0' && m_raPassword[0] != '\0';
         ImGui::BeginDisabled(!ready);
-        if (ImGui::Button(L("Sign in")) && m_host.achievementSignIn) {
+        if (iconButton("Sign in", Icon::Check, true) && m_host.achievementSignIn) {
             m_host.achievementSignIn(m_raUser, m_raPassword);
             std::memset(m_raPassword, 0, sizeof m_raPassword); // kept nowhere
         }
@@ -1049,28 +1075,8 @@ void Overlay::drawAchievementsPage() {
         mutedText("The password is sent once to retroachievements.org and never kept; only a connection token "
                   "is, on this machine.");
     ImGui::PopTextWrapPos();
-
-    // The option on one line, its switch before its name, and its help across the
-    // whole width (the settings table keeps a help in the name's column).
-    const auto option = std::find_if(m_host.gameOptions.begin(), m_host.gameOptions.end(),
-                                     [](const GameOption &candidate) { return candidate.key == "achievements"; });
-    if (option != m_host.gameOptions.end()) {
-        sectionHeader("Tracking");
-        ImGui::AlignTextToFramePadding();
-        drawGameControl(*option);
-        ImGui::SameLine(0.0f, em(0.8f));
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(L(option->label.c_str()));
-        if (!option->help.empty()) {
-            ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 0.84f);
-            ImGui::PushStyleColor(ImGuiCol_Text, muted);
-            ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextUnformatted(L(option->help.c_str()));
-            ImGui::PopTextWrapPos();
-            ImGui::PopStyleColor();
-            ImGui::PopFont();
-        }
-    }
+    if (!account.signedIn)
+        return;
 
     const AchievementList list = m_host.achievements ? m_host.achievements() : AchievementList{};
     sectionHeader("Achievements");

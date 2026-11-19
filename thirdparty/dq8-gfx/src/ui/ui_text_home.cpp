@@ -34,6 +34,7 @@ const TextEntry kTextsHome[] = {
      "Su / Giù: scorri    A: aggiorna    Sinistra: indietro"},
     {"Version %s is available", "La version %s est disponible", "Version %s ist verfügbar",
      "La versión %s está disponible", "La versione %s è disponibile"},
+    {"Right: update", "Droite : mise à jour", "Rechts: Update", "Derecha: actualizar", "Destra: aggiorna"},
     {"Right: read", "Droite : lire", "Rechts: lesen", "Derecha: leer", "Destra: leggi"},
 
     // the release notes' headings
