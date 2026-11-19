@@ -77,7 +77,7 @@ python3 setup.py extract-european --iso /path/to/european.iso
 ```
 
 It builds the four languages' texts, about 320 MB, into `disc/EU`. Pick the
-language in [F1 > Settings > Language > Text](OPTIONS.md#language). The voices
+language in [F1 > Language > Game language](OPTIONS.md#language). The voices
 stay as they are. It is experimental: report problems with a screenshot and
 `build/last-run.log`.
 

@@ -1,4 +1,4 @@
-// Rogue Galaxy Recompiled: boots the recompiled SCUS_974.90 on the PS2Recomp
+// Deck Galaxy: boots the recompiled SCUS_974.90 on the PS2Recomp
 // runtime.
 //
 //   roguegalaxy [path/to/SCUS_974.90]
@@ -125,7 +125,7 @@ int run(int argc, char **argv)
 
     PS2Runtime runtime;
     rg::graphics::Setup graphics(runtime);
-    if (!runtime.initialize("Rogue Galaxy Recompiled " RG_APP_VERSION))
+    if (!runtime.initialize("Deck Galaxy " RG_APP_VERSION))
     {
         std::fprintf(stderr, "[rg] PS2Runtime::initialize() failed\n");
         return 1;

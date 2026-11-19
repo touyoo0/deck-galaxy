@@ -152,7 +152,7 @@ lists in `src/settings_pages.cpp` puts the option there too:
 - The label is in Title Case, short, and says "(Next Start)" for a
   `restart` option.
 - `kLocal` names it in French, German, Spanish and Italian, for the text's
-  language (Language > Text): the European release's words where it has
+  language (Language > Game language): the European release's words where it has
   them, its accent tags (`<'e>`), and no longer than "Bag Page 7 (Next
   Start)" with the value. A row it lacks shows the English label.
 - A number's range, step, default and the way it reads (1.0x for `kTimes`)

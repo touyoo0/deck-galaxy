@@ -14,6 +14,12 @@
 
 ### Changed
 
+- The menu has no bar along the top any more: everything is in the window in
+  the middle of the screen, a new Save states page (the five slots to save into and the five to load from, side by side), an Actions page (pause, fast-forward, mute,
+  screenshots, fullscreen, renderer statistics) and a Help page
+  (shortcuts, project page, report a problem, About) joining the list of pages,
+  all reachable with the controller. F1 opens that window, and Y no longer
+  goes to a bar.
 - The pause is on F5 now (it was F2), to make room for the save states'
   keys.
 - The home screen and the settings are redrawn: flat dark panels with a

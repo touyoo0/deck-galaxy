@@ -84,11 +84,12 @@ void Overlay::runStep(const ScriptStep &step, uint64_t frame) {
     const bool on = first != "off";
     std::fprintf(stderr, "[ui] script frame %llu, %.1f s: %s %s\n", static_cast<unsigned long long>(frame),
                  now() - m_scriptStart, command.c_str(), joined(step.arguments).c_str());
-    static constexpr const char *kPages[] = {"display", "sound", "controls", "game",
-                                             "language", "achievements", "interface"};
-    static constexpr SettingsPage kPageValues[] = {SettingsPage::Display, SettingsPage::Sound, SettingsPage::Controls,
-                                                   SettingsPage::Game, SettingsPage::Language,
-                                                   SettingsPage::Achievements, SettingsPage::Interface};
+    static constexpr const char *kPages[] = {"saves", "actions", "display", "sound", "controls", "game",
+                                             "language", "achievements", "interface", "help"};
+    static constexpr SettingsPage kPageValues[] = {SettingsPage::Saves, SettingsPage::Actions, SettingsPage::Display, SettingsPage::Sound,
+                                                   SettingsPage::Controls, SettingsPage::Game,
+                                                   SettingsPage::Language, SettingsPage::Achievements,
+                                                   SettingsPage::Interface, SettingsPage::Help};
     static constexpr const char *kFilters[] = {"sharp", "smooth"};
     static constexpr gfx::SdlGpuFilter kFilterValues[] = {gfx::SdlGpuFilter::Sharp, gfx::SdlGpuFilter::Smooth};
     SettingsPage page{};
@@ -100,8 +101,6 @@ void Overlay::runStep(const ScriptStep &step, uint64_t frame) {
         setMenuOpen(on);
     } else if (command == "settings" && pick(first, kPages, kPageValues, page)) {
         openSettings(page);
-    } else if (command == "show") {
-        showMenu(joined(step.arguments).c_str());
     } else if (command == "about") {
         openAbout();
     } else if (command == "shortcuts") {

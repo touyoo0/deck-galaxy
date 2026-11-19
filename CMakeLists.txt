@@ -1,4 +1,4 @@
-# Rogue Galaxy Recompiled: the native executable.
+# Deck Galaxy: the native executable.
 #
 # Links the C++ that ps2_recomp generated from your own disc (build/generated/,
 # written by `python setup.py recompile`, never committed) against the

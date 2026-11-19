@@ -1033,36 +1033,36 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
         {"sixty_fps", "60 frames per second",
          "The game runs at 60 frames a second instead of its own 30, its logic still at the PS2's pace; movies "
          "and the loading screen keep 30. Takes effect the next time the game starts.",
-         true, 0, 0, 0, "", 1, true, true},
+         true, 0, 0, 0, "", 1, true, true, "display"},
         {"minimap_size", "Minimap size",
          "The map in the corner while exploring, against the game's size (1.0x); made smaller, it keeps to its "
          "corner. The transporter menu's map stays as it is.",
-         false, 50, 100, 100, kTimes, 5},
+         false, 50, 100, 100, kTimes, 5, true, false, "display"},
         {"compass_size", "Compass size",
          "The compass in the corner while exploring, against the game's size (1.0x); made smaller, it keeps to "
          "its corner.",
-         false, 50, 100, 100, kTimes, 5},
+         false, 50, 100, 100, kTimes, 5, true, false, "display"},
         {"field_of_view", "Field of view",
          "How wide the camera sees while exploring and in battle, in degrees across a 4:3 picture (the game's is "
          "52); a wide picture adds to it. Scenes keep their own camera.",
-         false, 40, 90, 52, "%d degrees", 2},
+         false, 40, 90, 52, "%d degrees", 2, true, false, "display"},
         {"camera_distance", "Camera distance",
          "How far the camera stays from the party, against the game's (1.0x).",
-         false, 70, 160, 100, kTimes, 5},
+         false, 70, 160, 100, kTimes, 5, true, false, "display"},
         {"faster_camera", "Faster camera rotation",
          "The stick turns the camera twice as fast, exploring, in battle and in the first-person view. Otherwise "
          "it turns at the game's speed, at 60 frames a second as at 30.",
-         false},
+         false, 0, 0, 0, "", 1, true, false, "display"},
         {"draw_distance", "Draw distance",
          "How far away the scenery and the objects are still drawn, against the game's (1.0x), the fog thinned "
          "in step. Most of Salgin has no limit to raise; the open areas gain more. Takes effect from the next map loaded.",
-         false, 100, 400, 100, kTimes, 25},
+         false, 100, 400, 100, kTimes, 25, true, false, "display"},
         {"free_camera", "Free camera (F6)",
          "The camera leaves the party, which stands still, and the controller moves it: the left stick moves the "
          "point it looks at (Square held, faster; L2 held, up and down), the right stick turns it around that "
          "point and tilts it (R2 held, nearer and farther). Start or F6 turns it off, as this switch does, to "
          "play again. Off at every start.",
-         false, 0, 0, 0, "", 1, false},
+         false, 0, 0, 0, "", 1, false, false, "display"},
         {"skip_opening", "Skip the opening",
          "At boot, the Sony and Level-5 logos and the opening movie give way to the title screen at once.", false},
         {"instant_loading_recap", "Quick loading recap",
@@ -1087,7 +1087,7 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
         {"check_updates", "Check for new versions",
          "At each start the game asks GitHub for this project's releases (nothing is sent but the request) and, "
          "when a newer one is out, says so and links to it from the menu's About window.",
-         true},
+         true, 0, 0, 0, "", 1, true, false, "interface"},
         {"full_bag_to_storage", "Full bag to storage",
          "An item found when the bag has no room for it (no free space, or as many of that item as the bag "
          "holds) goes to the transporter's item storage, instead of the overflow the game makes you sort out in "
@@ -1142,7 +1142,7 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
          "The ally AI of the Japanese Director's Cut: an ally low on health sometimes falls back to the leader and "
          "guards. Needs your Japanese disc (Install-Undub.bat). Takes effect the next time the game starts.",
          false, 0, 0, 0, "", 1, true, true},
-        {"text_language", "Text",
+        {"text_language", "Game language",
          "The game's text, menus and scenes, in one of the European release's languages. Needs your European disc "
          "(SCES-54552, Install-European.bat); without it the text stays English. The voices stay as they are. "
          "Takes effect the next time the game starts.",
@@ -1338,7 +1338,7 @@ Setup::Setup(PS2Runtime &runtime)
         {
             const auto [width, height] = initialWindowSize(settings);
             std::string windowError;
-            if (sdl->openWindow("Rogue Galaxy Recompiled", width, height, windowError,
+            if (sdl->openWindow("Deck Galaxy", width, height, windowError,
                                 initialWindowPlacement(settings)))
             {
                 runtime.setExternalPresenter(&pump, sdl.get());

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Rogue Galaxy Recompiled on Linux and the Steam Deck: what Install.bat does
+# Deck Galaxy on Linux and the Steam Deck: what Install.bat does
 # on Windows. Builds the game from your own disc image (setup.py install:
 # verify, extract, recompile, build), then adds a menu entry.
 #
@@ -150,7 +150,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -n "$RG_OWN_WINDOW" ]; then
-    printf '%s\n' "Rogue Galaxy Recompiled: building the game from your disc image." \
+    printf '%s\n' "Deck Galaxy: building the game from your disc image." \
         "It takes 10 to 30 minutes and about 20 GB. Keep this window open."
     mkdir -p build && : >"build/own-window.$RG_OWN_WINDOW"
 fi
@@ -335,7 +335,7 @@ cat >"$apps/rogue-galaxy.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Rogue Galaxy
-Comment=Rogue Galaxy Recompiled
+Comment=Deck Galaxy
 Exec="$launcher"
 Path=$folder
 Terminal=false
