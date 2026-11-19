@@ -37,12 +37,24 @@ about 10 MB on disk: zstd-compressed (0.05 s to compress, 0.04 s to
 decompress), written by a thread of its own so the game does not stop for it,
 and waited for when the game quits.
 
+## Continue
+
+Besides the five slots the game keeps one state of its own, `states/auto.rgs`,
+and the home screen offers it as **Continue**, above Play. It is taken when
+the game's window leaves the front (the Steam menu, another window) and when
+the game quits, and replaced each time; there is no toast and no picture. When
+the game cannot take a state at that moment (a movie plays) the old one is
+removed, so Continue never takes you back to a place you had left. Continue
+starts the game and loads that state; Play starts it from the title as before.
+It is only good for the build that took it: after an update it is gone, and
+Continue with it, so a state is never run under other code. The game's own
+saves (the memory card) are untouched by all this.
+
 A state is refused, with a message, **while a movie plays** (the cutscenes and
-the title screen: the video decoder is not part of it), **while a callback, a
+the title screen: the video decoder is not part of it), and **while a callback, a
 DMA transfer or a wait that cannot be rebuilt is in progress** (it tries again
-for five seconds), and when it was saved **in another area of the game** than
-the one running now (the game's code changes with the area: load it from
-there).
+for five seconds). A state loads from any area of the game: the code that goes
+with the area it was saved in is made the running one first.
 
 ## How it works
 
@@ -77,6 +89,12 @@ The thumbnail is a frame the presenter captures when the save is asked
 (`backend.requestCapture`), scaled to 192 pixels wide and written as a BMP
 (`dq8-gfx` reads BMP since this feature). Its name carries a time because the
 menu keeps a file's pixels as long as the process runs.
+
+The pad ports follow the machine as a trailer (which are open, analog or
+digital, pressure, the button mask): the runtime keeps them outside the machine,
+and a game that had not opened a port yet (Continue, from the home screen)
+would read "controller not connected". A state without the trailer loads as
+before.
 
 ## What is not in a state
 

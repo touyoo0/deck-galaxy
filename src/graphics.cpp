@@ -731,6 +731,10 @@ bool pump(void *userData)
                                      rg::mousecamera::inGameMenu(g_runtime->memory().getRDRAM()));
     if (!backend->pumpEvents())
     {
+        // Quitting: the state Continue will load, taken now and waited for, unless
+        // the game has not started (the home screen).
+        if (g_runtime && g_menu && !g_menu->homeOpen())
+            rg::savestate::autoSaveBlocking(*g_runtime, 3000);
         return false;
     }
     {
@@ -954,6 +958,13 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
     };
     host.saveSlotSave = [&runtime, &backend](int slot) { saveWithThumbnail(runtime, backend, slot); };
     host.saveSlotLoad = [&runtime](int slot) { rg::savestate::requestLoad(runtime, slot); };
+    // Continue on the home screen, and the state it loads.
+    host.autoSlot = [] {
+        const rg::savestate::SlotInfo info = rg::savestate::autoSlot();
+        return dq8::ui::HostServices::SaveSlot{info.used, info.when, {}};
+    };
+    host.autoSave = [&runtime] { rg::savestate::requestAutoSave(runtime); };
+    host.continueGame = [&runtime] { rg::savestate::requestAutoLoad(runtime); };
     // RG_MUTE=1 keeps the game silent whatever the menu's volume says.
     const bool mute = env("RG_MUTE", "0") != "0";
     host.setVolume = [mute](float volume) { ps2_native_iop::setVolume(mute ? 0.0f : volume); };
