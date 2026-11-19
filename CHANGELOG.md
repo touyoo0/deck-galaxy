@@ -14,6 +14,8 @@
 
 ### Changed
 
+- The help line under an option in the menu runs across the whole width of the
+  window instead of a narrow column beside the name.
 - The menu has no bar along the top any more: everything is in the window in
   the middle of the screen, a new Save states page (the five slots to save into and the five to load from, side by side), an Actions page (pause, fast-forward, mute,
   screenshots, fullscreen, renderer statistics) and a Help page
