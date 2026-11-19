@@ -46,7 +46,9 @@ the game quits, and replaced each time; there is no toast and no picture. When
 the game cannot take a state at that moment (a movie plays) the old one is
 removed, so Continue never takes you back to a place you had left. Continue
 starts the game and loads that state; Play starts it from the title as before.
-The game's own saves (the memory card) are untouched by all this.
+It is only good for the build that took it: after an update it is gone, and
+Continue with it, so a state is never run under other code. The game's own
+saves (the memory card) are untouched by all this.
 
 A state is refused, with a message, **while a movie plays** (the cutscenes and
 the title screen: the video decoder is not part of it), and **while a callback, a

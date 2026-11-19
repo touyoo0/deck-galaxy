@@ -75,6 +75,35 @@ std::filesystem::path slotPath(int slot)
     return stateDir() / ("slot" + std::to_string(slot) + ".rgs");
 }
 
+// The automatic state is only good for the build that took it: a state holds the
+// machine under that build's code, and a newer one (an update) would run it
+// under other code. Its build is kept beside it, `auto.rev`; a state without it,
+// or from another build, is not offered and is removed. The player's own slots
+// are left to him.
+std::filesystem::path autoRevisionPath()
+{
+    return stateDir() / "auto.rev";
+}
+
+void writeAutoRevision()
+{
+    std::ofstream file(autoRevisionPath(), std::ios::trunc);
+    file << RG_REVISION << '\n';
+}
+
+bool autoStateFits()
+{
+    std::ifstream file(autoRevisionPath());
+    std::string revision;
+    std::getline(file, revision);
+    if (file && revision == RG_REVISION)
+        return true;
+    std::error_code ec;
+    std::filesystem::remove(slotPath(kAutoSlot), ec);
+    std::filesystem::remove(autoRevisionPath(), ec);
+    return false;
+}
+
 bool validSlot(int slot)
 {
     return slot >= 1 && slot <= kSlots;
@@ -472,7 +501,11 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
             {
                 std::fprintf(stderr, "[savestate] slot %d: %zu bytes (%zu on disk), after %.2f s\n", slot, raw.size(),
                              file.size(), std::chrono::duration<double>(std::chrono::steady_clock::now() - since).count());
-                if (slot != kAutoSlot)
+                if (slot == kAutoSlot)
+                {
+                    writeAutoRevision();
+                }
+                else
                 {
                     say("Saved to slot " + std::to_string(slot));
                     thumbnailSaved(slot);
@@ -498,6 +531,8 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
     {
         // A save still being written to this slot is waited for.
         std::lock_guard slotLock(g_slotLock[slot]);
+        if (slot == kAutoSlot && !autoStateFits())
+            return;
         std::ifstream file(slotPath(slot), std::ios::binary | std::ios::ate);
         if (!file)
         {
@@ -654,6 +689,8 @@ SlotInfo autoSlot()
     SlotInfo entry;
     struct stat info{};
     if (::stat(slotPath(kAutoSlot).c_str(), &info) != 0 || info.st_size <= 0)
+        return entry;
+    if (!autoStateFits())
         return entry;
     entry.used = true;
     std::tm local{};
