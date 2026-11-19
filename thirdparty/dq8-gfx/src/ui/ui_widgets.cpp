@@ -214,9 +214,19 @@ void settingRow(const char *label, const char *help, const char *chipText) {
     if (help) {
         ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 0.84f);
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(palette::kTextMuted));
-        ImGui::PushTextWrapPos(0.0f);
+        // Across the whole table, under the control too, rather than in the
+        // name's column alone (Steam Deck fork: changed): the clip is opened
+        // to the table's width, and the text wraps at its right edge.
+        ImGuiWindow *window = ImGui::GetCurrentWindow();
+        const ImGuiTable *table = ImGui::GetCurrentTable();
+        const float right = table->OuterRect.Max.x - em(0.6f);
+        const ImVec2 clipMin = window->DrawList->GetClipRectMin(), clipMax = window->DrawList->GetClipRectMax();
+        ImGui::PushClipRect(ImVec2(std::min(clipMin.x, table->OuterRect.Min.x), clipMin.y),
+                            ImVec2(std::max(clipMax.x, table->OuterRect.Max.x), clipMax.y), false);
+        ImGui::PushTextWrapPos(right - window->Pos.x + window->Scroll.x);
         ImGui::TextUnformatted(L(help));
         ImGui::PopTextWrapPos();
+        ImGui::PopClipRect();
         ImGui::PopStyleColor();
         ImGui::PopFont();
     }
