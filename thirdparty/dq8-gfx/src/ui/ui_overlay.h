@@ -160,16 +160,14 @@ struct HostServices {
     std::vector<Shortcut> gameShortcuts;
     // Save states (Steam Deck fork: added): the slots of the Save states menu,
     // each with when it was written (empty while it holds nothing), the one
-    // the quick keys use, and what its entries do. Empty when the host has
-    // none: the menu is then not there.
+    // the slot window's choices (save, load). Empty when the host has none:
+    // the menu is then not there.
     struct SaveSlot {
         bool used = false;
         std::string when;
         std::string picture; // a BMP on disk, empty while there is none
     };
     std::function<std::vector<SaveSlot>()> saveSlots;
-    std::function<int()> saveSlotCurrent;
-    std::function<void(int slot)> saveSlotSelect;
     std::function<void(int slot)> saveSlotSave;
     std::function<void(int slot)> saveSlotLoad;
 };
@@ -217,6 +215,11 @@ public:
     void showMenu(const char *label);
     void openAbout();
     void openShortcuts();
+    // The save states' slots, as a window of their own, to save into or load
+    // from (F2, F3): the game waits, paused, behind it. Asked again for the
+    // same one, it closes (Steam Deck fork: added).
+    void openSaveSlots(bool save);
+    void closeSaveSlots();
     // The home screen (Play, Update, Quit): the game waits, paused, behind it
     // until Play (Steam Deck fork: added).
     void openHome();
@@ -298,6 +301,7 @@ private:
     // The row of button hints along the settings window's bottom edge.
     void drawPadHints(float height);
     void drawQuitPrompt();
+    void drawSaveSlots();
     void drawHome();
 
     // Frame side.
@@ -399,6 +403,8 @@ private:
     bool m_hostPaused = false;
     bool m_fastForward = false;
     bool m_gamepadNavHeld = false;
+    // The home screen's Play button has the nav cursor (set once it is open).
+    bool m_homeNavReady = false;
     // The settings window's two halves, the page list and the page, which
     // the cursor moves between by Right / A and Left / B (the windows
     // themselves; ImGui keeps them for the life of the context).
@@ -408,6 +414,14 @@ private:
     bool m_focusPage = false;
     bool m_quitAsk = false;
     bool m_homeOpen = false;
+    // The slot window: 0 closed, 1 saving, 2 loading; the slot the cursor
+    // starts on, the one waiting for its overwrite to be confirmed, and
+    // whether Back answers that question.
+    uint8_t m_slotMode = 0;
+    int m_slotLast = 1;
+    int m_slotConfirm = 0;
+    bool m_slotFocus = false;
+    bool m_slotCancel = false;
     bool m_cancelQuit = false;
     NavBefore m_navBefore;
     // The last input was a controller's, so the hints show its buttons.

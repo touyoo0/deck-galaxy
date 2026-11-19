@@ -6,11 +6,10 @@
 
 class PS2Runtime;
 
-// Quick save and quick load: the guest-visible machine (memories, the EE
-// kernel's threads and objects) written to a slot file and read back. Phase 1
-// prototype: the IOP (sound), the GS front end and the host-side caches are
-// not part of it, so a load is only sound in the process that saved, from a
-// calm moment. See docs/SAVESTATES.md.
+// Save states: the guest-visible machine (memories, the EE kernel's threads and
+// objects, the IOP and SPU2) written to a slot file and read back, in the run
+// that saved or another. The GS front end and the host-side caches are not
+// part of it. See docs/SAVESTATES.md.
 //
 // A request runs on the EE executor between guest dispatches. A save that
 // finds a callback in flight or a thread parked where it cannot be rebuilt
@@ -54,9 +53,5 @@ struct SlotInfo
     std::string picture;
 };
 std::vector<SlotInfo> slots();
-
-// The slot the keys act on, 1..kSlots.
-int currentSlot();
-void setCurrentSlot(int slot);
 
 } // namespace rg::savestate

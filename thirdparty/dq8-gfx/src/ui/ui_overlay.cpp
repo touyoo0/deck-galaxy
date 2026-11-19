@@ -229,7 +229,7 @@ int Overlay::gameNumber(const GameOption &option) const {
     return std::clamp(value, option.minimum, option.maximum);
 }
 
-bool Overlay::capturesInput() const { return m_menuOpen || m_capture.active || m_homeOpen; }
+bool Overlay::capturesInput() const { return m_menuOpen || m_capture.active || m_homeOpen || m_slotMode != 0; }
 
 bool Overlay::wantsFrames() {
     if (!m_context)
@@ -237,7 +237,7 @@ bool Overlay::wantsFrames() {
     // Queued input has to be consumed by a frame, or it replays later.
     const bool scriptWaiting = std::any_of(m_script.begin(), m_script.end(),
                                            [](const ScriptStep &step) { return !step.done && step.seconds >= 0.0; });
-    return m_menuOpen || m_homeOpen || m_capture.active || !m_toasts.empty() || m_statsOpen ||
+    return m_menuOpen || m_homeOpen || m_slotMode != 0 || m_capture.active || !m_toasts.empty() || m_statsOpen ||
            m_iconSheet || pausing() || scriptWaiting || !m_context->InputEventsQueue.empty();
 }
 
@@ -280,6 +280,7 @@ void Overlay::openHome() {
     if (!canPause())
         return;
     m_homeOpen = true;
+    m_homeNavReady = false;
     m_toasts.clear(); // the menu's hint does not apply here
     // The button that started the game is still down: it must not press Play.
     m_gamepadNavHeld = true;
@@ -295,6 +296,34 @@ void Overlay::closeHome() {
     // The hint that went unseen behind the home screen.
     if (m_host.steamDeck)
         notify("Press View + Menu for the menu", Icon::Info, 6.0);
+}
+
+void Overlay::openSaveSlots(bool save) {
+    if (m_homeOpen || !m_host.saveSlots)
+        return;
+    const uint8_t mode = save ? 1u : 2u;
+    if (m_slotMode == mode) {
+        closeSaveSlots();
+        return;
+    }
+    setMenuOpen(false);
+    m_slotMode = mode;
+    m_slotConfirm = 0;
+    m_slotFocus = true;
+    // The buttons of the combination that opened it are still down.
+    m_gamepadNavHeld = true;
+    applyPause();
+}
+
+void Overlay::closeSaveSlots() {
+    if (m_slotMode == 0)
+        return;
+    m_slotMode = 0;
+    m_slotConfirm = 0;
+    // The button that chose a slot must not reach the game as it resumes.
+    m_gamepadNavHeld = true;
+    m_backend.padInput().suppressHeld();
+    applyPause();
 }
 
 void Overlay::toggleMenu(bool fromController) {
@@ -474,7 +503,7 @@ bool Overlay::hotkey(const SDL_KeyboardEvent &key) {
     case SDL_SCANCODE_F1:
         toggleMenu(false);
         return true;
-    // F5 pauses: F2 and F3 are the quick save and load (Rogue Galaxy: moved).
+    // F5 pauses: F2 and F3 are the save states' save and load (Rogue Galaxy: moved).
     case SDL_SCANCODE_F5:
         if (!canPause())
             return false;
@@ -808,7 +837,7 @@ void Overlay::updateNavigation() {
         m_gamepadNavHeld = down;
     }
     io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad);
-    if ((m_menuOpen || m_homeOpen) && !m_capture.active) {
+    if ((m_menuOpen || m_homeOpen || m_slotMode != 0) && !m_capture.active) {
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         if (!m_gamepadNavHeld)
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
@@ -867,6 +896,8 @@ void Overlay::drawFrame() {
     if (m_statsOpen)
         drawStats();
     drawQuitPrompt();
+    if (m_slotMode != 0)
+        drawSaveSlots();
     drawCapturePrompt();
     m_toastTop = 0.0f;
     drawSpeedBadge();
@@ -954,47 +985,13 @@ void Overlay::drawMenuBar() {
             }
             ImGui::EndMenu();
         }
-        // Save states (Steam Deck fork: added): the quick keys' slot, and a
-        // submenu a slot to save into, load from, or make the current one.
+        // Save states (Steam Deck fork: added): the slots, to save into or
+        // load from, in a window of their own.
         if (m_host.saveSlots && beginMenu("Save states")) {
-            const std::vector<HostServices::SaveSlot> slots = m_host.saveSlots();
-            const int current = m_host.saveSlotCurrent ? m_host.saveSlotCurrent() : 1;
-            const bool currentUsed =
-                current >= 1 && current <= static_cast<int>(slots.size()) && slots[current - 1].used;
-            if (menuItem("Quick save", "F2") && m_host.saveSlotSave)
-                m_host.saveSlotSave(current);
-            if (menuItem("Quick load", "F3", false, currentUsed) && m_host.saveSlotLoad)
-                m_host.saveSlotLoad(current);
-            ImGui::Separator();
-            for (int index = 0; index < static_cast<int>(slots.size()); ++index) {
-                const int slot = index + 1;
-                const std::string label = Lf("Slot %d", slot) + "  -  " +
-                                          (slots[index].used ? slots[index].when : std::string(L("empty")));
-                // The slot's picture beside it, when it has one.
-                ImTextureRef picture;
-                ImVec2 pictureSize;
-                const bool hasPicture = slots[index].used && !slots[index].picture.empty() &&
-                                        fileTexture(slots[index].picture.c_str(), picture, pictureSize);
-                if (hasPicture) {
-                    const float height = ImGui::GetTextLineHeight() * 2.4f;
-                    ImGui::Image(picture, ImVec2(height * pictureSize.x / pictureSize.y, height));
-                    ImGui::SameLine();
-                }
-                if (beginSubmenu(label.c_str())) {
-                    if (hasPicture) {
-                        const float width = em(12.0f);
-                        ImGui::Image(picture, ImVec2(width, width * pictureSize.y / pictureSize.x));
-                        ImGui::Separator();
-                    }
-                    if (menuItem("Save here") && m_host.saveSlotSave)
-                        m_host.saveSlotSave(slot);
-                    if (menuItem("Load", nullptr, false, slots[index].used) && m_host.saveSlotLoad)
-                        m_host.saveSlotLoad(slot);
-                    if (menuItem("Use for the quick keys", nullptr, slot == current) && m_host.saveSlotSelect)
-                        m_host.saveSlotSelect(slot);
-                    ImGui::EndMenu();
-                }
-            }
+            if (menuItem("Save", "F2"))
+                openSaveSlots(true);
+            if (menuItem("Load", "F3"))
+                openSaveSlots(false);
             ImGui::EndMenu();
         }
         if (beginMenu("Settings")) {
@@ -1747,6 +1744,14 @@ void Overlay::drawHome() {
                                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground |
                                    ImGuiWindowFlags_AlwaysAutoResize;
     if (ImGui::Begin("##home", nullptr, flags)) {
+        // Without this the first A does nothing: the cursor stays hidden
+        // until a direction key shows it. Play is the default focus.
+        if (!m_homeNavReady && !m_settingsOpen &&
+            (ImGui::GetIO().ConfigFlags & (ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard))) {
+            ImGui::SetWindowFocus();
+            ImGui::SetNavCursorVisible(true);
+            m_homeNavReady = true;
+        }
         ImDrawList *list = ImGui::GetWindowDrawList();
         const ImVec2 top = ImGui::GetCursorScreenPos();
         const float slide = (1.0f - fade) * em(2.0f);
@@ -2180,7 +2185,7 @@ void Overlay::applyVolume() {
 }
 
 bool Overlay::pausing() const {
-    return canPause() && (m_homeOpen || m_userPaused || (m_settings.pauseInMenu && m_menuOpen) ||
+    return canPause() && (m_homeOpen || m_slotMode != 0 || m_userPaused || (m_settings.pauseInMenu && m_menuOpen) ||
                           (m_settings.pauseInBackground && !m_windowFocused));
 }
 

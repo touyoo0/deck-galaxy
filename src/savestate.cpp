@@ -38,7 +38,6 @@ constexpr uint32_t kMagic = ps2_savestate::makeTag('R', 'G', 'S', 'S');
 constexpr uint32_t kVersion = 2u;
 constexpr auto kGiveUpAfter = std::chrono::seconds(5);
 
-std::atomic<int> g_slot{1};
 std::mutex g_messageMutex;
 std::deque<std::string> g_messages;
 
@@ -572,17 +571,6 @@ std::vector<SlotInfo> slots()
                 entry.picture = file.path().string();
     }
     return result;
-}
-
-int currentSlot()
-{
-    return g_slot.load(std::memory_order_relaxed);
-}
-
-void setCurrentSlot(int slot)
-{
-    if (validSlot(slot))
-        g_slot.store(slot, std::memory_order_relaxed);
 }
 
 void install(PS2Runtime &runtime)

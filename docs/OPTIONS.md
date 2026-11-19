@@ -50,8 +50,8 @@ whose files are missing.
 
 | Key | |
 |---|---|
-| F2 | Quick save (see [SAVESTATES.md](SAVESTATES.md)) |
-| F3 | Quick load |
+| F2 | Save: the five slots, to pick where (see [SAVESTATES.md](SAVESTATES.md)) |
+| F3 | Load: the five slots, to pick which |
 | F5 | Pause |
 | F4 | Fast-forward |
 | F6 | Free camera |

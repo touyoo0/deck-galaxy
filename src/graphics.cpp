@@ -538,11 +538,10 @@ std::atomic<unsigned> g_f10Presses{0u};
 std::atomic<unsigned> g_f7Presses{0u};
 // F6 turns the free camera on or off.
 std::atomic<unsigned> g_f6Presses{0u};
-// Quick save and load (F2, F3, or Back + R1 and Back + L1 on a controller) and
-// the slot to use (Page Up, Page Down, or Back + D-pad left and right).
-std::atomic<unsigned> g_quickSavePresses{0u};
-std::atomic<unsigned> g_quickLoadPresses{0u};
-std::atomic<int> g_slotSteps{0};
+// The save states' slot window for a save (F2, or Back + R1 on a controller)
+// and for a load (F3, or Back + L1).
+std::atomic<unsigned> g_savePresses{0u};
+std::atomic<unsigned> g_loadPresses{0u};
 
 // A save, with the game's picture of the moment for the slot's thumbnail. From
 // the presenter's thread (the keys, the menu), where a capture can be asked.
@@ -585,19 +584,11 @@ bool SDLCALL countMarkKeys(void *, SDL_Event *event)
         }
         else if (event->key.scancode == SDL_SCANCODE_F2 && !(g_menu && g_menu->capturingBinding()))
         {
-            g_quickSavePresses.fetch_add(1u, std::memory_order_relaxed);
+            g_savePresses.fetch_add(1u, std::memory_order_relaxed);
         }
         else if (event->key.scancode == SDL_SCANCODE_F3 && !(g_menu && g_menu->capturingBinding()))
         {
-            g_quickLoadPresses.fetch_add(1u, std::memory_order_relaxed);
-        }
-        else if (event->key.scancode == SDL_SCANCODE_PAGEUP && !(g_menu && g_menu->capturingBinding()))
-        {
-            g_slotSteps.fetch_sub(1, std::memory_order_relaxed);
-        }
-        else if (event->key.scancode == SDL_SCANCODE_PAGEDOWN && !(g_menu && g_menu->capturingBinding()))
-        {
-            g_slotSteps.fetch_add(1, std::memory_order_relaxed);
+            g_loadPresses.fetch_add(1u, std::memory_order_relaxed);
         }
         else if (event->key.scancode == SDL_SCANCODE_F6 && !(g_menu && g_menu->capturingBinding()))
         {
@@ -617,16 +608,10 @@ bool SDLCALL countMarkKeys(void *, SDL_Event *event)
             switch (event->gbutton.button)
             {
             case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
-                g_quickSavePresses.fetch_add(1u, std::memory_order_relaxed);
+                g_savePresses.fetch_add(1u, std::memory_order_relaxed);
                 break;
             case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
-                g_quickLoadPresses.fetch_add(1u, std::memory_order_relaxed);
-                break;
-            case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
-                g_slotSteps.fetch_sub(1, std::memory_order_relaxed);
-                break;
-            case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
-                g_slotSteps.fetch_add(1, std::memory_order_relaxed);
+                g_loadPresses.fetch_add(1u, std::memory_order_relaxed);
                 break;
             default:
                 break;
@@ -816,20 +801,13 @@ bool pump(void *userData)
     {
         rg::freecamera::setEnabled(!rg::freecamera::enabled());
     }
-    // Quick save and load. The request runs on the EE executor; what it has
-    // to say comes back through takeMessage().
-    if (const int steps = g_slotSteps.exchange(0, std::memory_order_relaxed); steps != 0)
-    {
-        const int slots = rg::savestate::kSlots;
-        const int slot = ((rg::savestate::currentSlot() - 1 + steps) % slots + slots) % slots + 1;
-        rg::savestate::setCurrentSlot(slot);
-        if (g_menu)
-            g_menu->notify("Save slot " + std::to_string(slot), dq8::ui::Icon::Info);
-    }
-    if (g_quickSavePresses.exchange(0u, std::memory_order_relaxed) != 0u)
-        saveWithThumbnail(*g_runtime, *backend, rg::savestate::currentSlot());
-    if (g_quickLoadPresses.exchange(0u, std::memory_order_relaxed) != 0u)
-        rg::savestate::requestLoad(*g_runtime, rg::savestate::currentSlot());
+    // The save states: the keys open the slot window, which asks for the slot
+    // (a save or a load never happens without it). The request it makes runs
+    // on the EE executor; what it has to say comes back through takeMessage().
+    if (g_savePresses.exchange(0u, std::memory_order_relaxed) != 0u && g_menu)
+        g_menu->openSaveSlots(true);
+    if (g_loadPresses.exchange(0u, std::memory_order_relaxed) != 0u && g_menu)
+        g_menu->openSaveSlots(false);
     for (std::string text; g_menu && rg::savestate::takeMessage(text);)
         g_menu->notify(text, dq8::ui::Icon::Info);
     // Changes made on the game's Settings screen (its pages are there with
@@ -986,10 +964,8 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
     // The game's own keys (countMarkKeys), kept out of Controls: F6 listed
     // beside the menu's in the Shortcuts window; the diagnostics keys, which
     // act in every run, not.
-    host.gameShortcuts = {{SDL_SCANCODE_F2, "Quick save"},
-                          {SDL_SCANCODE_F3, "Quick load"},
-                          {SDL_SCANCODE_PAGEUP, "Previous save slot"},
-                          {SDL_SCANCODE_PAGEDOWN, "Next save slot"},
+    host.gameShortcuts = {{SDL_SCANCODE_F2, "Save"},
+                          {SDL_SCANCODE_F3, "Load"},
                           {SDL_SCANCODE_F6, "Free camera"},
                           {SDL_SCANCODE_F7, "Frame capture and state report", false},
                           {SDL_SCANCODE_F9, "A mark in the log", false},
@@ -1001,16 +977,8 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
             slots.push_back({info.used, info.when, info.picture});
         return slots;
     };
-    host.saveSlotCurrent = [] { return rg::savestate::currentSlot(); };
-    host.saveSlotSelect = [](int slot) { rg::savestate::setCurrentSlot(slot); };
-    host.saveSlotSave = [&runtime, &backend](int slot) {
-        rg::savestate::setCurrentSlot(slot);
-        saveWithThumbnail(runtime, backend, slot);
-    };
-    host.saveSlotLoad = [&runtime](int slot) {
-        rg::savestate::setCurrentSlot(slot);
-        rg::savestate::requestLoad(runtime, slot);
-    };
+    host.saveSlotSave = [&runtime, &backend](int slot) { saveWithThumbnail(runtime, backend, slot); };
+    host.saveSlotLoad = [&runtime](int slot) { rg::savestate::requestLoad(runtime, slot); };
     // RG_MUTE=1 keeps the game silent whatever the menu's volume says.
     const bool mute = env("RG_MUTE", "0") != "0";
     host.setVolume = [mute](float volume) { ps2_native_iop::setVolume(mute ? 0.0f : volume); };

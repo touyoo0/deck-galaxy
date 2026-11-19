@@ -9,30 +9,34 @@ saves; they do not replace them.
 
 | | Keyboard | Controller (Steam Deck) |
 |---|---|---|
-| Quick save | F2 | Back + R1 |
-| Quick load | F3 | Back + L1 |
-| Previous / next slot | Page Up / Page Down | Back + D-pad left / right |
+| Save | F2 | Back (View) + R1 |
+| Load | F3 | Back (View) + L1 |
+
+Each opens a window with the five slots, each with a picture of the game and
+the time it was saved (or "empty"): **nothing is saved or loaded until you
+pick a slot**. The game waits, paused, behind it. Up and down move the cursor,
+Enter or A picks, Esc or B leaves; the mouse works too. Saving over a slot
+that holds a state asks first; an empty slot cannot be loaded. The F1 menu's
+**Save states** menu has the same two entries.
 
 The pause moved from F2 to F5 to make room (and the menu's frame-rate
-counter, F3, is gone: the Steam Deck has its own). On a Steam Deck, Steam Input can give a back button a key, which
-puts them under a finger: for example L4 = F1 (the menu), R4 = F2 (save) and
-R5 = F3 (load).
+counter, F3, is gone: the Steam Deck has its own). On a Steam Deck, Steam
+Input can give a back button a key, which puts them under a finger: for
+example L4 = F1 (the menu), R4 = F2 (save) and R5 = F3 (load).
 
-The F1 menu's **Save states** menu lists the five slots with a picture of
-the game and the time of each, and saves into, loads from or picks any of them.
-A message says what happened. The files are in `states/` next to
-`settings.ini` (`~/.local/share/RogueGalaxy/states/slot1.rgs` to `slot5.rgs`,
-and `slotN.<time>.thumb.bmp`, the picture, 69 KB). A state is 42 MB in memory
-and about 10 MB on disk: zstd-compressed (0.05 s to compress, 0.04 s to
+The files are in `states/` next to `settings.ini`
+(`~/.local/share/RogueGalaxy/states/slot1.rgs` to `slot5.rgs`, and
+`slotN.<time>.thumb.bmp`, the picture, 69 KB). A state is 42 MB in memory and
+about 10 MB on disk: zstd-compressed (0.05 s to compress, 0.04 s to
 decompress), written by a thread of its own so the game does not stop for it,
 and waited for when the game quits.
 
 A state is refused, with a message, **while a movie plays** (the cutscenes and
-the title screen: the video decoder is not part of it), **while a callback, a DMA
-transfer or a wait that cannot be rebuilt is in progress** (it tries again for
-five seconds),
-and when it was saved **in another area of the game** than the one running now
-(the game's code changes with the area: load it from there).
+the title screen: the video decoder is not part of it), **while a callback, a
+DMA transfer or a wait that cannot be rebuilt is in progress** (it tries again
+for five seconds), and when it was saved **in another area of the game** than
+the one running now (the game's code changes with the area: load it from
+there).
 
 ## How it works
 

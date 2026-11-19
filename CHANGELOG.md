@@ -4,17 +4,18 @@
 
 ### Added
 
-- Quick save and quick load: five slots that hold the whole game at one
-  moment, loaded at once, in the same run or after closing the game. F2 saves
-  and F3 loads (Back + R1 and Back + L1 on a controller), Page Up and Page Down
-  (Back + D-pad) pick the slot, and the menu's new Save states list the five
-  slots, each with a picture of the game and the time. A state takes about
-  10 MB on disk. Not while a movie plays. See `docs/SAVESTATES.md`.
+- Save states: five slots that hold the whole game at one moment, loaded at
+  once, in the same run or after closing the game. F2 opens the slots to save
+  into and F3 the slots to load from (Back + R1 and Back + L1 on a controller):
+  nothing is saved or loaded until you pick a slot, each with a picture of the
+  game and the time, and a used slot asks before it is overwritten. The menu's
+  new Save states has the same two entries. A state takes about 10 MB on disk.
+  Not while a movie plays. See `docs/SAVESTATES.md`.
 
 ### Changed
 
-- The pause is on F5 now (it was F2), to make room for the quick save and
-  load.
+- The pause is on F5 now (it was F2), to make room for the save states'
+  keys.
 - The home screen's update is no longer a button among Play, Options and Quit:
   it sits at the top of the "What's new" panel, a card with the new version,
   the progress and the errors, a quiet line when there is nothing to do, and a
