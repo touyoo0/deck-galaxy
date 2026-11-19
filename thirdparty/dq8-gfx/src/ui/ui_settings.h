@@ -43,7 +43,7 @@ struct Settings {
     // The menu's language (Rogue Galaxy: added): "auto" follows the Deck's, else a code of ui_text.h.
     std::string menuLanguage = "auto";
     bool pauseInMenu = true;
-    bool pauseInBackground = false;
+    bool pauseInBackground = true;
 
     // Game
     float fastForwardSpeed = 2.0f; // 0 runs unpaced
