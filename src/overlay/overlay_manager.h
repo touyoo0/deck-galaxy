@@ -39,6 +39,11 @@ const char *residentName();
 using Function = void (*)(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
 bool hookFunction(const char *name, uint32_t address, Function replacement, Function &original);
 
+// Makes the overlay called `name` the resident one without a load, for a save
+// state taken under it ("none" leaves none): the machine a state restores is
+// the one that ran that overlay's code. False for a name no overlay has.
+bool makeResident(const char *name);
+
 // Overlay loads seen so far.
 uint32_t loadCount();
 

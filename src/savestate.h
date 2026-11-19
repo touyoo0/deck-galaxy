@@ -22,6 +22,12 @@ namespace rg::savestate
 
 constexpr int kSlots = 5;
 
+// The state the game keeps by itself for "Continue" on the home screen: written
+// when the window leaves the front and when the game quits, replaced each time,
+// and removed when a try finds the game where a state cannot be taken (a movie).
+// Not one of the player's slots, so no toast and no picture.
+constexpr int kAutoSlot = 0;
+
 // After the runtime is set up: starts RG_STATE_SCRIPT, when set.
 void install(PS2Runtime &runtime);
 
@@ -29,6 +35,16 @@ void install(PS2Runtime &runtime);
 // through takeMessage(), for the menu's toast. Slots are 1..kSlots.
 void requestSave(PS2Runtime &runtime, int slot);
 void requestLoad(PS2Runtime &runtime, int slot);
+
+// The automatic state: asynchronous, as requestSave.
+void requestAutoSave(PS2Runtime &runtime);
+
+// At quit: queues the automatic state and waits up to `timeoutMs` for it to be
+// taken and written. False when it was not (it is then removed).
+bool autoSaveBlocking(PS2Runtime &runtime, int timeoutMs);
+
+// Loads the automatic state, from any area of the game.
+void requestAutoLoad(PS2Runtime &runtime);
 
 // A frame of the game for the slot that is being saved (RGBA, top row first),
 // from the presenter's thread, after requestSave: scaled down and kept beside
@@ -53,5 +69,8 @@ struct SlotInfo
     std::string picture;
 };
 std::vector<SlotInfo> slots();
+
+// The automatic state, in the same terms (never a picture).
+SlotInfo autoSlot();
 
 } // namespace rg::savestate

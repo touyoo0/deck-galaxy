@@ -161,6 +161,26 @@ const char *residentName()
     return image ? image->name : "none";
 }
 
+bool makeResident(const char *name)
+{
+    if (!name || !*name || std::strcmp(name, "none") == 0)
+    {
+        deactivate();
+        return true;
+    }
+    for (const auto image : kImages)
+    {
+        const Image &candidate = image();
+        if (std::strcmp(candidate.name, name) == 0)
+        {
+            g_region.store(candidate.region, std::memory_order_release);
+            g_resident.store(&candidate, std::memory_order_release);
+            return true;
+        }
+    }
+    return false;
+}
+
 uint32_t loadCount()
 {
     return g_loads.load(std::memory_order_acquire);

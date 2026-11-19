@@ -4,6 +4,11 @@
 
 ### Added
 
+- Continue: the home screen offers to go back to where the game was left. The
+  game keeps a state of its own when its window leaves the front (the Steam
+  menu) and when it quits; Continue loads it, Play still starts from the
+  title. A save state also loads from any area of the game now, not only the
+  one it was saved in. See `docs/SAVESTATES.md`.
 - The installer's progress page shows illustrated tips while the game builds
   (why the wait, the menu, the home screen, save states, the back buttons, 60
   fps, the options, achievements, the languages): a drawing, a title and a few

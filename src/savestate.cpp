@@ -2,6 +2,7 @@
 
 #include "overlay/overlay_manager.h"
 #include "ps2_runtime.h"
+#include "Stubs/Pad.h"
 #include "runtime/ee_scheduler.h"
 #include "vif1_thread.h"
 
@@ -69,6 +70,8 @@ std::filesystem::path stateDir()
 
 std::filesystem::path slotPath(int slot)
 {
+    if (slot == kAutoSlot)
+        return stateDir() / "auto.rgs";
     return stateDir() / ("slot" + std::to_string(slot) + ".rgs");
 }
 
@@ -79,7 +82,8 @@ bool validSlot(int slot)
 
 // The file starts with the magic, the version, the size of the RAM and the
 // name of the overlay that was resident: the function table the hooks patch
-// follows the overlay, so a state is only loaded under the one it was saved in.
+// follows the overlay, so loading one makes the overlay it was saved under the
+// resident one first (checkHeader tells which).
 void writeHeader(Writer &out)
 {
     out.put<uint32_t>(kMagic);
@@ -91,8 +95,9 @@ void writeHeader(Writer &out)
     out.bytes(name.data(), name.size());
 }
 
-// Returns an empty string when the header fits this process, else why not.
-std::string checkHeader(Reader &in)
+// Returns an empty string when the header fits this process, else why not;
+// `overlay` is the one the state was saved under.
+std::string checkHeader(Reader &in, std::string &overlay)
 {
     if (in.get<uint32_t>() != kMagic)
         return "not a save state";
@@ -105,10 +110,67 @@ std::string checkHeader(Reader &in)
         return "a damaged save state";
     std::string name(length, '\0');
     in.bytes(name.data(), length);
-    const char *overlay = rg::overlay::residentName();
-    if (name != (overlay ? overlay : ""))
-        return "saved in another area of the game (" + name + "), load it from there";
+    overlay = name;
     return {};
+}
+
+// ---- the pad ports: which are open, in which mode. The runtime keeps that on the
+// host side, outside the machine a state holds, so a state loaded by a process
+// whose game has not opened a port yet (Continue, from the home screen) would
+// have the game read "controller not connected". The ports' settings follow the
+// machine as a trailer: a file without one (an older state) loads as before.
+constexpr uint32_t kPadTag = 0x31444150u; // "PAD1"
+
+void writePadTrailer(Writer &out)
+{
+    const ps2_stubs::PadDebugSnapshot snapshot = ps2_stubs::getPadDebugSnapshot();
+    out.put<uint32_t>(kPadTag);
+    for (size_t port = 0; port < ps2_stubs::kPadDebugPortCount; ++port)
+    {
+        const ps2_stubs::PadDebugPortSnapshot &p = snapshot.ports[port][0];
+        out.put<uint8_t>(p.open ? 1u : 0u);
+        out.put<uint8_t>(p.analogMode ? 1u : 0u);
+        out.put<uint8_t>(p.pressureEnabled ? 1u : 0u);
+        out.put<uint16_t>(p.buttonMask);
+        out.put<uint32_t>(p.dmaAddr);
+    }
+}
+
+// Opens the ports as the state's game had them, through the same calls the game
+// makes: the buffer scePadPortOpen clears is put back as it was.
+void readPadTrailer(Reader &in, PS2Runtime &runtime)
+{
+    if (in.remaining() < sizeof(uint32_t) || in.get<uint32_t>() != kPadTag)
+        return;
+    uint8_t *rdram = runtime.memory().getRDRAM();
+    for (size_t port = 0; port < ps2_stubs::kPadDebugPortCount; ++port)
+    {
+        const bool open = in.get<uint8_t>() != 0u;
+        const bool analog = in.get<uint8_t>() != 0u;
+        const bool pressure = in.get<uint8_t>() != 0u;
+        const uint16_t mask = in.get<uint16_t>();
+        const uint32_t dma = in.get<uint32_t>();
+        if (!open || dma == 0u || dma + 32u > PS2_RAM_SIZE)
+            continue;
+        R5900Context ctx{};
+        const auto set = [&ctx](int reg, uint32_t value) { ctx.r[reg] = _mm_set_epi64x(0, value); };
+        uint8_t buffer[32];
+        std::memcpy(buffer, rdram + dma, sizeof(buffer));
+        set(4, static_cast<uint32_t>(port));
+        set(5, 0u);
+        set(6, dma);
+        ps2_stubs::scePadPortOpen(rdram, &ctx, &runtime);
+        std::memcpy(rdram + dma, buffer, sizeof(buffer));
+        if (analog)
+        {
+            set(6, 1u);
+            ps2_stubs::scePadSetMainMode(rdram, &ctx, &runtime);
+        }
+        if (pressure)
+            ps2_stubs::scePadEnterPressMode(rdram, &ctx, &runtime);
+        set(6, mask);
+        ps2_stubs::scePadSetButtonInfo(rdram, &ctx, &runtime);
+    }
 }
 
 // ---- thumbnails: a small picture of the game at the moment of a save, beside
@@ -338,6 +400,10 @@ struct Pending
 {
     std::chrono::steady_clock::time_point since = std::chrono::steady_clock::now();
     std::string lastReason;
+    // Set once the request is over, the file's writing started or the try
+    // given up: what autoSaveBlocking waits for.
+    std::atomic<bool> finished{false};
+    std::atomic<bool> saved{false};
 };
 
 void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, bool &done)
@@ -349,7 +415,10 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
     Writer out;
     writeHeader(out);
     std::string why;
-    if (!runtime.eeScheduler().saveMachine(out, why))
+    const bool taken = runtime.eeScheduler().saveMachine(out, why);
+    if (taken)
+        writePadTrailer(out);
+    if (!taken)
     {
         pending->lastReason = why;
         if (std::chrono::steady_clock::now() - pending->since < kGiveUpAfter)
@@ -357,7 +426,17 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
             done = false;
             return;
         }
-        say("Could not save: " + why);
+        if (slot == kAutoSlot)
+        {
+            // An old state would take the player back to where he no longer is.
+            std::error_code ec;
+            std::filesystem::remove(slotPath(slot), ec);
+            std::fprintf(stderr, "[savestate] no automatic state: %s\n", why.c_str());
+        }
+        else
+        {
+            say("Could not save: " + why);
+        }
         done = true;
         return;
     }
@@ -393,8 +472,11 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
             {
                 std::fprintf(stderr, "[savestate] slot %d: %zu bytes (%zu on disk), after %.2f s\n", slot, raw.size(),
                              file.size(), std::chrono::duration<double>(std::chrono::steady_clock::now() - since).count());
-                say("Saved to slot " + std::to_string(slot));
-                thumbnailSaved(slot);
+                if (slot != kAutoSlot)
+                {
+                    say("Saved to slot " + std::to_string(slot));
+                    thumbnailSaved(slot);
+                }
             }
             else
             {
@@ -405,6 +487,7 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
             g_writerDone.notify_all();
         })
         .detach();
+    pending->saved = true;
     done = true;
 }
 
@@ -418,7 +501,8 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
         std::ifstream file(slotPath(slot), std::ios::binary | std::ios::ate);
         if (!file)
         {
-            say("Slot " + std::to_string(slot) + " is empty");
+            if (slot != kAutoSlot)
+                say("Slot " + std::to_string(slot) + " is empty");
             return;
         }
         const std::streamsize size = file.tellg();
@@ -442,13 +526,30 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
     try
     {
         Reader in(bytes.data(), bytes.size());
-        const std::string problem = checkHeader(in);
+        std::string overlay;
+        const std::string problem = checkHeader(in, overlay);
         if (!problem.empty())
         {
             say("Could not load: " + problem);
             return;
         }
-        runtime.eeScheduler().loadMachine(in);
+        const std::string before = rg::overlay::residentName();
+        if (overlay != before && !rg::overlay::makeResident(overlay.c_str()))
+        {
+            say("Could not load: saved in an area this build does not have (" + overlay + ")");
+            return;
+        }
+        try
+        {
+            runtime.eeScheduler().loadMachine(in);
+            readPadTrailer(in, runtime);
+        }
+        catch (...)
+        {
+            // The machine is as it was: so is the code that goes with it.
+            rg::overlay::makeResident(before.c_str());
+            throw;
+        }
     }
     catch (const SaveStateError &error)
     {
@@ -457,7 +558,8 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
         say(std::string("Load failed: ") + error.what());
         return;
     }
-    say("Loaded slot " + std::to_string(slot));
+    if (slot != kAutoSlot)
+        say("Loaded slot " + std::to_string(slot));
 }
 
 } // namespace
@@ -493,6 +595,74 @@ void requestLoad(PS2Runtime &runtime, int slot)
             doLoad(runtime, slot, done);
             return done;
         });
+}
+
+namespace
+{
+std::shared_ptr<Pending> queueAutoSave(PS2Runtime &runtime)
+{
+    auto pending = std::make_shared<Pending>();
+    runtime.eeScheduler().requestExecutorTask(
+        [&runtime, pending]
+        {
+            bool done = true;
+            doSave(runtime, kAutoSlot, pending, done);
+            if (done)
+                pending->finished = true;
+            return done;
+        });
+    return pending;
+}
+} // namespace
+
+void requestAutoSave(PS2Runtime &runtime)
+{
+    queueAutoSave(runtime);
+}
+
+bool autoSaveBlocking(PS2Runtime &runtime, int timeoutMs)
+{
+    const auto pending = queueAutoSave(runtime);
+    const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    while (!pending->finished && std::chrono::steady_clock::now() < until)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (!pending->finished)
+    {
+        // Not taken in time, and maybe never: the old state would be a lie.
+        std::error_code ec;
+        std::filesystem::remove(slotPath(kAutoSlot), ec);
+        std::fprintf(stderr, "[savestate] no automatic state: not taken in %d ms\n", timeoutMs);
+        return false;
+    }
+    flush();
+    return pending->saved;
+}
+
+void requestAutoLoad(PS2Runtime &runtime)
+{
+    runtime.eeScheduler().requestExecutorTask(
+        [&runtime]
+        {
+            bool done = true;
+            doLoad(runtime, kAutoSlot, done);
+            return done;
+        });
+}
+
+SlotInfo autoSlot()
+{
+    SlotInfo entry;
+    struct stat info{};
+    if (::stat(slotPath(kAutoSlot).c_str(), &info) != 0 || info.st_size <= 0)
+        return entry;
+    entry.used = true;
+    std::tm local{};
+    const time_t when = info.st_mtime;
+    localtime_r(&when, &local);
+    char text[32];
+    std::strftime(text, sizeof(text), "%Y-%m-%d %H:%M", &local);
+    entry.when = text;
+    return entry;
 }
 
 bool takeMessage(std::string &text)

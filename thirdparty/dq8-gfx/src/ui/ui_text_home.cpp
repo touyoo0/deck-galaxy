@@ -8,6 +8,7 @@ namespace dq8::ui {
 const TextEntry kTextsHome[] = {
     // the home screen
     {"Play", "Jouer", "Spielen", "Jugar", "Gioca"},
+    {"Continue", "Continuer", "Fortsetzen", "Continuar", "Continua"},
     {"Update", "Mettre à jour", "Aktualisieren", "Actualizar", "Aggiorna"},
     {"Update to %s", "Mettre à jour vers %s", "Auf %s aktualisieren", "Actualizar a %s", "Aggiorna a %s"},
     {"Up to date", "À jour", "Auf dem neuesten Stand", "Al día", "Aggiornato"},

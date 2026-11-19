@@ -170,6 +170,13 @@ struct HostServices {
     std::function<std::vector<SaveSlot>()> saveSlots;
     std::function<void(int slot)> saveSlotSave;
     std::function<void(int slot)> saveSlotLoad;
+    // The state the host keeps by itself (Steam Deck fork: added): what the
+    // home screen's Continue loads, and when it was written. `autoSave` is asked
+    // when the window leaves the front, `continueGame` when Continue is chosen
+    // and the home screen has gone.
+    std::function<SaveSlot()> autoSlot;
+    std::function<void()> autoSave;
+    std::function<void()> continueGame;
 };
 
 // Game: Rogue Galaxy's own switches (added).
@@ -301,7 +308,7 @@ private:
     void drawHome();
     // Play: the home screen leaves in a warp, then the game starts behind a
     // loading screen that lifts once it is drawing (Steam Deck fork: added).
-    void startLaunch();
+    void startLaunch(bool resume = false);
     void drawLoadingVeil();
 
     // Frame side.
@@ -419,6 +426,10 @@ private:
     // then when the game started behind the loading screen, when that screen
     // began to lift, the renders at its start and its bar (-1: not running).
     double m_launchAt = -1.0;
+    // The launch is Continue's: the host loads its automatic state once the home
+    // screen has gone. m_autoState: whether there is one, read as home opens.
+    bool m_resumeOnLaunch = false;
+    bool m_autoState = false;
     double m_veilAt = -1.0;
     double m_veilDoneAt = -1.0;
     uint64_t m_veilBase = 0;

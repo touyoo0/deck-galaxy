@@ -272,6 +272,7 @@ void Overlay::openHome() {
     if (!canPause())
         return;
     m_homeOpen = true;
+    m_autoState = m_host.autoSlot && m_host.autoSlot().used;
     m_homeNavReady = false;
     m_toasts.clear(); // the menu's hint does not apply here
     // The button that started the game is still down: it must not press Play.
@@ -287,9 +288,10 @@ void Overlay::closeHome() {
     applyPause();
 }
 
-void Overlay::startLaunch() {
+void Overlay::startLaunch(bool resume) {
     if (!m_homeOpen || m_launchAt >= 0.0)
         return;
+    m_resumeOnLaunch = resume && m_autoState && m_host.continueGame;
     m_launchAt = ImGui::GetTime();
 }
 
@@ -417,6 +419,10 @@ bool Overlay::handleEvent(const SDL_Event &event) {
     case SDL_EVENT_WINDOW_FOCUS_GAINED:
     case SDL_EVENT_WINDOW_FOCUS_LOST:
         m_windowFocused = event.type == SDL_EVENT_WINDOW_FOCUS_GAINED;
+        // The Steam menu or another window takes the front: the state Continue
+        // will load is taken now, while nothing is lost by it (Steam Deck fork: added).
+        if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST && !m_homeOpen && canPause() && m_host.autoSave)
+            m_host.autoSave();
         applyVolume();
         applyPause();
         break;
@@ -1602,10 +1608,20 @@ void Overlay::drawHome() {
 
         // The entries.
         const ImVec2 buttonSize(column, em(2.9f));
+        // Continue: where the game was left, when it kept a state (Steam Deck
+        // fork: added). Play stays below it, for a new start from the title.
+        if (m_autoState && m_host.continueGame) {
+            ImGui::BeginDisabled(busy);
+            if (homeButton("##continue", L("Continue"), buttonSize, !busy, fade, 0))
+                startLaunch(true);
+            ImGui::SetItemDefaultFocus();
+            ImGui::EndDisabled();
+        }
         ImGui::BeginDisabled(busy);
         if (homeButton("##play", L("Play"), buttonSize, !busy, fade, 0))
             startLaunch();
-        ImGui::SetItemDefaultFocus();
+        if (!m_autoState || !m_host.continueGame)
+            ImGui::SetItemDefaultFocus();
         ImGui::EndDisabled();
 
         if (!inPanel) {
@@ -1645,6 +1661,10 @@ void Overlay::drawHome() {
     if (launching && time - m_launchAt >= kLaunchSeconds) {
         m_launchAt = -1.0;
         closeHome();
+        if (m_resumeOnLaunch) {
+            m_resumeOnLaunch = false;
+            m_host.continueGame();
+        }
         m_veilAt = time;
         m_veilDoneAt = -1.0;
         m_veilBar = 0.0f;
