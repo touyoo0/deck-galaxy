@@ -296,12 +296,12 @@ Index &textIndex(uint8_t *rdram, R5900Context *ctx)
     if (g_text.ok && g_text.files.count(kChainPack) == 0u)
     {
         std::fprintf(stderr, "[rg] the Attack Chain keeps its English words: this text was built before "
-                             "they came in (run Install-European.bat again)\n");
+                             "they came in (run the installer again)\n");
     }
     if (g_text.ok && g_text.files.count(kMinimapIcon) == 0u)
     {
         std::fprintf(stderr, "[rg] the minimap's shops keep the English S: this text was built before "
-                             "the European letters came in (run Install-European.bat again)\n");
+                             "the European letters came in (run the installer again)\n");
     }
     return g_text;
 }
@@ -2077,7 +2077,7 @@ void chooseAtBoot(uint8_t *rdram, PS2Runtime &runtime)
     if (wanted != "EN" && !std::filesystem::exists(languageIndex(wanted), ec))
     {
         std::fprintf(stderr,
-                     "[rg] the text stays English: disc/EU/%s.idx is missing (Install-European.bat makes it "
+                     "[rg] the text stays English: disc/EU/%s.idx is missing (the installer makes it "
                      "from your European disc)\n",
                      wanted.c_str());
         return;

@@ -13,7 +13,6 @@
 
 #include "debug/gs_census.h"
 #include "debug/gs_timing.h"
-#include "debug/sampler.h"
 #include "debug/stall_watch.h"
 #include "depth_reads.h"
 #include "flip_pacing.h"
@@ -513,16 +512,16 @@ const char *gameOptionBlocked(const std::string &key)
         const Installed &have = installed();
         const bool there = balance ? have.balance : key == "japanese_voices" ? have.japanese : have.files;
         if (!there)
-            return have.japanese ? "Run Install-Undub.bat again for this: it adds these files."
-                                 : "Needs your Japanese disc: run Install-Undub.bat.";
+            return have.japanese ? "Run the installer again for this: it adds these files."
+                                 : "Needs your Japanese disc: add it in the installer.";
     }
     if (key == "text_language" && !installed().european)
-        return "Needs your European disc: run Install-European.bat.";
+        return "Needs your European disc: add it in the installer.";
     return nullptr;
 }
 
 // A button of a game option that would do nothing
-// (HostServices::gameChoiceBlocked): a language Install-European.bat did not
+// (HostServices::gameChoiceBlocked): a language the European install did not
 // make (its --languages can leave some out).
 bool gameChoiceBlocked(const std::string &key, int value)
 {
@@ -758,10 +757,8 @@ bool pump(void *userData)
         // On stderr with the stats lines, so a mark cannot cut one in two.
         std::fprintf(stderr, "[mark] %.1f s\n",
                      std::chrono::duration<double>(std::chrono::steady_clock::now() - markStart).count());
-        // With the profile launcher, the mark also opens a profile window.
-        debug::requestProfileWindow();
     }
-    // F7 logs the next GS frame with RG_GS_CAPTURE (debug\RogueGalaxy-capture.bat).
+    // F7 logs the next GS frame with RG_GS_CAPTURE.
     for (unsigned n = g_f7Presses.exchange(0u, std::memory_order_relaxed); n > 0u; --n)
     {
         std::fprintf(stderr, "[mark] F7: frame capture requested\n");
@@ -834,7 +831,7 @@ bool pump(void *userData)
         if (const rg::updates::Release newer = rg::updates::newer(); !newer.version.empty())
         {
             releaseTold = true;
-            g_menu->notify(dq8::ui::Lf("Version %s is out: run Update.bat, or see F1 > Rogue Galaxy > About", newer.version.c_str()),
+            g_menu->notify(dq8::ui::Lf("Version %s is out: use Update on the home screen, or see F1 > Rogue Galaxy > About", newer.version.c_str()),
                            dq8::ui::Icon::Info,
                            10.0);
         }
@@ -1131,26 +1128,26 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
         {"director_cut_balance", "Director's Cut balance",
          "Battles with the numbers of the Japanese Director's Cut: smaller enemy groups, more money, some enemies "
          "weaker and the Area Masters stronger, bosses never knocked down. Needs your Japanese disc "
-         "(Install-Undub.bat). Takes effect the next time the game starts.",
+         "(add it in the installer). Takes effect the next time the game starts.",
          false, 0, 0, 0, "", 1, true, true},
         {"director_cut_enemies", "Director's Cut enemy behavior",
          "The enemy attacks and AI of the Japanese Director's Cut: enemies face you before they attack, some attack "
-         "from farther away. Needs your Japanese disc (Install-Undub.bat). Takes effect the next time the game "
+         "from farther away. Needs your Japanese disc (add it in the installer). Takes effect the next time the game "
          "starts.",
          false, 0, 0, 0, "", 1, true, true},
         {"director_cut_party_ai", "Director's Cut party AI",
          "The ally AI of the Japanese Director's Cut: an ally low on health sometimes falls back to the leader and "
-         "guards. Needs your Japanese disc (Install-Undub.bat). Takes effect the next time the game starts.",
+         "guards. Needs your Japanese disc (add it in the installer). Takes effect the next time the game starts.",
          false, 0, 0, 0, "", 1, true, true},
         {"text_language", "Game language",
          "The game's text, menus and scenes, in one of the European release's languages. Needs your European disc "
-         "(SCES-54552, Install-European.bat); without it the text stays English. The voices stay as they are. "
+         "(SCES-54552, add it in the installer); without it the text stays English. The voices stay as they are. "
          "Takes effect the next time the game starts.",
          false, 0, 4, 0, "", 1, true, true, "language",
          {"English", "Fran\xC3\xA7" "ais", "Deutsch", "Espa\xC3\xB1" "ol", "Italiano"}},
         {"japanese_voices", "Undub (Japanese voices)",
          "The voices in scenes and the movies come from your Japanese Director's Cut disc instead of the English "
-         "ones; the text stays as it is. Needs your Japanese disc (Install-Undub.bat); without it the voices "
+         "ones; the text stays as it is. Needs your Japanese disc (add it in the installer); without it the voices "
          "stay English. A few lines have no Japanese voice and play silent. Takes effect the next time the game "
          "starts.",
          false, 0, 0, 0, "", 1, true, true, "language"},
@@ -1325,7 +1322,6 @@ Setup::Setup(PS2Runtime &runtime)
         // The VIF1 thread's share of the wall on every stats line, beside the
         // worker's: an F9 mark then says which thread was saturated.
         dq8::gfx::setStatsExtraLine([] { return rg::vif1::busyReport() + mainStallReport(); });
-        dq8::gfx::setPresentObserver(&debug::noteFrameTime);
         // 16:10 once past the screens before the game, which stay 4:3.
         sdl->setGameWidescreenQuery([] { return rg::widescreen::wide() ? 1 : 0; });
         rg::texturePack::install(*sdl);

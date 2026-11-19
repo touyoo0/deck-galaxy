@@ -76,9 +76,8 @@ def add(zf: zipfile.ZipFile, name: str, data: bytes, mtime: float) -> None:
     # A day before, in UTC, is in the past in every time zone.
     info = zipfile.ZipInfo(f"{FOLDER}/{name}", time.gmtime(max(mtime - 86400, 315532800))[:6])
     info.compress_type = zipfile.ZIP_DEFLATED
-    # Marked as made on Unix, so the modes count: packed on Windows the
-    # entries say FAT, and then Info-ZIP's unzip and the zip crate drop a
-    # script's exec bit. Windows' own unpackers ignore it.
+    # Marked as made on Unix, so the modes count: entries that say FAT
+    # make Info-ZIP's unzip and the zip crate drop a script's exec bit.
     info.create_system = 3
     info.external_attr = (stat.S_IFREG | (0o755 if name.endswith(".sh") else 0o644)) << 16
     zf.writestr(info, data, compresslevel=9)

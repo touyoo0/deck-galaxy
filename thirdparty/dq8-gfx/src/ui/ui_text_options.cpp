@@ -236,49 +236,49 @@ const TextEntry kTextsOptions[] = {
      "Equilibrio del Director's Cut", "Bilanciamento Director's Cut"},
     {"Battles with the numbers of the Japanese Director's Cut: smaller enemy groups, more money, some enemies "
      "weaker and the Area Masters stronger, bosses never knocked down. Needs your Japanese disc "
-     "(Install-Undub.bat). Takes effect the next time the game starts.",
-     "Des combats avec les chiffres du Director's Cut japonais : groupes d'ennemis plus petits, plus d'argent, certains ennemis plus faibles et les Area Masters plus forts, boss jamais renversés. Nécessite votre disque japonais (Install-Undub.bat). Prend effet au prochain démarrage du jeu.",
-     "Kämpfe mit den Werten des japanischen Director's Cut: kleinere Gegnergruppen, mehr Geld, manche Gegner schwächer und die Area Masters stärker, Bosse werden nie umgeworfen. Benötigt deine japanische Disc (Install-Undub.bat). Wirkt beim nächsten Start des Spiels.",
-     "Combates con las cifras del Director's Cut japonés: grupos de enemigos más pequeños, más dinero, algunos enemigos más débiles y los Area Masters más fuertes, jefes que nunca caen derribados. Necesita tu disco japonés (Install-Undub.bat). Surte efecto la próxima vez que se inicie el juego.",
-     "Scontri con i valori del Director's Cut giapponese: gruppi di nemici più piccoli, più denaro, alcuni nemici più deboli e gli Area Master più forti, boss mai abbattuti. Richiede il tuo disco giapponese (Install-Undub.bat). Ha effetto al prossimo avvio del gioco."},
+     "(add it in the installer). Takes effect the next time the game starts.",
+     "Des combats avec les chiffres du Director's Cut japonais : groupes d'ennemis plus petits, plus d'argent, certains ennemis plus faibles et les Area Masters plus forts, boss jamais renversés. Nécessite votre disque japonais (à ajouter dans l'installeur). Prend effet au prochain démarrage du jeu.",
+     "Kämpfe mit den Werten des japanischen Director's Cut: kleinere Gegnergruppen, mehr Geld, manche Gegner schwächer und die Area Masters stärker, Bosse werden nie umgeworfen. Benötigt deine japanische Disc (im Installer hinzufügen). Wirkt beim nächsten Start des Spiels.",
+     "Combates con las cifras del Director's Cut japonés: grupos de enemigos más pequeños, más dinero, algunos enemigos más débiles y los Area Masters más fuertes, jefes que nunca caen derribados. Necesita tu disco japonés (añádelo en el instalador). Surte efecto la próxima vez que se inicie el juego.",
+     "Scontri con i valori del Director's Cut giapponese: gruppi di nemici più piccoli, più denaro, alcuni nemici più deboli e gli Area Master più forti, boss mai abbattuti. Richiede il tuo disco giapponese (aggiungilo nell'installer). Ha effetto al prossimo avvio del gioco."},
 
     {"Director's Cut enemy behavior", "Comportement des ennemis Director's Cut",
      "Gegnerverhalten wie im Director's Cut", "Comportamiento enemigo del Director's Cut",
      "Comportamento dei nemici Director's Cut"},
     {"The enemy attacks and AI of the Japanese Director's Cut: enemies face you before they attack, some attack "
-     "from farther away. Needs your Japanese disc (Install-Undub.bat). Takes effect the next time the game starts.",
-     "Les attaques et l'IA des ennemis du Director's Cut japonais : les ennemis vous font face avant d'attaquer, certains attaquent de plus loin. Nécessite votre disque japonais (Install-Undub.bat). Prend effet au prochain démarrage du jeu.",
-     "Die Angriffe und die KI der Gegner des japanischen Director's Cut: Gegner wenden sich dir zu, bevor sie angreifen, manche greifen aus größerer Entfernung an. Benötigt deine japanische Disc (Install-Undub.bat). Wirkt beim nächsten Start des Spiels.",
-     "Los ataques y la IA de los enemigos del Director's Cut japonés: los enemigos te miran antes de atacar, algunos atacan desde más lejos. Necesita tu disco japonés (Install-Undub.bat). Surte efecto la próxima vez que se inicie el juego.",
-     "Gli attacchi e l'IA dei nemici del Director's Cut giapponese: i nemici ti si voltano verso prima di attaccare, alcuni attaccano da più lontano. Richiede il tuo disco giapponese (Install-Undub.bat). Ha effetto al prossimo avvio del gioco."},
+     "from farther away. Needs your Japanese disc (add it in the installer). Takes effect the next time the game starts.",
+     "Les attaques et l'IA des ennemis du Director's Cut japonais : les ennemis vous font face avant d'attaquer, certains attaquent de plus loin. Nécessite votre disque japonais (à ajouter dans l'installeur). Prend effet au prochain démarrage du jeu.",
+     "Die Angriffe und die KI der Gegner des japanischen Director's Cut: Gegner wenden sich dir zu, bevor sie angreifen, manche greifen aus größerer Entfernung an. Benötigt deine japanische Disc (im Installer hinzufügen). Wirkt beim nächsten Start des Spiels.",
+     "Los ataques y la IA de los enemigos del Director's Cut japonés: los enemigos te miran antes de atacar, algunos atacan desde más lejos. Necesita tu disco japonés (añádelo en el instalador). Surte efecto la próxima vez que se inicie el juego.",
+     "Gli attacchi e l'IA dei nemici del Director's Cut giapponese: i nemici ti si voltano verso prima di attaccare, alcuni attaccano da più lontano. Richiede il tuo disco giapponese (aggiungilo nell'installer). Ha effetto al prossimo avvio del gioco."},
 
     {"Director's Cut party AI", "IA du groupe Director's Cut", "Gruppen-KI wie im Director's Cut",
      "IA del grupo del Director's Cut", "IA del gruppo Director's Cut"},
     {"The ally AI of the Japanese Director's Cut: an ally low on health sometimes falls back to the leader and "
-     "guards. Needs your Japanese disc (Install-Undub.bat). Takes effect the next time the game starts.",
-     "L'IA des alliés du Director's Cut japonais : un allié en mauvaise santé se replie parfois vers le chef et se garde. Nécessite votre disque japonais (Install-Undub.bat). Prend effet au prochain démarrage du jeu.",
-     "Die Verbündeten-KI des japanischen Director's Cut: Ein Verbündeter mit wenig Gesundheit zieht sich manchmal zum Anführer zurück und wehrt ab. Benötigt deine japanische Disc (Install-Undub.bat). Wirkt beim nächsten Start des Spiels.",
-     "La IA de los aliados del Director's Cut japonés: un aliado con poca salud a veces se retira hacia el líder y se defiende. Necesita tu disco japonés (Install-Undub.bat). Surte efecto la próxima vez que se inicie el juego.",
-     "L'IA degli alleati del Director's Cut giapponese: un alleato con poca salute a volte si ritira verso il leader e si difende. Richiede il tuo disco giapponese (Install-Undub.bat). Ha effetto al prossimo avvio del gioco."},
+     "guards. Needs your Japanese disc (add it in the installer). Takes effect the next time the game starts.",
+     "L'IA des alliés du Director's Cut japonais : un allié en mauvaise santé se replie parfois vers le chef et se garde. Nécessite votre disque japonais (à ajouter dans l'installeur). Prend effet au prochain démarrage du jeu.",
+     "Die Verbündeten-KI des japanischen Director's Cut: Ein Verbündeter mit wenig Gesundheit zieht sich manchmal zum Anführer zurück und wehrt ab. Benötigt deine japanische Disc (im Installer hinzufügen). Wirkt beim nächsten Start des Spiels.",
+     "La IA de los aliados del Director's Cut japonés: un aliado con poca salud a veces se retira hacia el líder y se defiende. Necesita tu disco japonés (añádelo en el instalador). Surte efecto la próxima vez que se inicie el juego.",
+     "L'IA degli alleati del Director's Cut giapponese: un alleato con poca salute a volte si ritira verso il leader e si difende. Richiede il tuo disco giapponese (aggiungilo nell'installer). Ha effetto al prossimo avvio del gioco."},
 
     {"Game language", "Langue du jeu", "Spielsprache", "Idioma del juego", "Lingua del gioco"},
     {"The game's text, menus and scenes, in one of the European release's languages. Needs your European disc "
-     "(SCES-54552, Install-European.bat); without it the text stays English. The voices stay as they are. Takes "
+     "(SCES-54552, add it in the installer); without it the text stays English. The voices stay as they are. Takes "
      "effect the next time the game starts.",
-     "Le texte, les menus et les scènes du jeu, dans l'une des langues de l'édition européenne. Nécessite votre disque européen (SCES-54552, Install-European.bat) ; sans lui, le texte reste en anglais. Les voix ne changent pas. Prend effet au prochain démarrage du jeu.",
-     "Text, Menüs und Szenen des Spiels in einer der Sprachen der europäischen Version. Benötigt deine europäische Disc (SCES-54552, Install-European.bat); ohne sie bleibt der Text englisch. Die Stimmen bleiben, wie sie sind. Wirkt beim nächsten Start des Spiels.",
-     "El texto, los menús y las escenas del juego, en uno de los idiomas de la edición europea. Necesita tu disco europeo (SCES-54552, Install-European.bat); sin él, el texto sigue en inglés. Las voces se quedan como están. Surte efecto la próxima vez que se inicie el juego.",
-     "Il testo, i menu e le scene del gioco, in una delle lingue dell'edizione europea. Richiede il tuo disco europeo (SCES-54552, Install-European.bat); senza, il testo resta in inglese. Le voci restano come sono. Ha effetto al prossimo avvio del gioco."},
+     "Le texte, les menus et les scènes du jeu, dans l'une des langues de l'édition européenne. Nécessite votre disque européen (SCES-54552, à ajouter dans l'installeur) ; sans lui, le texte reste en anglais. Les voix ne changent pas. Prend effet au prochain démarrage du jeu.",
+     "Text, Menüs und Szenen des Spiels in einer der Sprachen der europäischen Version. Benötigt deine europäische Disc (SCES-54552, im Installer hinzufügen); ohne sie bleibt der Text englisch. Die Stimmen bleiben, wie sie sind. Wirkt beim nächsten Start des Spiels.",
+     "El texto, los menús y las escenas del juego, en uno de los idiomas de la edición europea. Necesita tu disco europeo (SCES-54552, añádelo en el instalador); sin él, el texto sigue en inglés. Las voces se quedan como están. Surte efecto la próxima vez que se inicie el juego.",
+     "Il testo, i menu e le scene del gioco, in una delle lingue dell'edizione europea. Richiede il tuo disco europeo (SCES-54552, aggiungilo nell'installer); senza, il testo resta in inglese. Le voci restano come sono. Ha effetto al prossimo avvio del gioco."},
 
     {"Undub (Japanese voices)", "Undub (voix japonaises)", "Undub (japanische Stimmen)", "Undub (voces japonesas)",
      "Undub (voci giapponesi)"},
     {"The voices in scenes and the movies come from your Japanese Director's Cut disc instead of the English ones; "
-     "the text stays as it is. Needs your Japanese disc (Install-Undub.bat); without it the voices stay English. A "
+     "the text stays as it is. Needs your Japanese disc (add it in the installer); without it the voices stay English. A "
      "few lines have no Japanese voice and play silent. Takes effect the next time the game starts.",
-     "Les voix des scènes et les films viennent de votre disque Director's Cut japonais au lieu des voix anglaises ; le texte ne change pas. Nécessite votre disque japonais (Install-Undub.bat) ; sans lui, les voix restent en anglais. Quelques répliques n'ont pas de voix japonaise et sont muettes. Prend effet au prochain démarrage du jeu.",
-     "Die Stimmen in Szenen und die Filme stammen von deiner japanischen Director's-Cut-Disc statt der englischen; der Text bleibt, wie er ist. Benötigt deine japanische Disc (Install-Undub.bat); ohne sie bleiben die Stimmen englisch. Einige Zeilen haben keine japanische Stimme und bleiben stumm. Wirkt beim nächsten Start des Spiels.",
-     "Las voces de las escenas y las películas vienen de tu disco del Director's Cut japonés en lugar de las inglesas; el texto se queda como está. Necesita tu disco japonés (Install-Undub.bat); sin él, las voces siguen en inglés. Algunas líneas no tienen voz japonesa y suenan en silencio. Surte efecto la próxima vez que se inicie el juego.",
-     "Le voci nelle scene e i filmati provengono dal tuo disco Director's Cut giapponese invece di quelle inglesi; il testo resta com'è. Richiede il tuo disco giapponese (Install-Undub.bat); senza, le voci restano in inglese. Alcune battute non hanno una voce giapponese e restano mute. Ha effetto al prossimo avvio del gioco."},
+     "Les voix des scènes et les films viennent de votre disque Director's Cut japonais au lieu des voix anglaises ; le texte ne change pas. Nécessite votre disque japonais (à ajouter dans l'installeur) ; sans lui, les voix restent en anglais. Quelques répliques n'ont pas de voix japonaise et sont muettes. Prend effet au prochain démarrage du jeu.",
+     "Die Stimmen in Szenen und die Filme stammen von deiner japanischen Director's-Cut-Disc statt der englischen; der Text bleibt, wie er ist. Benötigt deine japanische Disc (im Installer hinzufügen); ohne sie bleiben die Stimmen englisch. Einige Zeilen haben keine japanische Stimme und bleiben stumm. Wirkt beim nächsten Start des Spiels.",
+     "Las voces de las escenas y las películas vienen de tu disco del Director's Cut japonés en lugar de las inglesas; el texto se queda como está. Necesita tu disco japonés (añádelo en el instalador); sin él, las voces siguen en inglés. Algunas líneas no tienen voz japonesa y suenan en silencio. Surte efecto la próxima vez que se inicie el juego.",
+     "Le voci nelle scene e i filmati provengono dal tuo disco Director's Cut giapponese invece di quelle inglesi; il testo resta com'è. Richiede il tuo disco giapponese (aggiungilo nell'installer); senza, le voci restano in inglese. Alcune battute non hanno una voce giapponese e restano mute. Ha effetto al prossimo avvio del gioco."},
 
     {"Developer tools", "Outils de développement", "Entwicklerwerkzeuge", "Herramientas de desarrollo",
      "Strumenti di sviluppo"},
@@ -293,20 +293,20 @@ const TextEntry kTextsOptions[] = {
      "Gli strumenti che gli sviluppatori hanno lasciato nel gioco, disattivati per l'uscita. Menu principale: R3 mostra l'icona di ogni oggetto, R1 + R3 un elenco di essi, e Croce te ne dà uno di quello scelto. Pagine di aiuto ed elenco info: R1 + Select sblocca ogni voce. Bestiario: Select lo riempie. Revelation Flow: R2 + Triangolo dà uno di ogni oggetto richiesto dalla casella scelta. In pausa in una scena: Triangolo + R1 + R2 la termina, anche una che il gioco non permette di saltare; questo può lasciare la storia fuori ordine."},
 
     // why an option is greyed out
-    {"Run Install-Undub.bat again for this: it adds these files.",
-     "Relancez Install-Undub.bat pour cela : il ajoute ces fichiers.",
-     "Starte Install-Undub.bat dafür erneut: Es fügt diese Dateien hinzu.",
-     "Ejecuta Install-Undub.bat de nuevo para esto: añade estos archivos.",
-     "Esegui di nuovo Install-Undub.bat per questo: aggiunge questi file."},
-    {"Needs your Japanese disc: run Install-Undub.bat.", "Nécessite votre disque japonais : lancez Install-Undub.bat.",
-     "Benötigt deine japanische Disc: Starte Install-Undub.bat.",
-     "Necesita tu disco japonés: ejecuta Install-Undub.bat.",
-     "Richiede il tuo disco giapponese: esegui Install-Undub.bat."},
-    {"Needs your European disc: run Install-European.bat.",
-     "Nécessite votre disque européen : lancez Install-European.bat.",
-     "Benötigt deine europäische Disc: Starte Install-European.bat.",
-     "Necesita tu disco europeo: ejecuta Install-European.bat.",
-     "Richiede il tuo disco europeo: esegui Install-European.bat."},
+    {"Run the installer again for this: it adds these files.",
+     "Relancez l'installeur pour cela : il ajoute ces fichiers.",
+     "Starte den Installer dafür erneut: Er fügt diese Dateien hinzu.",
+     "Ejecuta el instalador de nuevo para esto: añade estos archivos.",
+     "Esegui di nuovo l'installer per questo: aggiunge questi file."},
+    {"Needs your Japanese disc: add it in the installer.", "Nécessite votre disque japonais : ajoutez-le dans l'installeur.",
+     "Benötigt deine japanische Disc: Füge sie im Installer hinzu.",
+     "Necesita tu disco japonés: añádelo en el instalador.",
+     "Richiede il tuo disco giapponese: aggiungilo nell'installer."},
+    {"Needs your European disc: add it in the installer.",
+     "Nécessite votre disque européen : ajoutez-le dans l'installeur.",
+     "Benötigt deine europäische Disc: Füge sie im Installer hinzu.",
+     "Necesita tu disco europeo: añádelo en el instalador.",
+     "Richiede il tuo disco europeo: aggiungilo nell'installer."},
 
     // the shortcuts the game adds
     // RetroAchievements notices

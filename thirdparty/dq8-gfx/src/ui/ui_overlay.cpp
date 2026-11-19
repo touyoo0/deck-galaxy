@@ -766,8 +766,7 @@ void Overlay::render(SDL_GPUCommandBuffer *commands, SDL_GPUTexture *target, uin
 void Overlay::updateScale() {
     float display = 1.0f;
     if (m_window) {
-        // Points already carry a Retina display's density; a scaled Windows or
-        // Linux desktop shows up as the display scale instead.
+        // A scaled desktop shows up as the display scale.
         const float density = SDL_GetWindowPixelDensity(m_window);
         const float scale = SDL_GetWindowDisplayScale(m_window);
         if (density > 0.0f && scale > 0.0f)

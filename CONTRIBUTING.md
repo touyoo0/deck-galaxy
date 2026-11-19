@@ -30,8 +30,7 @@ closed after two weeks without an answer, and reopened when the answer comes.
   saves), the pull request also adds a way to get the old behaviour, so both
   can be compared in one build.
 - **Renderer changes show their frames.** The scripted walk that gave
-  byte-identical frames (`tools/bench/walk.sh`) only worked on Windows and is
-  gone from this fork. Compare the picture before and after at 1x and 2x with
+  byte-identical frames is gone from this fork. Compare the picture before and after at 1x and 2x with
   `RG_UI_SCRIPT` screenshots (`tools/bench/cmpvram.py` for VRAM), a battle
   too when the change touches effects, and put the images in the pull
   request.

@@ -11,9 +11,8 @@ guest addresses in the same executable.
 
 ## What shipped
 
-The Japanese voices and movies, as the undub. `setup.py extract-japanese` (through
-`tools/install/install-undub.ps1`) runs `python setup.py extract-japanese`.
-It checks that the image is the Japanese Director's Cut by its two voice
+The Japanese voices and movies, as the undub. `setup.py extract-japanese`, which the installer runs,
+checks that the image is the Japanese Director's Cut by its two voice
 indexes (`config/SCUS_974.90/japanese.json`), then copies the voice archives
 (`DATA0_1`, `DATA1_1`) and every movie whose bytes differ from the US one
 into `disc/JA`, about 3 GB. The menu's Settings > Language > "Undub

@@ -443,7 +443,7 @@ void loadZip(const std::filesystem::path &file)
 }
 
 // The packs, once: RG_TEXTURE_PACK=DIR (or a .zip) is that one pack; else
-// textures/hd (what make-pack.bat writes) first, then the folders and zips of
+// textures/hd (what tools/texture_pack/make_pack.py writes) first, then the folders and zips of
 // textures/packs by name, a later one over an earlier.
 void scan()
 {

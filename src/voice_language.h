@@ -9,14 +9,14 @@ class PS2Runtime;
 // KO, ZH) the voice token is pointed at that entry of the game's own table
 // (0x44AF38) instead. The menu's Undub switch means JA: the voice archives
 // (wav/ja/) and the movies that differ then come from disc/JA, which
-// `setup.py extract-japanese` (Install-Undub.bat) fills.
+// `setup.py extract-japanese` (the installer) fills.
 namespace rg::voicelanguage
 {
 
 // The menu's switch: Japanese voices and movies at the next start.
 void setEnabled(bool on);
 
-// Install-Undub.bat has put the Japanese disc's voices in disc/JA, for the
+// The installer has put the Japanese disc's voices in disc/JA, for the
 // menu; it reads the disc folder each call.
 bool installed();
 

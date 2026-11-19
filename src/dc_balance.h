@@ -13,7 +13,7 @@ class PS2Runtime;
 // - the enemies' behavior: their attacks and AI, and CATCH (below);
 // - the party's AI: an ally low on health falls back to the leader and guards.
 //
-// The numbers: `setup.py director-cut-balance` (Install-Undub.bat runs it)
+// The numbers: `setup.py director-cut-balance` (the installer runs it)
 // takes four tables of the Japanese disc's param pack (monster_param,
 // encount_group_param, btl_eff_param3, fixed_encount_param), gives each the
 // US table's strings (names stay English), and writes them with a list,
@@ -79,7 +79,7 @@ void setBalance(bool on);
 void setEnemyBehavior(bool on);
 void setPartyAi(bool on);
 
-// What Install-Undub.bat put in disc/JA/balance, for the menu (it reads the
+// What the installer put in disc/JA/balance, for the menu (it reads the
 // disc folder each call): the balance's tables.txt, and the files.idx and
 // files.dat the enemy behavior and the party AI are served from.
 bool balanceInstalled();

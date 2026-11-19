@@ -241,9 +241,9 @@ bool saveSettings(const std::string &path, const Settings &settings) {
         file << serializeSettings(settings);
         written = static_cast<bool>(file.flush());
     }
-    // Unlike std::rename on Windows, SDL_RenamePath replaces the old file. It
+    // SDL_RenamePath replaces the old file. It
     // fails while another process has it open (the other copy reading or
-    // replacing it, a virus scanner): five tries, 2 ms apart. Whatever is
+    // replacing it): five tries, 2 ms apart. Whatever is
     // not renamed is removed, so no temporary is left behind.
     for (int attempt = 0; written && attempt < 5; ++attempt) {
         if (SDL_RenamePath(temporary.c_str(), path.c_str()))
