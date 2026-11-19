@@ -144,7 +144,7 @@ void apply(Settings &s, const std::string &section, const std::string &key, cons
 std::string serializeSettings(const Settings &s) {
     std::ostringstream out;
     const auto flag = [](bool value) { return value ? "1" : "0"; };
-    out << "; Rogue Galaxy Recompiled settings, written by the in-game menu (F1).\n\n"
+    out << "; Deck Galaxy settings, written by the in-game menu (F1).\n\n"
         << "[window]\nfullscreen = " << flag(s.fullscreen) << "\nmaximized = " << flag(s.maximized)
         << "\nwidth = " << s.windowWidth << "\nheight = " << s.windowHeight << "\n";
     if (s.windowPlaced)

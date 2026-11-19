@@ -1,4 +1,4 @@
-# Rogue Galaxy Recompiled
+# Deck Galaxy
 
 **Rogue Galaxy** (Level-5 / SCE, PlayStation 2) as a native game for the Steam Deck: a
 static recompilation of the USA release (SCUS-97490), built on
@@ -84,13 +84,14 @@ All of it can be changed in the game's menu, Settings > Controls.
 
 ### The game's menu
 
-**View + Menu** opens the menu's top bar and its Settings window, which
-has the pages: display, sound, controls, the game options, Language (the
-text's language, the undub), Textures and Interface. Most game options are
+**View + Menu** opens the menu, a window with a list of pages: actions
+(pause, fast-forward, save states, screenshots), display, sound, controls,
+the game options, Language (the text's language, the undub), Achievements,
+Interface and Help. Most game options are
 also on the game's own Settings screen (System > Settings). Every option and
 where it is: [docs/OPTIONS.md](docs/OPTIONS.md).
 
-With the Deck's buttons: A opens a page, B goes back, Y reaches the top bar,
+With the Deck's buttons: A opens a page, B goes back,
 L1 and R1 turn the pages.
 
 <p align="center"><img src="docs/images/menu-game.jpg" width="70%" alt="The menu's Game page"></p>

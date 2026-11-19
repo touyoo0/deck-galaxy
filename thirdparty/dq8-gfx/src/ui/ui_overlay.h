@@ -1,5 +1,5 @@
 // The in-game menu, drawn with Dear ImGui over the SDL GPU backend's window:
-// a menu bar (F1, or Guide / Back+Start on a controller), the settings window,
+// a window of pages (F1, or Guide / Back+Start on a controller), the settings window,
 // and notifications.
 #pragma once
 
@@ -175,7 +175,7 @@ struct HostServices {
 // Game: Rogue Galaxy's own switches (added).
 // Language: the options a host puts there (GameOption::page),
 // apart from Game's (Rogue Galaxy: added).
-enum class SettingsPage : uint8_t { Display, Sound, Controls, Game, Language, Achievements, Interface, Count };
+enum class SettingsPage : uint8_t { Saves, Actions, Display, Sound, Controls, Game, Language, Achievements, Interface, Help, Count };
 
 class Overlay final : public gfx::SdlGpuOverlay {
 public:
@@ -211,8 +211,6 @@ public:
     void setGameNumberValue(const std::string &key, int value);
     void setMenuOpen(bool open);
     void openSettings(SettingsPage page);
-    // Opens one of the menu bar's menus at the next frame, by its label.
-    void showMenu(const char *label);
     void openAbout();
     void openShortcuts();
     // The save states' slots, as a window of their own, to save into or load
@@ -263,7 +261,6 @@ private:
     // has already moved things by the time the frame is drawn.
     struct NavBefore {
         ImGuiWindow *window = nullptr;
-        bool menuLayer = false;
         bool itemActive = false;
         bool popupOpen = false;
         bool modalOpen = false;
@@ -289,7 +286,6 @@ private:
     // Back, one level at a time; `pad` when it came from the controller's B.
     void backOut(bool pad);
     void toggleMenu(bool fromController);
-    void toggleBarFocus();
     // The controllers' state for ImGui, read here instead of by its SDL
     // backend: the left stick moves the cursor as the D-pad does, and the
     // right stick scrolls.
@@ -308,9 +304,11 @@ private:
     void updateScale();
     void updateNavigation();
     void drawFrame();
-    void drawMenuBar();
-    void drawStatus();
     void drawSettingsWindow();
+    bool pageShown(SettingsPage page) const;
+    void drawSavesPage();
+    void drawActionsPage();
+    void drawHelpPage();
     void drawDisplayPage();
     void drawSoundPage();
     void drawControlsPage();
@@ -386,7 +384,7 @@ private:
     bool m_menuOpen = false;
     bool m_settingsOpen = false;
     bool m_focusSettings = false;
-    SettingsPage m_page = SettingsPage::Display;
+    SettingsPage m_page = SettingsPage::Saves;
     bool m_aboutOpen = false;
     bool m_shortcutsOpen = false;
     bool m_achievementsLockedOnly = false;
@@ -397,7 +395,6 @@ private:
     bool m_statsOpen = false;
     // RG_UI_SCRIPT's "icons": every icon on screen, for a screenshot.
     bool m_iconSheet = false;
-    std::string m_showMenu;
     bool m_windowFocused = true;
     bool m_userPaused = false;
     bool m_hostPaused = false;

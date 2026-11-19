@@ -261,7 +261,7 @@ const TextEntry kTextsOptions[] = {
      "La IA de los aliados del Director's Cut japonés: un aliado con poca salud a veces se retira hacia el líder y se defiende. Necesita tu disco japonés (Install-Undub.bat). Surte efecto la próxima vez que se inicie el juego.",
      "L'IA degli alleati del Director's Cut giapponese: un alleato con poca salute a volte si ritira verso il leader e si difende. Richiede il tuo disco giapponese (Install-Undub.bat). Ha effetto al prossimo avvio del gioco."},
 
-    {"Text", "Texte", "Text", "Texto", "Testo"},
+    {"Game language", "Langue du jeu", "Spielsprache", "Idioma del juego", "Lingua del gioco"},
     {"The game's text, menus and scenes, in one of the European release's languages. Needs your European disc "
      "(SCES-54552, Install-European.bat); without it the text stays English. The voices stay as they are. Takes "
      "effect the next time the game starts.",

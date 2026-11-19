@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -24,9 +25,12 @@ namespace {
 using gfx::PadInput;
 
 constexpr const char *kTimes = "\xC3\x97"; // U+00D7, spelled out for compilers without /utf-8
-constexpr const char *kPageNames[] = {"Display", "Sound", "Controls", "Game", "Language", "Achievements", "Interface"};
-constexpr Icon kPageIcons[] = {Icon::Display, Icon::Sound, Icon::Controls, Icon::Disc,
-                               Icon::Info,    Icon::Check, Icon::Interface};
+constexpr const char *kPageNames[] = {"Save states", "Actions", "Display",      "Sound",     "Controls", "Game",
+                                      "Language", "Achievements", "Interface", "Help"};
+constexpr Icon kPageIcons[] = {Icon::Disc, Icon::Play, Icon::Display, Icon::Sound,     Icon::Controls, Icon::Disc,
+                               Icon::Info, Icon::Check,   Icon::Interface, Icon::Link};
+static_assert(sizeof(kPageNames) / sizeof(kPageNames[0]) == static_cast<size_t>(SettingsPage::Count));
+static_assert(sizeof(kPageIcons) / sizeof(kPageIcons[0]) == static_cast<size_t>(SettingsPage::Count));
 constexpr const char *kProjectUrl = "https://github.com/victor-takai/rogue-galaxy-recomp";
 constexpr const char *kIssuesUrl = "https://github.com/victor-takai/rogue-galaxy-recomp/issues";
 
@@ -141,13 +145,43 @@ std::string conflictWith(const gfx::PadConfig &config, PadInput input, bool keyb
     }
     return {};
 }
+// One save state's row: its picture, slot and time. Returns true when chosen;
+// the item is the row's, for the caller to focus (Steam Deck fork: added).
+bool slotRow(int slot, const HostServices::SaveSlot &entry, bool enabled, float thumbHeight) {
+    const float thumbWidth = thumbHeight * 1.6f, pad = em(0.4f);
+    const float rowHeight = thumbHeight + 2.0f * pad;
+    ImGui::PushID(slot);
+    ImGui::BeginDisabled(!enabled);
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    const bool pressed = ImGui::Selectable("##slot", false, 0, ImVec2(0.0f, rowHeight));
+    ImDrawList *list = ImGui::GetWindowDrawList();
+    const ImVec2 thumbMin(at.x + pad, at.y + pad), thumbMax(thumbMin.x + thumbWidth, thumbMin.y + thumbHeight);
+    ImTextureRef picture;
+    ImVec2 pictureSize;
+    if (entry.used && !entry.picture.empty() && fileTexture(entry.picture.c_str(), picture, pictureSize))
+        list->AddImage(picture, thumbMin, thumbMax);
+    else
+        list->AddRectFilled(thumbMin, thumbMax, withAlpha(palette::kBorderInner, 0.8f), em(0.2f));
+    list->AddRect(thumbMin, thumbMax, withAlpha(palette::kBorder, enabled ? 0.4f : 0.15f), em(0.2f));
+    const float textX = thumbMax.x + em(1.0f);
+    const std::string title = Lf("Slot %d", slot);
+    list->AddText(ImVec2(textX, at.y + pad + em(0.3f)), enabled ? palette::kText : palette::kTextMuted, title.c_str());
+    const std::string when = entry.used ? entry.when : std::string(L("empty"));
+    list->AddText(ImVec2(textX, at.y + pad + em(1.6f)), entry.used ? palette::kGold : palette::kTextMuted,
+                  when.c_str());
+    ImGui::EndDisabled();
+    ImGui::PopID();
+    return pressed;
+}
 } // namespace
 
 void Overlay::drawSettingsWindow() {
     ImGuiContext &g = *ImGui::GetCurrentContext();
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
     const ImVec2 area = viewport->WorkSize;
-    const ImVec2 size(std::min(area.x - em(2.0f), em(54.0f)), std::min(area.y - em(2.0f), em(37.0f)));
+    const ImVec2 size(std::min(area.x - em(2.0f), em(54.0f)), std::min(area.y - em(1.0f), em(47.0f)));
+    for (int page = 0; !pageShown(m_page) && page < static_cast<int>(SettingsPage::Count); ++page)
+        m_page = static_cast<SettingsPage>((static_cast<int>(m_page) + 1) % static_cast<int>(SettingsPage::Count));
     centerNextWindow();
     ImGui::SetNextWindowSize(size, ImGuiCond_Always);
     if (m_focusSettings) {
@@ -180,6 +214,8 @@ void Overlay::drawSettingsWindow() {
         const bool follow = inList && g.NavCursorVisible && !m_focusList;
         for (int page = 0; page < count; ++page) {
             const auto which = static_cast<SettingsPage>(page);
+            if (!pageShown(which))
+                continue;
             if (navItem(kPageNames[page], kPageIcons[page], m_page == which)) {
                 m_page = which;
                 // Chosen with A or Enter rather than a click: on into it.
@@ -209,7 +245,7 @@ void Overlay::drawSettingsWindow() {
         if (ImGui::GetContentRegionAvail().y > footer) {
             ImGui::SetCursorPosY(ImGui::GetWindowHeight() - footer);
             ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 0.84f);
-            mutedText("Rogue Galaxy Recompiled %s", m_host.version.c_str());
+            mutedText("Deck Galaxy %s", m_host.version.c_str());
             mutedText("Changes save automatically");
             ImGui::PopFont();
         }
@@ -238,6 +274,8 @@ void Overlay::drawSettingsWindow() {
         ImGui::PushItemWidth(-em(0.6f));
         ImGui::Indent(em(0.1f));
         switch (m_page) {
+        case SettingsPage::Saves: drawSavesPage(); break;
+        case SettingsPage::Actions: drawActionsPage(); break;
         case SettingsPage::Display: drawDisplayPage(); break;
         case SettingsPage::Sound: drawSoundPage(); break;
         case SettingsPage::Controls: drawControlsPage(); break;
@@ -245,6 +283,7 @@ void Overlay::drawSettingsWindow() {
         case SettingsPage::Language: drawLanguagePage(); break;
         case SettingsPage::Achievements: drawAchievementsPage(); break;
         case SettingsPage::Interface: drawInterfacePage(); break;
+        case SettingsPage::Help: drawHelpPage(); break;
         case SettingsPage::Count: break;
         }
         ImGui::Unindent(em(0.1f));
@@ -267,7 +306,9 @@ void Overlay::drawSettingsWindow() {
                              : ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false) ? 1
                                                                               : 0;
             if (turn != 0) {
-                m_page = static_cast<SettingsPage>((static_cast<int>(m_page) + turn) % count);
+                do {
+                    m_page = static_cast<SettingsPage>((static_cast<int>(m_page) + turn) % count);
+                } while (!pageShown(m_page));
                 // The cursor stays on its side: in the new page, or on its entry.
                 if (inPage)
                     m_focusPage = true;
@@ -300,20 +341,16 @@ void Overlay::drawPadHints(float height) {
                  {SDL_GAMEPAD_BUTTON_SOUTH, kNone, "Done"}};
     } else if (ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
         hints = {{SDL_GAMEPAD_BUTTON_SOUTH, kNone, "Choose"}, {SDL_GAMEPAD_BUTTON_EAST, kNone, "Close"}};
-    } else if (g.NavLayer == ImGuiNavLayer_Menu) {
-        hints = {{SDL_GAMEPAD_BUTTON_SOUTH, kNone, "Open"}, {SDL_GAMEPAD_BUTTON_EAST, kNone, "Back"}};
     } else if (inPage) {
         // "Choose", as in lists: Controls shows the PS2's Select button here.
         hints = {{SDL_GAMEPAD_BUTTON_SOUTH, kNone, "Choose"}, {SDL_GAMEPAD_BUTTON_EAST, kNone, "Back"}};
         if (m_page == SettingsPage::Controls)
             hints.push_back({SDL_GAMEPAD_BUTTON_WEST, kNone, "Clear a binding"});
         hints.push_back({SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, "Page"});
-        hints.push_back({SDL_GAMEPAD_BUTTON_NORTH, kNone, "Top bar"});
     } else {
         hints = {{SDL_GAMEPAD_BUTTON_SOUTH, kNone, "Open"},
                  {SDL_GAMEPAD_BUTTON_EAST, kNone, "Back to the game"},
-                 {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, "Page"},
-                 {SDL_GAMEPAD_BUTTON_NORTH, kNone, "Top bar"}};
+                 {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, "Page"}};
     }
 
     ImDrawList *list = ImGui::GetWindowDrawList();
@@ -343,6 +380,189 @@ void Overlay::drawPadHints(float height) {
         x += em(0.15f) + text.x + em(1.3f);
     }
     ImGui::Dummy(ImVec2(0.0f, height - ImGui::GetStyle().ItemSpacing.y));
+}
+
+// Whether a page is in the list: the actions work on a running game, which
+// the home screen has not started (Steam Deck fork: added).
+bool Overlay::pageShown(SettingsPage page) const {
+    if (page == SettingsPage::Saves)
+        return !m_homeOpen && static_cast<bool>(m_host.saveSlots);
+    return page != SettingsPage::Actions || !m_homeOpen;
+}
+
+// The save states, managed from the menu: the five slots to save into on the
+// left, the five to load from on the right (Steam Deck fork: added). A choice
+// closes the menu first, as the slot window's does, so the game runs to do it.
+void Overlay::drawSavesPage() {
+    const std::vector<HostServices::SaveSlot> slots = m_host.saveSlots ? m_host.saveSlots() : std::vector<HostServices::SaveSlot>{};
+    if (slots.empty())
+        return;
+    const float thumbHeight = em(2.9f);
+    int chosenSave = 0, chosenLoad = 0;
+    if (ImGui::BeginTable("##slots", 2, ImGuiTableFlags_None)) {
+        ImGui::TableSetupColumn("save", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("load", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableNextRow();
+        for (int column = 0; column < 2; ++column) {
+            ImGui::TableSetColumnIndex(column);
+            const bool saving = column == 0;
+            ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.1f);
+            ImGui::TextUnformatted(L(saving ? "Save" : "Load"));
+            ImGui::PopFont();
+            ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
+        }
+        for (int index = 0; index < static_cast<int>(slots.size()); ++index) {
+            ImGui::TableNextRow();
+            for (int column = 0; column < 2; ++column) {
+                ImGui::TableSetColumnIndex(column);
+                const bool saving = column == 0;
+                ImGui::PushID(column);
+                if (slotRow(index + 1, slots[index], saving || slots[index].used, thumbHeight))
+                    (saving ? chosenSave : chosenLoad) = index + 1;
+                ImGui::PopID();
+            }
+        }
+        ImGui::EndTable();
+    }
+    if (std::none_of(slots.begin(), slots.end(), [](const HostServices::SaveSlot &slot) { return slot.used; }))
+        mutedText("%s", L("No save state yet"));
+
+    if (chosenLoad != 0) {
+        const int slot = chosenLoad;
+        m_slotLast = slot;
+        setMenuOpen(false);
+        if (m_host.saveSlotLoad)
+            m_host.saveSlotLoad(slot);
+    } else if (chosenSave != 0) {
+        m_slotLast = chosenSave;
+        if (slots[chosenSave - 1].used) {
+            m_slotConfirm = chosenSave;
+        } else {
+            const int slot = chosenSave;
+            setMenuOpen(false);
+            if (m_host.saveSlotSave)
+                m_host.saveSlotSave(slot);
+        }
+    }
+
+    // The overwrite question, as the slot window asks it.
+    constexpr const char *kQuestion = "##overwritepage";
+    if (m_slotConfirm != 0 && !ImGui::IsPopupOpen(kQuestion))
+        ImGui::OpenPopup(kQuestion);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(1.6f), em(1.2f)));
+    if (ImGui::BeginPopupModal(kQuestion, nullptr,
+                               ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove)) {
+        decorateWindow();
+        ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.2f);
+        ImGui::TextUnformatted(Lf("Overwrite slot %d?", m_slotConfirm).c_str());
+        ImGui::PopFont();
+        mutedText("What is in it is lost.");
+        ImGui::Dummy(ImVec2(0.0f, em(0.6f)));
+        const ImVec2 buttonSize(em(7.0f), 0.0f);
+        // Cancel first: it is where the cursor starts. Back reaches it as the
+        // Quit question's.
+        if (ImGui::Button(L("Cancel"), buttonSize) || m_cancelQuit) {
+            ImGui::CloseCurrentPopup();
+            m_slotConfirm = 0;
+        }
+        ImGui::SetItemDefaultFocus();
+        ImGui::SameLine();
+        if (ImGui::Button(L("Overwrite"), buttonSize)) {
+            const int slot = m_slotConfirm;
+            ImGui::CloseCurrentPopup();
+            m_slotConfirm = 0;
+            setMenuOpen(false);
+            if (m_host.saveSlotSave)
+                m_host.saveSlotSave(slot);
+        }
+        ImGui::EndPopup();
+    } else {
+        m_slotConfirm = 0;
+    }
+    ImGui::PopStyleVar();
+}
+
+// What the top bar's Game, Save states and View menus held, as buttons and
+// switches a controller reaches (Steam Deck fork: added).
+void Overlay::drawActionsPage() {
+    if (canPause() || canChangeSpeed()) {
+        sectionHeader("Pause and speed");
+        if (beginSettings("actions")) {
+            if (canPause()) {
+                settingRow("Pause", "F5");
+                bool paused = m_userPaused;
+                if (toggle("pause", &paused))
+                    setUserPaused(paused);
+            }
+            if (canChangeSpeed()) {
+                settingRow("Fast-forward", "F4");
+                bool fast = m_fastForward;
+                if (toggle("fastforward", &fast))
+                    setFastForward(fast);
+                settingRow("Fast-forward speed");
+                static constexpr float kSpeeds[] = {2.0f, 3.0f, 4.0f, 0.0f};
+                static constexpr const char *kSpeedNames[] = {"2\xC3\x97", "3\xC3\x97", "4\xC3\x97", "Unlimited"};
+                int speed = 0;
+                for (int index = 0; index < 4; ++index)
+                    if (m_settings.fastForwardSpeed == kSpeeds[index])
+                        speed = index;
+                if (segmented("speed", &speed, kSpeedNames, 4)) {
+                    m_settings.fastForwardSpeed = kSpeeds[speed];
+                    if (m_fastForward)
+                        m_host.setSpeed(m_settings.fastForwardSpeed);
+                    markDirty();
+                }
+            }
+            endSettings();
+        }
+    }
+    sectionHeader("Sound");
+    if (beginSettings("mute")) {
+        settingRow("Mute sound");
+        bool muted = m_settings.muted;
+        if (toggle("muted", &muted)) {
+            m_settings.muted = muted;
+            applyVolume();
+            markDirty();
+        }
+        endSettings();
+    }
+    sectionHeader("Screenshots");
+    if (iconButton("Take screenshot", Icon::Camera))
+        takeScreenshot(false);
+    if (iconButton("Screenshot with the menu", Icon::Camera))
+        takeScreenshot(true);
+    if (iconButton("Open screenshots folder", Icon::Folder)) {
+        std::error_code error;
+        std::filesystem::create_directories(screenshotFolder(), error);
+        SDL_OpenURL(("file://" + screenshotFolder()).c_str());
+    }
+    sectionHeader("View");
+    if (beginSettings("view")) {
+        settingRow("Fullscreen", "F11");
+        bool fullscreen = m_settings.fullscreen;
+        if (toggle("fullscreen", &fullscreen))
+            setFullscreen(fullscreen);
+        settingRow("Renderer statistics");
+        bool stats = m_statsOpen;
+        if (toggle("stats", &stats))
+            m_statsOpen = stats;
+        endSettings();
+    }
+}
+
+void Overlay::drawHelpPage() {
+    sectionHeader("Help");
+    if (iconButton("Shortcuts", Icon::Keyboard))
+        m_shortcutsOpen = true;
+    if (iconButton("Project page", Icon::Link))
+        SDL_OpenURL(kProjectUrl);
+    if (iconButton("Report a problem", Icon::Link))
+        SDL_OpenURL(kIssuesUrl);
+    if (iconButton("About Deck Galaxy", Icon::Info))
+        m_aboutOpen = true;
 }
 
 void Overlay::drawDisplayPage() {
@@ -388,6 +608,8 @@ void Overlay::drawDisplayPage() {
         }
         endSettings();
     }
+    // The game's camera and view options (Steam Deck fork: moved here from Game).
+    drawGameOptions("display", "", "Camera and view");
 }
 
 void Overlay::drawSoundPage() {
@@ -426,14 +648,6 @@ void Overlay::drawInterfacePage() {
         settingRow("Notifications", "Short messages about controllers, screenshots and changes.");
         if (toggle("notifications", &m_settings.notifications))
             markDirty();
-        settingRow("Menu language", "The language of this menu and of the home screen. It starts as the Steam "
-                                    "Deck's own.");
-        if (beginCombo("##menulanguage", kMenuLanguageNames[menuLanguageIndex()])) {
-            for (int language = 0; language < kMenuLanguageCount; ++language)
-                if (ImGui::Selectable(kMenuLanguageNames[language], menuLanguageIndex() == language))
-                    setMenuLanguageChoice(kMenuLanguageCodes[language]);
-            ImGui::EndCombo();
-        }
         // Not on a Steam Deck: Steam keeps its own button, so View + Menu is
         // the only way to the menu there.
         if (!m_host.steamDeck) {
@@ -463,7 +677,7 @@ void Overlay::drawInterfacePage() {
             }
             if (canChangeSpeed()) {
                 settingRow("Fast-forward speed",
-                           "F4, or Game > Fast-forward in the top bar, switches between it and normal speed. "
+                           "F4, or Actions > Fast-forward, switches between it and normal speed. "
                            "Music keeps its tempo.",
                            "Experimental");
                 static constexpr float kSpeeds[] = {2.0f, 3.0f, 4.0f, 0.0f};
@@ -482,6 +696,8 @@ void Overlay::drawInterfacePage() {
             endSettings();
         }
     }
+    // The version check (Steam Deck fork: moved here from Game).
+    drawGameOptions("interface", "", "Updates");
 }
 
 // The game's own switches, in the host's sections (Rogue Galaxy: added).
@@ -490,7 +706,21 @@ void Overlay::drawGamePage() {
 }
 
 void Overlay::drawLanguagePage() {
-    drawGameOptions("language", "There are no language options.", "Language");
+    // The menu's own language, with the game's (Steam Deck fork: moved here
+    // from Interface).
+    sectionHeader("Menu");
+    if (beginSettings("menulanguage")) {
+        settingRow("Menu language", "The language of this menu and of the home screen. It starts as the Steam "
+                                    "Deck's own.");
+        if (beginCombo("##menulanguage", kMenuLanguageNames[menuLanguageIndex()])) {
+            for (int language = 0; language < kMenuLanguageCount; ++language)
+                if (ImGui::Selectable(kMenuLanguageNames[language], menuLanguageIndex() == language))
+                    setMenuLanguageChoice(kMenuLanguageCodes[language]);
+            ImGui::EndCombo();
+        }
+        endSettings();
+    }
+    drawGameOptions("language", "There are no language options.", "Game");
 }
 
 void Overlay::drawGameOptions(const std::string &page, const char *emptyText, const char *firstTitle) {
@@ -758,7 +988,7 @@ void Overlay::drawAbout() {
         ImGui::SameLine(0.0f, em(0.9f));
         ImGui::BeginGroup();
         ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.6f);
-        ImGui::TextUnformatted("Rogue Galaxy Recompiled");
+        ImGui::TextUnformatted("Deck Galaxy");
         const float titleMiddle = lastItemMiddle();
         ImGui::PopFont();
         if (m_host.revision.empty())
@@ -852,7 +1082,7 @@ void Overlay::drawShortcuts() {
             ImGui::TableSetupColumn("what", ImGuiTableColumnFlags_WidthFixed, em(15.0f));
             static constexpr const char *kGuide[] = {"Guide"}, *kBackStart[] = {"Back", "Start"},
                                         *kViewMenu[] = {"View", "Menu"}, *kShoulders[] = {"L1", "R1"},
-                                        *kBack[] = {"B / Circle"}, *kTop[] = {"Y / Triangle"},
+                                        *kBack[] = {"B / Circle"},
                                         *kClear[] = {"X / Square"};
             if (m_host.steamDeck)
                 shortcutRow(kViewMenu, 2, "Open or close the menu");
@@ -862,7 +1092,6 @@ void Overlay::drawShortcuts() {
                 shortcutRow(kGuide, 1, "Open or close the menu");
             shortcutRow(kShoulders, 2, "Previous and next settings page", "/");
             shortcutRow(kBack, 1, "Back, in the menu");
-            shortcutRow(kTop, 1, "To the top bar and back");
             shortcutRow(kClear, 1, "Clear a binding (Controls)");
             ImGui::EndTable();
         }
@@ -915,40 +1144,17 @@ void Overlay::drawSaveSlots() {
         dialogHeader(saving ? Icon::Check : Icon::Disc, saving ? "Save" : "Load", &open);
         if (!saving && !anyUsed)
             mutedText("%s", L("No save state yet"));
-        const float thumbHeight = em(3.6f), thumbWidth = thumbHeight * 1.6f, pad = em(0.4f);
-        const float rowHeight = thumbHeight + 2.0f * pad;
-        std::string chosenText;
+        const float thumbHeight = em(3.6f);
         int chosen = 0;
         for (int index = 0; index < static_cast<int>(slots.size()); ++index) {
             const int slot = index + 1;
             const HostServices::SaveSlot &entry = slots[index];
-            ImGui::PushID(slot);
-            ImGui::BeginDisabled(!saving && !entry.used);
-            const ImVec2 at = ImGui::GetCursorScreenPos();
-            if (ImGui::Selectable("##slot", false, 0, ImVec2(0.0f, rowHeight)))
+            if (slotRow(slot, entry, saving || entry.used, thumbHeight))
                 chosen = slot;
             if (m_slotFocus && slot == focus) {
                 ImGui::FocusItem();
                 ImGui::SetNavCursorVisible(true);
             }
-            const bool dim = !saving && !entry.used;
-            ImDrawList *list = ImGui::GetWindowDrawList();
-            const ImVec2 thumbMin(at.x + pad, at.y + pad), thumbMax(thumbMin.x + thumbWidth, thumbMin.y + thumbHeight);
-            ImTextureRef picture;
-            ImVec2 pictureSize;
-            if (entry.used && !entry.picture.empty() && fileTexture(entry.picture.c_str(), picture, pictureSize))
-                list->AddImage(picture, thumbMin, thumbMax);
-            else
-                list->AddRectFilled(thumbMin, thumbMax, withAlpha(palette::kBorderInner, 0.8f), em(0.2f));
-            list->AddRect(thumbMin, thumbMax, withAlpha(palette::kBorder, dim ? 0.15f : 0.4f), em(0.2f));
-            const float textX = thumbMax.x + em(1.0f);
-            const std::string title = Lf("Slot %d", slot);
-            list->AddText(ImVec2(textX, at.y + pad + em(0.3f)), dim ? palette::kTextMuted : palette::kText, title.c_str());
-            const std::string when = entry.used ? entry.when : std::string(L("empty"));
-            list->AddText(ImVec2(textX, at.y + pad + em(1.6f)), entry.used ? palette::kGold : palette::kTextMuted,
-                          when.c_str());
-            ImGui::EndDisabled();
-            ImGui::PopID();
         }
         m_slotFocus = false;
         if (chosen != 0) {

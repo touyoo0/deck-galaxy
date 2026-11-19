@@ -13,14 +13,14 @@ saves; they do not replace them.
 | Load | F3 |
 
 On a controller there is no button combination: open the F1 menu (View +
-Menu on a Steam Deck), then **Save states > Save** or **Load**.
+Menu on a Steam Deck), then **Save states**: the page lists the five slots to save into and the five to load from, side by side.
 
 Each opens a window with the five slots, each with a picture of the game and
 the time it was saved (or "empty"): **nothing is saved or loaded until you
 pick a slot**. The game waits, paused, behind it. Up and down move the cursor,
 Enter or A picks, Esc or B leaves; the mouse works too. Saving over a slot
 that holds a state asks first; an empty slot cannot be loaded. The F1 menu's
-**Save states** menu has the same two entries.
+**Save states** page does the same without F2 and F3.
 
 The pause moved from F2 to F5 to make room (and the menu's frame-rate
 counter, F3, is gone: the Steam Deck has its own). On a Steam Deck, Steam

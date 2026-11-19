@@ -65,7 +65,6 @@ const TextEntry kTextsMenu[] = {
     {"Clear a binding", "Effacer une affectation", "Belegung löschen", "Borrar una asignación",
      "Cancella un'assegnazione"},
     {"Page", "Page", "Seite", "Página", "Pagina"},
-    {"Top bar", "Barre du haut", "Obere Leiste", "Barra superior", "Barra in alto"},
     {"Back to the game", "Retour au jeu", "Zurück zum Spiel", "Volver al juego", "Torna al gioco"},
 
     // Display
@@ -146,11 +145,11 @@ const TextEntry kTextsMenu[] = {
      "Ferma il gioco finché la sua finestra non è in primo piano."},
     {"Fast-forward speed", "Vitesse d'avance rapide", "Vorspul-Geschwindigkeit", "Velocidad de avance rápido",
      "Velocità di avanti veloce"},
-    {"F4, or Game > Fast-forward in the top bar, switches between it and normal speed. Music keeps its tempo.",
-     "F4, ou Jeu > Avance rapide dans la barre du haut, alterne avec la vitesse normale. La musique garde son tempo.",
-     "F4 oder Spiel > Vorspulen in der oberen Leiste wechselt zwischen ihr und normaler Geschwindigkeit. Die Musik behält ihr Tempo.",
-     "F4, o Juego > Avance rápido en la barra superior, alterna entre ella y la velocidad normal. La música mantiene su tempo.",
-     "F4, o Gioco > Avanti veloce nella barra in alto, passa da questa alla velocità normale. La musica mantiene il suo tempo."},
+    {"F4, or Actions > Fast-forward, switches between it and normal speed. Music keeps its tempo.",
+     "F4, ou Actions > Avance rapide, alterne avec la vitesse normale. La musique garde son tempo.",
+     "F4 oder Aktionen > Vorspulen wechselt zwischen ihr und normaler Geschwindigkeit. Die Musik behält ihr Tempo.",
+     "F4, o Acciones > Avance rápido, alterna entre ella y la velocidad normal. La música mantiene su tempo.",
+     "F4, o Azioni > Avanti veloce, passa da questa alla velocità normale. La musica mantiene il suo tempo."},
 
     // Game and Language pages
     {"The game has no options of its own.", "Le jeu n'a pas d'options propres.",
@@ -234,8 +233,8 @@ const TextEntry kTextsMenu[] = {
      "RetroAchievements está desactivado", "RetroAchievements è disattivato"},
 
     // About
-    {"About Rogue Galaxy Recompiled", "À propos de Rogue Galaxy Recompiled", "Über Rogue Galaxy Recompiled",
-     "Acerca de Rogue Galaxy Recompiled", "Informazioni su Rogue Galaxy Recompiled"},
+    {"About Deck Galaxy", "À propos de Deck Galaxy", "Über Deck Galaxy",
+     "Acerca de Deck Galaxy", "Informazioni su Deck Galaxy"},
     {"Version %s", "Version %s", "Version %s", "Versión %s", "Versione %s"},
     {"Version %s (%s)", "Version %s (%s)", "Version %s (%s)", "Versión %s (%s)", "Versione %s (%s)"},
     {"Version %s is out", "La version %s est disponible", "Version %s ist erschienen",
@@ -279,12 +278,13 @@ const TextEntry kTextsMenu[] = {
     {"Previous and next settings page", "Page de réglages précédente et suivante",
      "Vorherige und nächste Einstellungsseite", "Página de ajustes anterior y siguiente",
      "Pagina impostazioni precedente e successiva"},
-    {"To the top bar and back", "Vers la barre du haut et retour", "Zur oberen Leiste und zurück",
-     "A la barra superior y de vuelta", "Alla barra in alto e ritorno"},
     {"Clear a binding (Controls)", "Effacer une affectation (Commandes)", "Belegung löschen (Steuerung)",
      "Borrar una asignación (Controles)", "Cancella un'assegnazione (Comandi)"},
 
-    // the menu bar
+    // the Actions and Help pages
+    {"Actions", "Actions", "Aktionen", "Acciones", "Azioni"},
+    {"Updates", "Mises à jour", "Updates", "Actualizaciones", "Aggiornamenti"},
+    {"Screenshots", "Captures d'écran", "Screenshots", "Capturas de pantalla", "Screenshot"},
     {"Pause", "Pause", "Pause", "Pausa", "Pausa"},
     {"Mute sound", "Couper le son", "Ton aus", "Silenciar el sonido", "Disattiva l'audio"},
     {"Open screenshots folder", "Ouvrir le dossier des captures", "Screenshot-Ordner öffnen",

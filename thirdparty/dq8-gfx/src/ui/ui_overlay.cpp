@@ -23,9 +23,6 @@
 namespace dq8::ui {
 namespace {
 constexpr double kCaptureSeconds = 6.0;
-constexpr const char *kQuitShortcut = "Alt+F4";
-constexpr const char *kProjectUrl = "https://github.com/victor-takai/rogue-galaxy-recomp";
-constexpr const char *kIssuesUrl = "https://github.com/victor-takai/rogue-galaxy-recomp/issues";
 
 // Function keys the menu owns; with the game's own (HostServices::
 // gameShortcuts: Rogue Galaxy's F6, the free camera), never bound: binding
@@ -261,11 +258,6 @@ void Overlay::openSettings(SettingsPage page) {
     m_page = page;
 }
 
-void Overlay::showMenu(const char *label) {
-    setMenuOpen(true);
-    m_showMenu = label;
-}
-
 void Overlay::openAbout() {
     setMenuOpen(true);
     m_aboutOpen = true;
@@ -333,40 +325,15 @@ void Overlay::toggleMenu(bool fromController) {
         setMenuOpen(false);
         return;
     }
+    // The settings window is the whole menu: the mouse and the keyboard
+    // open it as the controller does. Only a controller needs the button
+    // that opened it let go before it moves the cursor.
     setMenuOpen(true);
-    if (fromController) {
-        // A controller starts in the window, on the page list.
-        m_settingsOpen = true;
-        m_focusSettings = true;
-        m_focusList = true;
+    m_settingsOpen = true;
+    m_focusSettings = true;
+    m_focusList = true;
+    if (fromController)
         m_gamepadNavHeld = true;
-    }
-}
-
-// The top bar is a window of its own, which a controller reaches only by
-// holding X and cycling windows; this takes it there, and back.
-void Overlay::toggleBarFocus() {
-    ImGuiContext &g = *ImGui::GetCurrentContext();
-    ImGuiWindow *bar = ImGui::FindWindowByName("##MainMenuBar");
-    if (!bar)
-        return;
-    const bool inBar = g.NavWindow && g.NavWindow->RootWindowForNav == bar;
-    const bool inPopup = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
-    if (inBar || inPopup) {
-        ImGui::ClosePopupsExceptModals();
-        g.NavLayer = ImGuiNavLayer_Main;
-        if (m_settingsOpen) {
-            m_focusSettings = true;
-            m_focusList = true;
-        } else {
-            ImGui::FocusWindow(nullptr);
-        }
-        return;
-    }
-    ImGui::FocusWindow(bar);
-    g.NavLayer = ImGuiNavLayer_Menu;
-    ImGui::NavInitWindow(bar, true);
-    ImGui::SetNavCursorVisible(true);
 }
 
 void Overlay::notify(std::string text, Icon kind, double seconds, std::string picture) {
@@ -632,9 +599,9 @@ bool inside(const ImGuiWindow *window, const ImGuiWindow *pane) {
 } // namespace
 
 // ImGui has already done its part of Back by now (ended a slider's
-// adjustment, closed a combo or a menu, left the top bar's layer); this is
+// adjustment, closed a combo or a menu, ); this is
 // the rest, judged by where the cursor was before it.
-void Overlay::backOut(bool pad) {
+void Overlay::backOut(bool /*pad*/) {
     const NavBefore &before = m_navBefore;
     if (before.itemActive)
         return;
@@ -644,14 +611,6 @@ void Overlay::backOut(bool pad) {
     }
     if (before.popupOpen)
         return;
-    if (before.menuLayer) {
-        // Out of the top bar, back to the window.
-        if (m_settingsOpen) {
-            m_focusSettings = true;
-            m_focusList = true;
-        }
-        return;
-    }
     if (m_aboutOpen) {
         m_aboutOpen = false;
         return;
@@ -664,18 +623,13 @@ void Overlay::backOut(bool pad) {
         m_focusList = true;
         return;
     }
-    // From the page list: a controller goes back to the game; Esc closes
-    // the window first, leaving the top bar, as it always has.
-    if (m_settingsOpen && !pad)
-        m_settingsOpen = false;
-    else
-        setMenuOpen(false);
+    // From the page list: back to the game.
+    setMenuOpen(false);
 }
 
 void Overlay::rememberNavigation() {
     const ImGuiContext &g = *m_context;
     m_navBefore.window = g.NavWindow;
-    m_navBefore.menuLayer = g.NavLayer == ImGuiNavLayer_Menu;
     m_navBefore.itemActive = g.ActiveId != 0;
     m_navBefore.popupOpen = !g.OpenPopupStack.empty();
     m_navBefore.modalOpen = false;
@@ -683,13 +637,12 @@ void Overlay::rememberNavigation() {
         if (popup.Window && (popup.Window->Flags & ImGuiWindowFlags_Modal))
             m_navBefore.modalOpen = true;
 
-    // Past a slider, a list and the top bar, Back is backOut()'s alone.
+    // Past a slider and a list, Back is backOut()'s alone.
     // ImGui's own, inside a child window, puts the cursor on the child as a
     // whole for a frame (a bright frame around the page or the list) before
     // backOut() moves it on. Owned keys still read as pressed with
     // IsKeyPressed(key, repeat), which asks for any owner.
-    if (m_menuOpen && !m_capture.active && !m_navBefore.itemActive && !m_navBefore.popupOpen &&
-        !m_navBefore.menuLayer) {
+    if (m_menuOpen && !m_capture.active && !m_navBefore.itemActive && !m_navBefore.popupOpen) {
         static const ImGuiID kBackOwner = ImHashStr("dq8 back");
         ImGui::SetKeyOwner(ImGuiKey_Escape, kBackOwner);
         ImGui::SetKeyOwner(ImGuiKey_GamepadFaceRight, kBackOwner);
@@ -875,18 +828,11 @@ void Overlay::drawFrame() {
             m_pendingScale = 0u;
         }
     }
-    // Y (the pad's top face button) moves between the top bar and the window.
-    if (m_menuOpen && !m_homeOpen && !m_capture.active && !m_navBefore.modalOpen &&
-        (io.ConfigFlags & ImGuiConfigFlags_NavEnableGamepad) && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false))
-        toggleBarFocus();
-    // Over the home screen the settings stand alone: no top bar, and closing
-    // them closes the menu with them.
-    if (m_homeOpen && m_menuOpen && !m_settingsOpen)
+    // The settings window is the menu: closing it closes the menu with it.
+    if (m_menuOpen && !m_settingsOpen && !m_aboutOpen && !m_shortcutsOpen)
         setMenuOpen(false);
     if (m_homeOpen)
         drawHome();
-    if (m_menuOpen && !m_homeOpen)
-        drawMenuBar();
     if (m_settingsOpen)
         drawSettingsWindow();
     if (m_aboutOpen)
@@ -908,163 +854,7 @@ void Overlay::drawFrame() {
     saveIfDirty(false);
 }
 
-void Overlay::drawMenuBar() {
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(em(0.75f), em(0.5f)));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(1.35f), em(0.6f)));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(em(0.9f), em(0.45f)));
-    if (ImGui::BeginMainMenuBar()) {
-        ImDrawList *list = ImGui::GetWindowDrawList();
-        const ImVec2 barMin = ImGui::GetWindowPos(), barSize = ImGui::GetWindowSize();
-        // A white rule under the bar, like the edge of the game's windows.
-        list->PushClipRect(barMin, ImVec2(barMin.x + barSize.x, barMin.y + barSize.y + 3.0f), false);
-        list->AddLine(ImVec2(barMin.x, barMin.y + barSize.y - 1.0f),
-                      ImVec2(barMin.x + barSize.x, barMin.y + barSize.y - 1.0f), withAlpha(palette::kBorder, 0.85f),
-                      2.0f);
-        list->PopClipRect();
-
-        const float crown = em(1.15f);
-        const ImVec2 cursor = ImGui::GetCursorScreenPos();
-        drawIcon(list, Icon::Disc, ImVec2(cursor.x + crown * 0.5f, barMin.y + barSize.y * 0.5f), crown,
-                 palette::kGold);
-        ImGui::Dummy(ImVec2(crown, ImGui::GetTextLineHeight()));
-
-        const auto beginMenu = [&](const char *label) {
-            if (m_showMenu == label) {
-                ImGui::OpenPopup(L(label));
-                m_showMenu.clear();
-            }
-            return ImGui::BeginMenu(L(label));
-        };
-        if (beginMenu("Rogue Galaxy")) {
-            if (menuItem("About Rogue Galaxy Recompiled"))
-                m_aboutOpen = true;
-            if (m_host.achievements && menuItem("Achievements"))
-                openSettings(SettingsPage::Achievements);
-            // Named as the window it opens, which lists the controller too.
-            if (menuItem("Shortcuts"))
-                m_shortcutsOpen = true;
-            ImGui::Separator();
-            if (menuItem("Quit", kQuitShortcut))
-                m_quitAsk = true;
-            ImGui::EndMenu();
-        }
-        if (beginMenu("Game")) {
-            if (canPause() && menuItem("Pause", "F5", m_userPaused))
-                setUserPaused(!m_userPaused);
-            if (canChangeSpeed()) {
-                if (menuItem("Fast-forward", "F4", m_fastForward))
-                    setFastForward(!m_fastForward);
-                if (beginSubmenu("Fast-forward speed")) {
-                    for (const float speed : {2.0f, 3.0f, 4.0f, 0.0f}) {
-                        if (menuItem(speedLabel(speed).c_str(), nullptr, m_settings.fastForwardSpeed == speed)) {
-                            m_settings.fastForwardSpeed = speed;
-                            markDirty();
-                            if (m_fastForward)
-                                m_host.setSpeed(speed);
-                        }
-                    }
-                    ImGui::EndMenu();
-                }
-            }
-            if (canPause() || canChangeSpeed())
-                ImGui::Separator();
-            if (menuItem("Mute sound", nullptr, m_settings.muted)) {
-                m_settings.muted = !m_settings.muted;
-                applyVolume();
-                markDirty();
-            }
-            ImGui::Separator();
-            if (menuItem("Take screenshot", "F12"))
-                takeScreenshot(false);
-            if (menuItem("Screenshot with the menu", "Shift+F12"))
-                takeScreenshot(true);
-            if (menuItem("Open screenshots folder")) {
-                std::error_code error;
-                std::filesystem::create_directories(screenshotFolder(), error);
-                SDL_OpenURL(("file://" + screenshotFolder()).c_str());
-            }
-            ImGui::EndMenu();
-        }
-        // Save states (Steam Deck fork: added): the slots, to save into or
-        // load from, in a window of their own.
-        if (m_host.saveSlots && beginMenu("Save states")) {
-            if (menuItem("Save", "F2"))
-                openSaveSlots(true);
-            if (menuItem("Load", "F3"))
-                openSaveSlots(false);
-            ImGui::EndMenu();
-        }
-        if (beginMenu("Settings")) {
-            static constexpr const char *kPages[] = {"Display",  "Sound",        "Controls",  "Game",
-                                                     "Language", "Achievements", "Interface"};
-            for (int page = 0; page < static_cast<int>(SettingsPage::Count); ++page)
-                if (menuItem(kPages[page], nullptr, m_settingsOpen && m_page == static_cast<SettingsPage>(page)))
-                    openSettings(static_cast<SettingsPage>(page));
-            ImGui::EndMenu();
-        }
-        if (beginMenu("View")) {
-            if (menuItem("Fullscreen", "F11", m_settings.fullscreen))
-                setFullscreen(!m_settings.fullscreen);
-            if (menuItem("Renderer statistics", nullptr, m_statsOpen))
-                m_statsOpen = !m_statsOpen;
-            ImGui::EndMenu();
-        }
-        if (beginMenu("Help")) {
-            if (menuItem("Shortcuts"))
-                m_shortcutsOpen = true;
-            if (menuItem("Project page"))
-                SDL_OpenURL(kProjectUrl);
-            if (menuItem("Report a problem"))
-                SDL_OpenURL(kIssuesUrl);
-            ImGui::Separator();
-            if (menuItem("About Rogue Galaxy Recompiled"))
-                m_aboutOpen = true;
-            ImGui::EndMenu();
-        }
-        drawStatus();
-        ImGui::EndMainMenuBar();
-    }
-    ImGui::PopStyleVar(3);
-}
-
-// The bar's right end: pause state, what is playing, the way out.
-void Overlay::drawStatus() {
-    const auto controllers = m_backend.padInput().controllers();
-    const auto active = std::find_if(controllers.begin(), controllers.end(),
-                                     [](const gfx::ControllerInfo &info) { return info.active; });
-    std::string device = active != controllers.end() ? controllerFamilyName(active->type)
-                         : m_settings.pad.keyboardEnabled ? L("Keyboard") : L("No input");
-    if (active != controllers.end() && active->batteryPercent >= 0 &&
-        (active->power == SDL_POWERSTATE_ON_BATTERY || active->power == SDL_POWERSTATE_CHARGING))
-        device += " " + std::to_string(active->batteryPercent) + "%";
-    std::string state = pausing() ? L("Paused") : "";
-    if (m_fastForward)
-        state += (state.empty() ? "" : "  ") + Lf("Fast %s", speedLabel(m_settings.fastForwardSpeed).c_str());
-
-    const ImGuiStyle &style = ImGui::GetStyle();
-    const float iconSize = em(1.05f);
-    const float gap = style.ItemSpacing.x;
-    float width = iconSize + em(0.4f) + ImGui::CalcTextSize(device.c_str()).x + gap +
-                  ImGui::CalcTextSize("F1").x + em(0.8f);
-    if (!state.empty())
-        width += ImGui::CalcTextSize(state.c_str()).x + gap;
-    const float x = ImGui::GetWindowWidth() - width - style.WindowPadding.x - em(0.4f);
-    if (x <= ImGui::GetCursorPosX())
-        return;
-    ImGui::SetCursorPosX(x);
-    if (!state.empty())
-        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(palette::kGold), "%s", state.c_str());
-    const ImVec2 at = ImGui::GetCursorScreenPos();
-    const float middle = ImGui::GetWindowPos().y + ImGui::GetWindowHeight() * 0.5f;
-    drawIcon(ImGui::GetWindowDrawList(), active != controllers.end() ? Icon::Controls : Icon::Keyboard,
-             ImVec2(at.x + iconSize * 0.5f, middle), iconSize, palette::kText);
-    ImGui::Dummy(ImVec2(iconSize, ImGui::GetTextLineHeight()));
-    ImGui::SameLine(0.0f, em(0.4f));
-    ImGui::TextUnformatted(device.c_str());
-    keycap("F1");
-}
-
-// Quit, from the page list or the top bar, asked first: a stray press would
+// Quit, from the page list, asked first: a stray press would
 // lose what was not saved. B or Esc answers no.
 void Overlay::drawQuitPrompt() {
     constexpr const char *kName = "Quit?##quit"; // the id; the title is not drawn
@@ -1875,7 +1665,7 @@ void Overlay::sampleFrameRate() {
     m_rateRenders = renders;
 }
 
-// The window in points, below the menu bar. The speed badge and the
+// The window in points. The speed badge and the
 // notifications sit in its corners, as the notifications do, rather than in
 // the picture's: with bars at the sides (4:3 in a wide window) they moved
 // in with the picture (Rogue Galaxy: changed).
@@ -1928,7 +1718,7 @@ void Overlay::drawPauseBanner() {
         ImGui::TextUnformatted(L("Paused"));
         ImGui::PopFont();
         mutedText("%s", L(background && !m_userPaused ? "Until the game's window is active again"
-                          : padInUse()                ? "Open the menu: Game > Pause in the top bar resumes"
+                          : padInUse()                ? "Open the menu: Actions > Pause resumes"
                                                       : "Press F5 to resume"));
         ImGui::EndGroup();
         drawIconBeside(room, Icon::Pause, palette::kGold);

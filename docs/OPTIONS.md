@@ -2,29 +2,34 @@
 
 <p align="center"><img src="images/menu-game.jpg" width="70%" alt="The F1 menu's Game page"></p>
 
-**F1** opens the top bar, along the top of the window: Rogue Galaxy
-(About, Shortcuts, Quit), Game (pause, fast-forward, mute, screenshots),
-Settings, View (fullscreen, the renderer statistics) and Help. The Guide button, or Back + Start, opens the
-Settings window at once; L1 and R1 turn its pages.
+**F1** opens the menu: one window in the middle of the screen, with a list of
+pages on the left. There is no bar along the top. The Guide button, or Back +
+Start (View + Menu on the Deck), opens the same window; L1 and R1 turn its
+pages.
 
 With only a controller (the menu names its buttons as the controller does:
 A and ✕ are the same button, B and ○, X and ▢, Y and △):
 
 - In the page list, A or Right goes into the page; moving along the list
   shows each page.
-- B comes back one level at a time: out of a slider, a list or the top
-  bar, then from the page to the page list, and from the page list to the
-  game.
-- Y reaches the top bar. L1 and R1 turn the pages, the left stick moves
-  like the D-pad and the right stick scrolls.
+- B comes back one level at a time: out of a slider or a list, then from
+  the page to the page list, and from the page list to the game.
+- L1 and R1 turn the pages, the left stick moves like the D-pad and the
+  right stick scrolls.
 - A strip along the bottom of the window names the buttons for where the
   cursor is.
-- "Quit game", at the end of the page list, asks first, as does Quit in
-  the top bar.
+- "Quit game", at the end of the page list, asks first.
 - On Controls, X clears a binding. While one is being set, a tap of B binds
   B and holding it cancels.
 
-Settings has seven pages, written here as F1 > Settings > Game and so on:
+The menu has ten pages, written here as F1 > Game and so on:
+
+- **Save states**: the five slots to save into on the left, the five to
+  load from on the right, each with its picture and time; a used slot asks
+  before it is overwritten. Choosing one closes the menu and does it. Not on
+  the home screen.
+- **Actions**: pause, fast-forward and its speed, mute, screenshots (take one, take one with the menu, open the
+  folder), fullscreen and the renderer statistics. Not on the home screen.
 
 - **Display**: internal resolution (1x or 2x, 2x by default; the Deck's
   screen is 800 lines, the PS2's picture 448), scaling filter (Sharp or
@@ -36,16 +41,17 @@ Settings has seven pages, written here as F1 > Settings > Game and so on:
   the triggers' threshold and the camera's inversion. The Deck's own
   controller is the only one; there is no keyboard or mouse page.
 - **Game**: the game options below.
-- **Language**: the text's language and the undub, [below](#language).
+- **Language**: the menu's language (the Deck's to begin with; English,
+  French, German, Spanish or Italian: the home screen and the menu), the
+  game's text language and the undub, [below](#language).
 - **Achievements**: the account and the list.
-- **Interface**: the menu's size, notifications, the menu's language (the Deck's
-  to begin with; English, French, German, Spanish or Italian: the home
-  screen and the menu; the game's own text is Language > Text), pause and
-  fast-forward.
+- **Interface**: the menu's size, notifications, pause and fast-forward.
+- **Help**: the shortcuts, the project page, where to report a problem, and
+  About.
 
 An option that does nothing as things stand stays on its page, greyed
 out, with a line under it saying what would make it work: the undub until
-`setup.py extract-japanese` has read your Japanese disc, a language of Text
+`setup.py extract-japanese` has read your Japanese disc, a language of Game language
 whose files are missing.
 
 | Key | |
@@ -61,9 +67,10 @@ whose files are missing.
 
 ## Game options
 
-F1 > Settings > Game, in these sections:
+F1 > Game, in these sections, except **Camera and view**, which is on F1 > Display,
+and **Check for new versions**, which is on F1 > Interface:
 
-**Camera and view**
+**Camera and view** (F1 > Display)
 
 | Option | |
 |---|---|
@@ -121,11 +128,11 @@ The numbers are against the game's own, 1.0x.
 
 ## Language
 
-F1 > Settings > Language.
+F1 > Language. The menu's own language is there too, in the Menu section.
 
 | Option | |
 |---|---|
-| Text | English (the game's), Français, Deutsch, Español or Italiano: the menus, scenes and battles in that language of the European release, from your own European disc (SCES-54552). Needs that disc's texts in `disc/EU`: add your European disc image on the installer's Options page, or drop it onto the file; by hand, `python setup.py extract-european --iso "<your European disc>"`. A few lines the European disc has no words for stay English. Takes effect at the next start. |
+| Game language | English (the game's), Français, Deutsch, Español or Italiano: the menus, scenes and battles in that language of the European release, from your own European disc (SCES-54552). Needs that disc's texts in `disc/EU`: add your European disc image on the installer's Options page, or drop it onto the file; by hand, `python setup.py extract-european --iso "<your European disc>"`. A few lines the European disc has no words for stay English. Takes effect at the next start. |
 | Undub (Japanese voices) | The voices in scenes and the movies come from your own Japanese Director's Cut (SCPS-17013) instead of the English ones; the text stays as it is. Needs that disc's files in `disc/JA`: add your Japanese disc image on the installer's Options page, or drop it onto the file; by hand, `python setup.py extract-japanese --iso "<your Japanese disc>"`. A few lines (63) have no Japanese voice and play silent. Takes effect at the next start. |
 
 ## In the game's own menu
@@ -146,7 +153,7 @@ undub are in F1 alone.
 
 - The window opens as you left it. Settings are saved in
   `~/.local/share/RogueGalaxy/Recompiled/settings.ini`, screenshots in
-  `~/.local/share/RogueGalaxy/Recompiled/screenshots` (Game > Open
+  `~/.local/share/RogueGalaxy/Recompiled/screenshots` (Actions > Open
   screenshots folder). They are the same for every install on the Deck.
 - The Deck's screen is 60 Hz (the OLED 90 Hz): 60 fps fits it.
 - Each option also has an environment variable, for testing:

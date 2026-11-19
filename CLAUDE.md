@@ -1,4 +1,4 @@
-# Rogue Galaxy Recompiled: Steam Deck fork
+# Deck Galaxy: Steam Deck fork
 
 A static recompilation of Rogue Galaxy (PS2, USA, SCUS-97490) into a native
 game, on [PS2Recomp](https://github.com/ran-j/PS2Recomp). This fork

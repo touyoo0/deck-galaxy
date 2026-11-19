@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rogue Galaxy Recompiled: disc and recompiler-input tooling.
+"""Deck Galaxy: disc and recompiler-input tooling.
 
     python setup.py verify   --iso "Rogue Galaxy (USA).iso" [--full]
     python setup.py extract  --iso "Rogue Galaxy (USA).iso" [--out disc] [--force]
@@ -989,7 +989,7 @@ def cmd_install(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Rogue Galaxy Recompiled: disc and recompiler-input tooling")
+    ap = argparse.ArgumentParser(description="Deck Galaxy: disc and recompiler-input tooling")
     ap.add_argument("--version", default=DEFAULT_VERSION, help=f"config/<version> to use (default {DEFAULT_VERSION})")
     sub = ap.add_subparsers(dest="command", required=True)
 
