@@ -5,19 +5,26 @@
 ### Added
 
 - Quick save and quick load: five slots that hold the whole game at one
-  moment, loaded at once, in the same run or after closing the game. F5 saves
-  and F8 loads (Back + R1 and Back + L1 on a controller), Page Up and Page Down
+  moment, loaded at once, in the same run or after closing the game. F2 saves
+  and F3 loads (Back + R1 and Back + L1 on a controller), Page Up and Page Down
   (Back + D-pad) pick the slot, and the menu's new Save states list the five
   slots, each with a picture of the game and the time. A state takes about
   10 MB on disk. Not while a movie plays. See `docs/SAVESTATES.md`.
 
 ### Changed
 
+- The pause is on F5 now (it was F2), to make room for the quick save and
+  load.
 - The home screen's update is no longer a button among Play, Options and Quit:
   it sits at the top of the "What's new" panel, a card with the new version,
   the progress and the errors, a quiet line when there is nothing to do, and a
   gold dot beside the title while an update waits. On a controller, Right
   opens the panel and A starts the update.
+
+### Removed
+
+- The menu's frame-rate counter (View > Frame rate, F3, and its setting): the
+  Steam Deck has its own.
 
 ## 0.10.0 - 2026-11-18
 

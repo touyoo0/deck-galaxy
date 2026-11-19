@@ -39,7 +39,6 @@ struct Settings {
 
     // Interface
     int uiScale = 100; // percent, on top of the display's own scale
-    bool showFps = false;
     bool notifications = true;
     // The menu's language (Rogue Galaxy: added): "auto" follows the Deck's, else a code of ui_text.h.
     std::string menuLanguage = "auto";

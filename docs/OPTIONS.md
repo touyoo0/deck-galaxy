@@ -4,8 +4,7 @@
 
 **F1** opens the top bar, along the top of the window: Rogue Galaxy
 (About, Shortcuts, Quit), Game (pause, fast-forward, mute, screenshots),
-Settings, View (fullscreen, the frame-rate counter, the renderer
-statistics) and Help. The Guide button, or Back + Start, opens the
+Settings, View (fullscreen, the renderer statistics) and Help. The Guide button, or Back + Start, opens the
 Settings window at once; L1 and R1 turn its pages.
 
 With only a controller (the menu names its buttons as the controller does:
@@ -42,7 +41,7 @@ Settings has seven pages, written here as F1 > Settings > Game and so on:
 - **Interface**: the menu's size, notifications, the menu's language (the Deck's
   to begin with; English, French, German, Spanish or Italian: the home
   screen and the menu; the game's own text is Language > Text), pause and
-  fast-forward, the frame-rate counter.
+  fast-forward.
 
 An option that does nothing as things stand stays on its page, greyed
 out, with a line under it saying what would make it work: the undub until
@@ -51,8 +50,9 @@ whose files are missing.
 
 | Key | |
 |---|---|
-| F2 | Pause |
-| F3 | Frame-rate counter |
+| F2 | Quick save (see [SAVESTATES.md](SAVESTATES.md)) |
+| F3 | Quick load |
+| F5 | Pause |
 | F4 | Fast-forward |
 | F6 | Free camera |
 | F11 or Alt+Enter | Fullscreen |

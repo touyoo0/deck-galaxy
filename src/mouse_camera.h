@@ -13,7 +13,7 @@ struct SDL_Window;
 // press of a key bound to the pad or a click in the window, until the
 // controller alone has been used for kControllerLetGo), the mouse is captured
 // (SDL's relative mode: the cursor hidden and kept in the window); F1, the
-// pause (F2) and Alt+Tab let it go. A player on a controller who never
+// pause (F5) and Alt+Tab let it go. A player on a controller who never
 // presses a bound key or clicks never has it captured. What it moves
 // goes to the camera the stick turns, as the right stick would with the
 // game's camera options on Normal, whatever they are: left and right turns
@@ -23,7 +23,7 @@ struct SDL_Window;
 // inch at 1,600 counts per inch 100 degrees. Motion made while the cameras
 // stop taking it (a menu of the game's, a scene, a battle's pause: twice
 // their usual gap between takes, half a second at most) is dropped; while the
-// game is paused (F2) the mouse is let go too. RG_MOUSE_CAMERA,
+// game is paused (F5) the mouse is let go too. RG_MOUSE_CAMERA,
 // RG_MOUSE_SENSITIVITY (25 to 400, or 0.25 to 4) and RG_MOUSE_INVERT over the
 // menu. Without the SDL window (the software GS) it does nothing.
 namespace rg::mousecamera

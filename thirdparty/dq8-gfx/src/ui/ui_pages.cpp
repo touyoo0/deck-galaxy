@@ -482,14 +482,6 @@ void Overlay::drawInterfacePage() {
             endSettings();
         }
     }
-
-    sectionHeader("Frame rate");
-    if (beginSettings("framerate")) {
-        settingRow("Show the frame rate", "Frames the game draws each second. F3 toggles it.");
-        if (toggle("fps", &m_settings.showFps))
-            markDirty();
-        endSettings();
-    }
 }
 
 // The game's own switches, in the host's sections (Rogue Galaxy: added).
@@ -832,13 +824,12 @@ void Overlay::drawShortcuts() {
         if (ImGui::BeginTable("##keys", 2, ImGuiTableFlags_None)) {
             ImGui::TableSetupColumn("keys", ImGuiTableColumnFlags_WidthFixed, em(7.5f));
             ImGui::TableSetupColumn("what", ImGuiTableColumnFlags_WidthFixed, em(15.0f));
-            static constexpr const char *kF1[] = {"F1"}, *kF2[] = {"F2"}, *kF3[] = {"F3"}, *kF4[] = {"F4"},
+            static constexpr const char *kF1[] = {"F1"}, *kF4[] = {"F4"}, *kF5[] = {"F5"},
                                         *kF11[] = {"F11"}, *kAltEnter[] = {"Alt", "Enter"}, *kF12[] = {"F12"},
                                         *kShiftF12[] = {"Shift", "F12"}, *kEsc[] = {"Esc"};
             shortcutRow(kF1, 1, "Open or close this menu");
             if (canPause())
-                shortcutRow(kF2, 1, "Pause or resume");
-            shortcutRow(kF3, 1, "Show the frame rate");
+                shortcutRow(kF5, 1, "Pause or resume");
             if (canChangeSpeed())
                 shortcutRow(kF4, 1, "Fast-forward");
             // The game's own keys (Rogue Galaxy: added; F6, the free camera).
@@ -873,6 +864,16 @@ void Overlay::drawShortcuts() {
             shortcutRow(kBack, 1, "Back, in the menu");
             shortcutRow(kTop, 1, "To the top bar and back");
             shortcutRow(kClear, 1, "Clear a binding (Controls)");
+            // The save states' combos, with Back held (Steam Deck fork: added).
+            if (m_host.saveSlots) {
+                const char *const back = m_host.steamDeck ? "View" : "Back";
+                const char *const quickSave[] = {back, "R1"}, *const quickLoad[] = {back, "L1"},
+                                  *const previousSlot[] = {back, "Left"}, *const nextSlot[] = {back, "Right"};
+                shortcutRow(quickSave, 2, "Quick save");
+                shortcutRow(quickLoad, 2, "Quick load");
+                shortcutRow(previousSlot, 2, "Previous save slot");
+                shortcutRow(nextSlot, 2, "Next save slot");
+            }
             ImGui::EndTable();
         }
     }

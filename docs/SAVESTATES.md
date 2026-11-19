@@ -9,9 +9,14 @@ saves; they do not replace them.
 
 | | Keyboard | Controller (Steam Deck) |
 |---|---|---|
-| Quick save | F5 | Back + R1 |
-| Quick load | F8 | Back + L1 |
+| Quick save | F2 | Back + R1 |
+| Quick load | F3 | Back + L1 |
 | Previous / next slot | Page Up / Page Down | Back + D-pad left / right |
+
+The pause moved from F2 to F5 to make room (and the menu's frame-rate
+counter, F3, is gone: the Steam Deck has its own). On a Steam Deck, Steam Input can give a back button a key, which
+puts them under a finger: for example L4 = F1 (the menu), R4 = F2 (save) and
+R5 = F3 (load).
 
 The F1 menu's **Save states** menu lists the five slots with a picture of
 the game and the time of each, and saves into, loads from or picks any of them.

@@ -1,6 +1,6 @@
 // The in-game menu, drawn with Dear ImGui over the SDL GPU backend's window:
 // a menu bar (F1, or Guide / Back+Start on a controller), the settings window,
-// notifications and the frame-rate counter.
+// and notifications.
 #pragma once
 
 #include "gfx/backends/sdlgpu/sdlgpu_backend.h"
@@ -324,7 +324,6 @@ private:
     void drawAchievementsPage();
     void drawStats();
     void windowBounds(ImVec2 &min, ImVec2 &max) const;
-    void drawFps();
     void drawSpeedBadge();
     void drawPauseBanner();
     void drawToasts();
@@ -433,10 +432,8 @@ private:
     uint64_t m_rateRenders = 0u;
     uint64_t m_presents = 0u;
     float m_fps = 0.0f;
-    // Below the counter when they share a corner.
+    // Where the notifications start, below anything in the top corner.
     float m_toastTop = 0.0f;
-    std::array<float, 64> m_fpsHistory{};
-    size_t m_fpsHistoryNext = 0u;
 
     gfx::SdlGpuStats m_stats{};
     gfx::SdlGpuStats m_statsPrevious{};
