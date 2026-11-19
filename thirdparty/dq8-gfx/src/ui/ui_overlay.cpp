@@ -285,9 +285,12 @@ void Overlay::closeHome() {
     m_homeOpen = false;
     m_gamepadNavHeld = true;
     applyPause();
-    // The hint that went unseen behind the home screen.
-    if (m_host.steamDeck)
-        notify("Press View + Menu for the menu", Icon::Info, 6.0);
+}
+
+void Overlay::startLaunch() {
+    if (!m_homeOpen || m_launchAt >= 0.0)
+        return;
+    m_launchAt = ImGui::GetTime();
 }
 
 void Overlay::openSaveSlots(bool save) {
@@ -833,6 +836,7 @@ void Overlay::drawFrame() {
         setMenuOpen(false);
     if (m_homeOpen)
         drawHome();
+    drawLoadingVeil();
     if (m_settingsOpen)
         drawSettingsWindow();
     if (m_aboutOpen)
@@ -1172,6 +1176,42 @@ const std::vector<ChangeLine> &changelogLines() {
 }
 } // namespace
 
+namespace {
+// How long the home screen takes to leave once Play is pressed.
+constexpr double kLaunchSeconds = 1.2;
+
+float hash01(uint32_t n) {
+    n = n * 747796405u + 2891336453u;
+    n = ((n >> ((n >> 28u) + 4u)) ^ n) * 277803737u;
+    n = (n >> 22u) ^ n;
+    return static_cast<float>(n) / 4294967295.0f;
+}
+
+// Stars streaming out of `centre`, each on its own ray, faster as they near
+// the edge; `streak` stretches them into lines (0 is dots), `alpha` fades all.
+// The motion follows the clock alone, so the screens that hand over to each
+// other show the same stars.
+void drawWarp(ImDrawList *list, ImVec2 centre, ImVec2 view, float t, float streak, float alpha) {
+    if (alpha <= 0.01f)
+        return;
+    const float reach = 0.5f * std::sqrt(view.x * view.x + view.y * view.y) * 1.05f;
+    constexpr int kStars = 170;
+    for (int i = 0; i < kStars; ++i) {
+        const uint32_t seed = static_cast<uint32_t>(i) * 4u;
+        const float angle = hash01(seed + 1u) * 6.2831853f;
+        const float pace = 0.35f + 0.65f * hash01(seed + 2u);
+        const float phase = std::fmod(t * 0.33f * pace + hash01(seed + 3u), 1.0f);
+        const float r = phase * phase * reach;
+        const float r0 = std::max(0.0f, r - streak * phase * reach * 0.22f);
+        const ImVec2 dir(std::cos(angle), std::sin(angle));
+        const float a = alpha * smooth(phase * 3.0f) * (0.30f + 0.70f * pace);
+        const ImU32 tone = i % 5 == 0 ? IM_COL32(244, 203, 82, 255) : IM_COL32(200, 220, 255, 255);
+        list->AddLine(ImVec2(centre.x + dir.x * r0, centre.y + dir.y * r0), ImVec2(centre.x + dir.x * r, centre.y + dir.y * r),
+                      withAlpha(tone, a), em(0.08f) * (0.6f + 1.8f * phase));
+    }
+}
+} // namespace
+
 // The screen the game starts on: Play, Update, Options, Quit. It covers the window
 // with the game's artwork, slowly moving and lit, and keeps the game paused
 // until Play. Everything is reached with the controller (A selects).
@@ -1194,7 +1234,13 @@ void Overlay::drawHome() {
     const double time = ImGui::GetTime();
     if (openedAt < 0.0)
         openedAt = time;
-    const float fade = smooth(static_cast<float>((time - openedAt) / 0.9));
+    const float intro = smooth(static_cast<float>((time - openedAt) / 0.9));
+    // Play pressed: the interface leaves at once, the picture dives into the
+    // warp (p goes 0 to 1 over kLaunchSeconds).
+    const bool launching = m_launchAt >= 0.0;
+    const float p = launching ? smooth(static_cast<float>((time - m_launchAt) / kLaunchSeconds)) : 0.0f;
+    const float fade =
+        intro * (launching ? 1.0f - smooth(static_cast<float>((time - m_launchAt) / 0.45)) : 1.0f);
     const float t = static_cast<float>(time);
 
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
@@ -1220,8 +1266,8 @@ void Overlay::drawHome() {
             // Covers the window, breathing in and out and drifting a little,
             // the picture shown wider than the window so no edge ever shows.
             const float cover = std::max(view.x / artPixels.x, view.y / artPixels.y);
-            const float zoom = 1.03f + 0.02f * std::sin(t * 0.11f) + 0.05f * (1.0f - fade);
-            const float scale = cover * zoom;
+            const float zoom = 1.03f + 0.02f * std::sin(t * 0.11f) + 0.05f * (1.0f - intro);
+            const float scale = cover * zoom * (1.0f + 0.55f * p * p);
             imageSize = ImVec2(artPixels.x * scale, artPixels.y * scale);
             const float spareX = imageSize.x - view.x, spareY = imageSize.y - view.y;
             image = ImVec2(origin.x - spareX * (0.5f + 0.45f * std::sin(t * 0.07f)),
@@ -1248,7 +1294,19 @@ void Overlay::drawHome() {
         trackedText(list, ImVec2(left + editionWidth + em(1.0f), corner.y - view.y * 0.06f - small), small, em(0.05f),
                     faint, faint, m_host.version.c_str(), fade * 0.8f);
         // The first moments: up from black.
-        list->AddRectFilled(origin, corner, IM_COL32(0, 0, 0, static_cast<int>(255 * (1.0f - fade))));
+        list->AddRectFilled(origin, corner, IM_COL32(0, 0, 0, static_cast<int>(255 * (1.0f - intro))));
+        if (launching) {
+            // The picture sinks into the loading screen's night, a light
+            // swelling at the centre as the stars start streaming.
+            const ImVec2 centre(origin.x + view.x * 0.5f, origin.y + view.y * 0.5f);
+            list->AddRectFilled(origin, corner,
+                                IM_COL32(6, 8, 14, static_cast<int>(255 * smooth((p - 0.2f) / 0.8f))));
+            drawWarp(list, centre, view, t, 0.3f + 1.0f * p, smooth(p / 0.45f));
+            const float swell = smooth(p / 0.7f) * (1.0f - smooth((p - 0.7f) / 0.3f));
+            for (int ring = 0; ring < 4; ++ring)
+                list->AddCircleFilled(centre, view.y * (0.10f + 0.09f * static_cast<float>(ring)) * (0.6f + 0.6f * p),
+                                      withAlpha(IM_COL32(150, 180, 255, 255), 0.10f * swell), 48);
+        }
     }
     ImGui::End();
     ImGui::PopStyleColor();
@@ -1257,6 +1315,8 @@ void Overlay::drawHome() {
     const HostServices::HomeUpdate update = m_host.homeUpdate ? m_host.homeUpdate() : HostServices::HomeUpdate{};
     using State = HostServices::HomeUpdate::State;
     const bool working = update.state == State::Working;
+    // Nothing else can be pressed once Play was.
+    const bool busy = working || launching;
 
     // The update's button, as the news panel and (without a panel) the column
     // draw it.
@@ -1539,9 +1599,9 @@ void Overlay::drawHome() {
 
         // The entries.
         const ImVec2 buttonSize(column, em(2.9f));
-        ImGui::BeginDisabled(working);
-        if (homeButton("##play", L("Play"), buttonSize, !working, fade, 0))
-            closeHome();
+        ImGui::BeginDisabled(busy);
+        if (homeButton("##play", L("Play"), buttonSize, !busy, fade, 0))
+            startLaunch();
         ImGui::SetItemDefaultFocus();
         ImGui::EndDisabled();
 
@@ -1554,13 +1614,13 @@ void Overlay::drawHome() {
         }
 
         // Options: the settings window, over the home screen. Back returns here.
-        ImGui::BeginDisabled(working);
-        if (homeButton("##options", L("Options"), buttonSize, !working, fade, 0))
+        ImGui::BeginDisabled(busy);
+        if (homeButton("##options", L("Options"), buttonSize, !busy, fade, 0))
             openSettings(SettingsPage::Display);
         ImGui::EndDisabled();
 
-        ImGui::BeginDisabled(working);
-        if (homeButton("##quit", L("Quit"), buttonSize, !working, fade, 0)) {
+        ImGui::BeginDisabled(busy);
+        if (homeButton("##quit", L("Quit"), buttonSize, !busy, fade, 0)) {
             SDL_Event quit{};
             quit.type = SDL_EVENT_QUIT;
             SDL_PushEvent(&quit);
@@ -1576,6 +1636,116 @@ void Overlay::drawHome() {
     }
     ImGui::PopStyleColor();
     ImGui::PopStyleVar(2);
+
+    // The warp is complete: the game starts behind the loading screen, which
+    // takes over this same frame (drawLoadingVeil).
+    if (launching && time - m_launchAt >= kLaunchSeconds) {
+        m_launchAt = -1.0;
+        closeHome();
+        m_veilAt = time;
+        m_veilDoneAt = -1.0;
+        m_veilBar = 0.0f;
+        m_veilBase = m_host.completedRenders ? m_host.completedRenders() : m_presents;
+    }
+}
+
+// The loading screen: the night and its stars, the logo breathing, a bar that
+// follows the game's first frames. It lifts, the stars leaping forward, once
+// the game is drawing; a failsafe lifts it anyway.
+void Overlay::drawLoadingVeil() {
+    if (m_veilAt < 0.0)
+        return;
+    constexpr uint64_t kFramesNeeded = 30; // about half a second of picture at 60 fps
+    constexpr double kMinSeconds = 1.5, kMaxSeconds = 10.0, kLiftSeconds = 0.7;
+    const double time = ImGui::GetTime();
+    const double shown = time - m_veilAt;
+    const uint64_t renders = m_host.completedRenders ? m_host.completedRenders() : m_presents;
+    const uint64_t drawn = renders - m_veilBase;
+    if (m_veilDoneAt < 0.0 && ((shown >= kMinSeconds && drawn >= kFramesNeeded) || shown >= kMaxSeconds))
+        m_veilDoneAt = time;
+    const float lift = m_veilDoneAt >= 0.0 ? smooth(static_cast<float>((time - m_veilDoneAt) / kLiftSeconds)) : 0.0f;
+    if (lift >= 1.0f) {
+        m_veilAt = -1.0;
+        m_veilDoneAt = -1.0;
+        // The hint that went unseen behind the home screen.
+        if (m_host.steamDeck)
+            notify("Press View + Menu for the menu", Icon::Info, 6.0);
+        return;
+    }
+
+    const float t = static_cast<float>(time);
+    const float enter = smooth(static_cast<float>(shown / 0.6));
+    const float content = enter * (1.0f - smooth(lift * 2.0f));
+    const float backdrop = 1.0f - lift;
+    // The bar: half by the clock, half by the frames, and full at the lift.
+    const float target = m_veilDoneAt >= 0.0
+                             ? 1.0f
+                             : 0.97f * (0.5f * std::min(1.0f, static_cast<float>(shown / kMinSeconds)) +
+                                        0.5f * std::min(1.0f, static_cast<float>(drawn) / static_cast<float>(kFramesNeeded)));
+    m_veilBar += (target - m_veilBar) * std::min(1.0f, ImGui::GetIO().DeltaTime * 4.0f);
+
+    const ImGuiViewport *viewport = ImGui::GetMainViewport();
+    const ImVec2 origin = viewport->Pos, view = viewport->Size;
+    const ImVec2 corner(origin.x + view.x, origin.y + view.y);
+    const ImVec2 centre(origin.x + view.x * 0.5f, origin.y + view.y * 0.5f);
+    ImDrawList *list = ImGui::GetForegroundDrawList();
+
+    list->AddRectFilled(origin, corner, withAlpha(IM_COL32(6, 8, 14, 255), backdrop));
+    const float breath = 0.8f + 0.2f * std::sin(t * 1.3f);
+    for (int ring = 0; ring < 5; ++ring)
+        list->AddCircleFilled(centre, view.y * (0.14f + 0.12f * static_cast<float>(ring)),
+                              withAlpha(IM_COL32(70, 100, 190, 255), 0.07f * breath * backdrop), 56);
+    // Calm cruising after the dive, then the jump forward as it lifts.
+    const float streak = 1.3f - 0.55f * smooth(static_cast<float>(shown / 1.5)) + 2.6f * lift;
+    drawWarp(list, centre, view, t, streak, backdrop);
+
+    // The logo, or the name, above the centre.
+    ImTextureRef logo;
+    ImVec2 logoPixels;
+    float bottom = centre.y;
+    if (homeArt(HomePicture::Logo, logo, logoPixels)) {
+        const float width = std::min(view.x * 0.34f, em(26.0f)) * (1.0f + 0.015f * std::sin(t * 1.6f)) * (1.0f + 0.12f * lift);
+        const float height = width * logoPixels.y / logoPixels.x;
+        const ImVec2 at(centre.x - width * 0.5f, centre.y - height * 0.62f);
+        list->AddImage(logo, at, ImVec2(at.x + width, at.y + height), ImVec2(0, 0), ImVec2(1, 1),
+                       IM_COL32(255, 255, 255, static_cast<int>(255 * content)));
+        bottom = at.y + height;
+    } else {
+        const float size = em(2.6f);
+        const char *name = "Rogue Galaxy";
+        const float width = ImGui::GetFont()->CalcTextSizeA(size, FLT_MAX, 0.0f, name).x;
+        list->AddText(ImGui::GetFont(), size, ImVec2(centre.x - width * 0.5f, centre.y - size), withAlpha(palette::kText, content),
+                      name);
+        bottom = centre.y;
+    }
+
+    // The loading line and its bar.
+    const float barW = std::min(view.x * 0.30f, em(22.0f));
+    const float barH = em(0.2f);
+    const float barY = std::max(bottom + em(2.6f), centre.y + view.y * 0.16f);
+    const char *word = L("Loading...");
+    const float small = em(0.8f), tracking = em(0.16f);
+    const float wordW = ImGui::GetFont()->CalcTextSizeA(small, FLT_MAX, 0.0f, word).x +
+                        tracking * static_cast<float>(std::strlen(word));
+    trackedText(list, ImVec2(centre.x - wordW * 0.5f, barY - small - em(0.9f)), small, tracking, palette::kTextMuted,
+                palette::kTextMuted, word, content);
+    const ImVec2 barMin(centre.x - barW * 0.5f, barY), barMax(centre.x + barW * 0.5f, barY + barH);
+    list->AddRectFilled(barMin, barMax, withAlpha(IM_COL32(255, 255, 255, 255), 0.10f * content), barH * 0.5f);
+    const float fill = barW * std::clamp(m_veilBar, 0.0f, 1.0f);
+    if (fill > 1.0f) {
+        const ImVec2 fillMax(barMin.x + fill, barMax.y);
+        list->AddRectFilled(barMin, fillMax, withAlpha(palette::kGold, content), barH * 0.5f);
+        // A glint running over what is filled, and a halo at its head.
+        const float glint = std::fmod(t * 0.9f, 1.6f) - 0.3f;
+        list->PushClipRect(barMin, fillMax, true);
+        const float from = barMin.x + fill * glint;
+        list->AddRectFilledMultiColor(ImVec2(from, barMin.y), ImVec2(from + fill * 0.25f, barMax.y), IM_COL32(255, 255, 255, 0),
+                                      withAlpha(IM_COL32(255, 255, 255, 255), 0.6f * content),
+                                      withAlpha(IM_COL32(255, 255, 255, 255), 0.6f * content), IM_COL32(255, 255, 255, 0));
+        list->PopClipRect();
+        list->AddCircleFilled(ImVec2(fillMax.x, barMin.y + barH * 0.5f), em(0.7f),
+                              withAlpha(palette::kGold, 0.22f * content), 20);
+    }
 }
 
 void Overlay::drawCapturePrompt() {

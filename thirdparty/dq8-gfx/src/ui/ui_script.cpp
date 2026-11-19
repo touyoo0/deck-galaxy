@@ -141,7 +141,7 @@ void Overlay::runStep(const ScriptStep &step, uint64_t frame) {
             SDL_PushEvent(&event);
         }
     } else if (command == "play") {
-        closeHome();
+        startLaunch();
     } else if (command == "update") {
         if (m_host.startUpdate)
             m_host.startUpdate();

@@ -20,6 +20,7 @@ const TextEntry kTextsHome[] = {
      "Falló la actualización: inténtalo de nuevo", "Aggiornamento non riuscito: riprova"},
     {"Restart to finish", "Redémarrez pour terminer", "Neustart zum Abschließen", "Reinicia para terminar",
      "Riavvia per completare"},
+    {"Loading...", "Chargement...", "Laden...", "Cargando...", "Caricamento..."},
     {"Options", "Options", "Optionen", "Opciones", "Opzioni"},
     {"Quit", "Quitter", "Beenden", "Salir", "Esci"},
     {"WHAT'S NEW", "NOUVEAUTÉS", "NEUIGKEITEN", "NOVEDADES", "NOVITÀ"},
