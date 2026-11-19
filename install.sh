@@ -1,6 +1,5 @@
 #!/bin/sh
-# Deck Galaxy on Linux and the Steam Deck: what Install.bat does
-# on Windows. Builds the game from your own disc image (setup.py install:
+# Deck Galaxy on the Steam Deck. Builds the game from your own disc image (setup.py install:
 # verify, extract, recompile, build), then adds a menu entry.
 #
 #   ./install.sh [--iso FILE] [--container | --native] [--play]
@@ -86,8 +85,7 @@ busy() {
 # Started by a launcher rather than from a terminal (QuiverLauncher's Play
 # runs the first script it finds, this one, with no terminal and no
 # arguments; so does a file manager): nowhere to show the build or ask for
-# the disc image. With arguments (a script, a test) it runs where it is, as
-# Install.bat does on Windows.
+# the disc image. With arguments (a script, a test) it runs where it is.
 if [ -z "$RG_OWN_WINDOW" ] && [ -z "$others" ] && ! [ -t 0 ] && ! [ -t 1 ] \
     && { [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]; }; then
     ready && exec sh ./rogue-galaxy.sh
@@ -219,8 +217,8 @@ fi
 # A release archive unpacked over this folder (QuiverLauncher's update, or
 # unzip by hand), once for each unpack: FILES lists its files, and an unpack
 # writes it again (its change time, with REVISION, tells one unpack from the
-# next, the same archive's too). What the code folders hold beyond them goes,
-# as Update.bat does on Windows: what a newer version dropped, which the
+# next, the same archive's too). What the code folders hold beyond them goes:
+# what a newer version dropped, which the
 # build would still take by pattern (patches/ps2recomp/*.patch, the
 # framework's own globs). Kept: a submodule's .git, Python's caches, and the
 # patch stamp and the files this version's patches create, which

@@ -238,7 +238,7 @@ bool loadTables(const std::filesystem::path &folder)
     {
         std::fprintf(stderr,
                      "[rg] Director's Cut balance: the text in %s keeps the US numbers, its tables are not all "
-                     "there: Update.bat makes them again, or Install-Undub.bat\n",
+                     "there: the update or the installer makes them again\n",
                      joined(broken).c_str());
         tables.erase(std::remove_if(tables.begin(), tables.end(),
                                     [&](const Table &table) { return broken.count(table.language) != 0u; }),
@@ -560,7 +560,7 @@ void tellIfNoTables(const uint8_t *rdram)
     std::fprintf(stderr,
                  "[rg] Director's Cut balance: no tables for the text in %s, so its enemies, groups and fixed "
                  "battles keep the US numbers (the attacks' effects and the boss rule still apply): "
-                 "Install-European.bat or Update.bat makes them, or Install-Undub.bat again\n",
+                 "the installer or the update makes them\n",
                  language.c_str());
 }
 
@@ -626,7 +626,7 @@ void fromEnv(const char *name, std::atomic<bool> &on)
     }
 }
 
-// Where Install-Undub.bat puts the Director's Cut's tables and files.
+// Where the installer puts the Director's Cut's tables and files.
 std::filesystem::path balanceFolder()
 {
     return PS2Runtime::getIoPaths().cdRoot / "JA" / "balance";
@@ -639,7 +639,7 @@ std::string installBalance(PS2Runtime &runtime, const std::filesystem::path &fol
     if (!loadTables(folder))
     {
         std::fprintf(stderr,
-                     "[rg] the Director's Cut balance needs its tables in disc/JA/balance: run Install-Undub.bat "
+                     "[rg] the Director's Cut balance needs its tables in disc/JA/balance: run the installer "
                      "with your Japanese Director's Cut (or python setup.py director-cut-balance --iso <it>); "
                      "the balance stays the US one\n");
         return {};
@@ -676,7 +676,7 @@ bool installFiles(PS2Runtime &runtime, const std::filesystem::path &folder, bool
     {
         std::fprintf(stderr,
                      "[rg] the Director's Cut %s needs files.idx and files.dat in disc/JA/balance: run "
-                     "Install-Undub.bat again; it stays the US one\n",
+                     "the installer again; it stays the US one\n",
                      what);
         return false;
     }

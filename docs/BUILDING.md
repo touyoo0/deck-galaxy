@@ -175,10 +175,6 @@ By hand, the steps above work as they are, with these needs:
   uses the system's through pkg-config instead.
 - The GNU linker reads each archive once; the game links the generated
   libraries as a rescanned group (`src/CMakeLists.txt`).
-- Some diagnosis tools were written for Windows and do not work on the Deck:
-  the profiler (`RG_PROFILE`), the hardware watch (`RG_HWWATCH`) and the host
-  stacks in the stall report.
-
 On a Steam Deck play in game mode, with `rogue-galaxy.sh` added to Steam as
 a non-Steam game: a game started from desktop mode gets Steam's desktop
 layout, where the controller acts as a mouse and keyboard. The game starts
@@ -204,10 +200,9 @@ avoids it until the next reboot.
 | `tools/disc/archive.py`, `cfgbin.py`, `balance.py` | The game's archives (`.HD6` index, `.pac`), its compiled tables (`.cfg.bin`), and the Director's Cut balance's tables and enemy files built from them |
 | `tools/mwo3/mwo3.py` | MWo3 overlay header parser, ELF cross-check, overlay-to-ELF wrapper |
 | `tools/funcmap/` | Function-map builder and the checks behind `setup.py check` |
-| `tools/bench/` | `cmpvram.py`, `hitches.py` and other benchmark helpers (the scripted walk was Windows only and is gone) |
+| `tools/bench/` | `cmpvram.py`, `hitches.py` and other benchmark helpers |
 | `tools/mipsdis.py` | Disassembler for the main program, with the map's names ([FINDING-THINGS.md](FINDING-THINGS.md)) |
-| `tools/hang/` | A thread's call chain read from it (`stackwalk.py`), an AI script decoded (`aiscript.py`) |
-| `tools/profile/report.py` | Reads the profiles `RG_PROFILE` writes ([DEVELOPMENT.md](DEVELOPMENT.md)) |
+| `tools/hang/` | An AI script decoded (`aiscript.py`) |
 | `tools/vu1/` | Study of the VU1 programs: disassembler, census, captures, and the oracle the native ones are checked against ([VU1-NATIVE.md](VU1-NATIVE.md)) |
 | `tools/texture_pack/` | Making the larger 2D art from what `RG_TEXTURE_DUMP` collected, and checks of the game's zip and DDS readers ([TEXTURE_PACKS.md](TEXTURE_PACKS.md)) |
 | `tools/release/` | `source_zip.py`: the release's source archive, with the submodules; `release_notes.py VERSION`: the release page's text, from that version's section of the CHANGELOG |

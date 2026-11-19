@@ -72,8 +72,7 @@ Everything runs in a build of this branch (`cmake --build build/game
 --target roguegalaxy rg_vu1_oracle`) on Linux; `disc/` holds the game. The
 branch is in main now; the oracle is not in the default build, and its own
 use is in [tools/vu1/oracle/README.md](../tools/vu1/oracle/README.md). The
-scripts are Linux-only (Wayland, `pgrep`, `/sys/class/drm`); on Windows the
-variables go in `debug\RogueGalaxy.bat` ([DEVELOPMENT.md](DEVELOPMENT.md)).
+scripts use Wayland, `pgrep` and `/sys/class/drm`.
 
 1. **Get samples.** The harvest directory (above), or a whole scene:
    `tools/vu1/oracle/capture.sh NAME [FROM_LIST] [LISTS]` records every VU1

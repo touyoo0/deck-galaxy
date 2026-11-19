@@ -6,7 +6,7 @@
 *.part
 
 # The game's 2D art collected from the screen and its larger versions
-# (debug\RogueGalaxy-collect.bat): made from the disc, they stay local.
+# made from the disc, they stay local.
 /textures/*/
 
 # Memory cards the runtime keeps next to the disc: the player's saves.
@@ -17,10 +17,6 @@
 /build/
 /out/
 *.log
-# The build tools Install.bat downloads.
-/toolchain/
-# The launcher the build puts in the repository's folder.
-/Rogue Galaxy.exe
 CMakeUserPresets.json
 
 # Python
@@ -28,11 +24,9 @@ __pycache__/
 *.pyc
 
 # Editors / OS
-.vs/
 .vscode/
 .idea/
 .cache/
-Thumbs.db
 .DS_Store
 
 # Art collected from the disc while playing (the texture-pack branch).

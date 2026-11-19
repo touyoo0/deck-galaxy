@@ -3,7 +3,7 @@
 **The game runs.** `roguegalaxy` boots to the title screen, starts a new
 game, plays the opening movie and the real-time cutscenes in Salgin, and
 fights battles (HUD, damage, allies, results screen) at 60 frames per
-second with `Rogue Galaxy.exe` (the scene's step follows the frame time, so
+second (the scene's step follows the frame time, so
 a slow frame does not play in slow motion; the menu's Game > 60 frames
 per second, on by default; `RG_FPS=30` gives the game's own 30 for one
 run), with the GS on the GPU, VU1 compiled ahead of time and on a
@@ -12,8 +12,13 @@ heaviest field scene measured, a boss gate, holds 50 to 60, limited by the
 VU1 programs.
 Known gaps: a rare hang after the Story loading screen (below; possibly
 the checkpoint unwind that patch 0010 fixed, not confirmed). Each release
-(0.3.0 the latest) is the source with an installer that builds the game
-from the player's disc (`Install.bat`; [`CHANGELOG.md`](../CHANGELOG.md)).
+is the source with an installer that builds the game from the player's
+disc ([`CHANGELOG.md`](../CHANGELOG.md)).
+
+> This log began on Windows. Entries from before the Steam Deck fork name
+> `.bat` files, PowerShell, MinGW and `.exe` files that are gone from this
+> repository; they are kept for what they found about the game, not as
+> instructions.
 
 | Phase | Goal | State |
 |---|---|---|
@@ -22,7 +27,7 @@ from the player's disc (`Install.bat`; [`CHANGELOG.md`](../CHANGELOG.md)).
 | 2 | Build ELF + overlays into one executable; overlay-aware dispatch | done |
 | 3 | Boot to the title screen | done |
 | 4 | Field, battle, movies, sound | done |
-| 5 | Performance, widescreen, 60 fps, launcher | 60 fps mode by default (50-60 in the heaviest scenes), launcher, in-game menu, widescreen option, installer (0.1.0), `Update.bat` (0.2.0) |
+| 5 | Performance, widescreen, 60 fps, launcher | 60 fps mode by default (50-60 in the heaviest scenes), launcher, in-game menu, widescreen option, installer, in-game update |
 
 ## Where things stand (2026-11-12)
 

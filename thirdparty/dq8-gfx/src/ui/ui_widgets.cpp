@@ -202,7 +202,7 @@ bool beginSettings(const char *id) {
     return true;
 }
 
-void settingRow(const char *label, const char *help, const char *chipText) {
+void settingRow(const char *label, const char *help, const char *chipText, const char *note, ImU32 noteColor) {
     ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetFrameHeight());
     ImGui::TableNextColumn();
     ImGui::AlignTextToFramePadding();
@@ -211,9 +211,8 @@ void settingRow(const char *label, const char *help, const char *chipText) {
         ImGui::SameLine(0.0f, em(0.5f));
         chip(L(chipText), palette::kWarn);
     }
-    if (help) {
+    if (help || note) {
         ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 0.84f);
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(palette::kTextMuted));
         // Across the whole table, under the control too, rather than in the
         // name's column alone (Steam Deck fork: changed): the clip is opened
         // to the table's width, and the text wraps at its right edge.
@@ -224,10 +223,21 @@ void settingRow(const char *label, const char *help, const char *chipText) {
         ImGui::PushClipRect(ImVec2(std::min(clipMin.x, table->OuterRect.Min.x), clipMin.y),
                             ImVec2(std::max(clipMax.x, table->OuterRect.Max.x), clipMax.y), false);
         ImGui::PushTextWrapPos(right - window->Pos.x + window->Scroll.x);
-        ImGui::TextUnformatted(L(help));
+        if (help) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(palette::kTextMuted));
+            ImGui::TextUnformatted(L(help));
+            ImGui::PopStyleColor();
+        }
+        if (note) {
+            // Whatever the row's greyed-out state, the note stays readable.
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 1.0f);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(noteColor ? noteColor : palette::kWarn));
+            ImGui::TextUnformatted(L(note));
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
+        }
         ImGui::PopTextWrapPos();
         ImGui::PopClipRect();
-        ImGui::PopStyleColor();
         ImGui::PopFont();
     }
     ImGui::TableNextColumn();

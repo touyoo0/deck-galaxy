@@ -137,14 +137,11 @@ add_executable(roguegalaxy
     debug/crash_report.cpp
     debug/gs_census.cpp
     debug/gs_timing.cpp
-    debug/host_stacks.cpp
-    debug/hw_watch.cpp
     debug/input_script.cpp
     debug/pos_trace.cpp
     debug/encounter.cpp
     debug/force_return.cpp
     debug/jump_trace.cpp
-    debug/sampler.cpp
     debug/stall_watch.cpp
     debug/selftest.cpp
     debug/vu1_replay.cpp

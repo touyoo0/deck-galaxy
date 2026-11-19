@@ -1,6 +1,5 @@
 #!/bin/sh
-# Rogue Galaxy on Linux and the Steam Deck: what "Rogue Galaxy.exe"
-# (src/launcher/launcher.c) does on Windows. Starts the game from this
+# Rogue Galaxy on the Steam Deck. Starts the game from this
 # folder, with the log in build/last-run.log (the previous run's in
 # build/last-run.prev.log). Extra arguments go to the game.
 cd "$(dirname "$(readlink -f "$0")")" || exit 1

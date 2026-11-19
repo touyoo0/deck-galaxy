@@ -60,8 +60,7 @@ std::string serializeSettings(const Settings &settings);
 // Unknown or malformed entries keep their current value in `settings`.
 void parseSettings(const std::string &text, Settings &settings);
 
-// RG_SETTINGS_FILE, or settings.ini in SDL's per-user preferences folder
-// (on Windows %APPDATA%\RogueGalaxy\Recompiled\).
+// RG_SETTINGS_FILE, or settings.ini in SDL's per-user preferences folder.
 std::string defaultSettingsPath();
 // A missing file leaves the defaults; returns false only when it cannot be read.
 bool loadSettings(const std::string &path, Settings &settings);
