@@ -143,11 +143,11 @@ const TextEntry kTextsHome[] = {
     {"Buttons restored", "Boutons rétablis", "Tasten zurückgesetzt", "Botones restaurados",
      "Pulsanti ripristinati"},
 
-    {"Version %s is out: run Update.bat, or see F1 > Rogue Galaxy > About",
-     "La version %s est disponible : lancez Update.bat, ou voyez F1 > Rogue Galaxy > À propos",
-     "Version %s ist erschienen: Starte Update.bat oder sieh unter F1 > Rogue Galaxy > Über nach",
-     "La versión %s ya está disponible: ejecuta Update.bat, o consulta F1 > Rogue Galaxy > Acerca de",
-     "La versione %s è disponibile: esegui Update.bat, oppure vedi F1 > Rogue Galaxy > Informazioni"},
+    {"Version %s is out: use Update on the home screen, or see F1 > Rogue Galaxy > About",
+     "La version %s est disponible : utilisez Mettre à jour sur l'écran d'accueil, ou voyez F1 > Rogue Galaxy > À propos",
+     "Version %s ist erschienen: nutze Aktualisieren auf dem Startbildschirm oder sieh unter F1 > Rogue Galaxy > Über nach",
+     "La versión %s ya está disponible: usa Actualizar en la pantalla de inicio, o consulta F1 > Rogue Galaxy > Acerca de",
+     "La versione %s è disponibile: usa Aggiorna nella schermata iniziale, oppure vedi F1 > Rogue Galaxy > Informazioni"},
 
     // the status bar, the pause and speed notes
     {"Keyboard", "Clavier", "Tastatur", "Teclado", "Tastiera"},

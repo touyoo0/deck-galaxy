@@ -79,7 +79,7 @@ people expect from a modern port all need data the GS never sees:
   register state machine for 3D and post.
 - **Stays:** the recompiled game. The EE still builds its DMA chains; we hook
   functions and intercept at program starts, we don't rewrite game logic.
-  SDL3 GPU stays the API (Windows, Linux, Android from one backend).
+  SDL3 GPU stays the API.
 - **Shrinks:** the 2D path. About 4,800 `GsPkt*` call sites draw menus, the
   HUD and fades with GS register writes. They keep arriving as GS packets, but
   a thin translator turns them into a sprite batcher whose textures and

@@ -411,7 +411,7 @@ void SdlPadInput::handleEvent(const SDL_Event &event) {
         return;
     }
     // The mouse: only in the game's window while it has the keyboard focus
-    // (Windows scrolls a window under the cursor without it), never a touch
+    // never a touch
     // screen's (SDL makes clicks of touches, a Steam Deck's screen too).
     // Using it counts with the keyboard switched off; its bindings do not.
     const auto fromMouse = [](SDL_MouseID which, SDL_WindowID window) {

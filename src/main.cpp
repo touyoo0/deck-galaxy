@@ -16,13 +16,11 @@
 
 #include "debug/call_trace.h"
 #include "debug/crash_report.h"
-#include "debug/hw_watch.h"
 #include "debug/input_script.h"
 #include "debug/pos_trace.h"
 #include "debug/encounter.h"
 #include "debug/force_return.h"
 #include "debug/jump_trace.h"
-#include "debug/sampler.h"
 #include "debug/selftest.h"
 #include "debug/stall_watch.h"
 #include "overlay/overlay_manager.h"
@@ -205,12 +203,10 @@ int run(int argc, char **argv)
     // shows the forced answer (an unwound one gets it later, at its resume).
     rg::debug::installForceReturn(runtime);
     rg::debug::installCallTrace(runtime);
-    rg::debug::installHardwareWatch(runtime);
     rg::debug::installPosTrace(runtime);
     rg::debug::installJumpTrace(runtime);
     rg::debug::installForcedEncounter(runtime);
     rg::debug::startInputScript();
-    rg::debug::startSampler();
     rg::debug::startStallWatch(runtime);
     std::printf("[rg] booting %s\n", elf.string().c_str());
     std::fflush(stdout);
@@ -218,7 +214,6 @@ int run(int argc, char **argv)
     runtime.run();
     // A save made just before quitting may still be being written.
     rg::savestate::flush();
-    rg::debug::stopSampler();
     rg::debug::stopStallWatch();
     rg::vif1::shutdown();
 

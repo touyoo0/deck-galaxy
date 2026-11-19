@@ -34,7 +34,10 @@ void sectionHeader(const char *title);
 // "Experimental" beside it, and help underneath) on the left, the control on
 // the right.
 bool beginSettings(const char *id);
-void settingRow(const char *label, const char *help = nullptr, const char *chipText = nullptr);
+// `note` is a line under the help, in `noteColor`, across the table like the
+// help: drawn in the value's column it would land on the help's lines.
+void settingRow(const char *label, const char *help = nullptr, const char *chipText = nullptr,
+                const char *note = nullptr, ImU32 noteColor = 0);
 void endSettings();
 // A small rounded label after the item before it, or on the next line when
 // it does not fit beside it. Call after SameLine().

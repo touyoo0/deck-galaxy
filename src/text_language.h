@@ -9,7 +9,7 @@
 //
 // The US executable already has the text-language token (`?` in a path,
 // PathLocalize); it only ever holds EN. Set to FR it asks for `..._fr.txt`,
-// `menu\rc\..._fr.pac` and so on. Install-European.bat (setup.py
+// `menu\rc\..._fr.pac` and so on. The installer (setup.py
 // extract-european, tools/disc/european.py) builds those files from both discs
 // into disc/EU/<LANG>.DAT and .idx: the US files with the European words in them,
 // since the European disc is a revised build whose own files the US executable
@@ -31,7 +31,7 @@ void setPreferred(int choice);
 // texts spell them (<'e>), which the menus' font then draws.
 int language();
 
-// Install-European.bat has made that language's files (numbered as the choice;
+// The installer has made that language's files (numbered as the choice;
 // disc/EU/<LANG>.idx, which the boot looks for too), for the menu; English is
 // always there. It reads the disc folder each call.
 bool installed(int language);

@@ -117,7 +117,7 @@ set(PS2X_VU_AOT_SHARDS ${rg_vu_shards} CACHE STRING "Number of independent VU AO
 # compiles are heavy on memory and slow each other. A first build on 8
 # cores, 16 threads and 32 GB took 826 s with 4 at a time, 709 s with 6,
 # 612-653 s with 8 and 682 s with 12, where the 32 shards four at a time
-# took 738-774 s (llvm-mingw, 2026-11-14). The pool holds the runtime's
+# took 738-774 s. The pool holds the runtime's
 # other units too, 0.3 GB or less each. A shard's share grows with the
 # blocks it gets and, as patch 0038 weighs them, with the longest block's
 # words squared: the format allows blocks of up to 32 words, but the
@@ -165,8 +165,8 @@ include(cmake/framework_patches.cmake)
 # (2026-10-26; an existing build had them from before).
 add_subdirectory(thirdparty/PS2Recomp "${CMAKE_BINARY_DIR}/ps2recomp" EXCLUDE_FROM_ALL)
 
-# The runtime asks for link-time optimization in Release. With clang on
-# MinGW (COFF) that loses the TLS initialization routine of an inline
+# The runtime asks for link-time optimization in Release. With clang
+# on COFF (it was built for Windows once) that lost the TLS initialization routine of an inline
 # thread_local with a destructor (ps2_vu_detail::regionCounters) and the link
 # fails; the generated code, most of the executable, is not LTO'd anyway.
 set_property(TARGET ps2_runtime PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE OFF)

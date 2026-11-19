@@ -60,7 +60,6 @@ the game, `RG_TRACE=0x... %command%`), and print to `build/last-run.log`. Their 
 |---|---|
 | `RG_TRACE=0xADDR,...` | The first calls of those functions: arguments, return address and result. `RG_TRACE_ARG0=0xOFF` adds the word at a0+OFF, handy when a0 points at a structure |
 | `RG_WATCH=0xADDR,...` | Those memory words, every second |
-| `RG_HWWATCH=0xADDR` | Who writes a memory word, with the writer's call stack. Add `RG_HWWATCH_RANGE=0-0xFFFFFFFF` to catch every write: by default it reports only values that point into the main stack. Not available on the Deck (a stub) |
 | `RG_SCENE_TRACE=1` | Each change of the game's mode and phase, and the main menu's state |
 
 `RG_TRACE`, like a hook, sees only the calls that go through the function
@@ -69,10 +68,8 @@ table: a function reached by a tail `j` does not show
 
 ## Look at memory from outside
 
-The old way to dump the game's memory from outside (`dumpmem.ps1`) was
-Windows only and is gone from this fork. On the Deck, `RG_WATCH`, `RG_TRACE`
-and `tools/hang/stackwalk.py` on a dump you make yourself (`gdb` or
-`/proc/<pid>/mem` in the container) cover the same ground.
+`RG_WATCH` and `RG_TRACE` cover most of it. For the rest, dump the game's
+memory yourself (`gdb` or `/proc/<pid>/mem` in the container).
 
 ## A real case: instant text
 

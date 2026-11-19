@@ -25,18 +25,18 @@ author wants to redraw.
 
 ## Where packs go
 
-- `textures\packs\NAME\`: one folder a pack, or `textures\packs\NAME.zip`, a
+- `textures/packs/NAME/`: one folder a pack, or `textures/packs/NAME.zip`, a
   zip of one (its files at the top, or all inside a single folder, as zipping
   a folder makes it). They are read by name, and a later one wins over an
   earlier one for the same picture.
-- `textures\hd\`: what `tools\texture_pack\make-pack.bat` writes; read
-  first, so any pack in `textures\packs` wins over it.
+- `textures/hd/`: what `tools/texture_pack/make_pack.py` writes; read
+  first, so any pack in `textures/packs` wins over it.
 - `RG_TEXTURE_PACK=DIR` reads that one folder alone.
 
 ## Collecting what a pack can replace
 
-`debug\RogueGalaxy-collect.bat` plays the game while writing each region
-that appears on the screen once into `textures\collected`. A region is the
+Running the game with `RG_TEXTURE_DUMP=textures/collected` writes each region
+that appears on the screen once into that folder. A region is the
 rectangle a sprite draws from a texture (a window piece, an icon, a label),
 named by its content: `TEXELS_CLUT_WxH.png`, the texels' hash, the palette's
 hash (both 16 hex digits) and the size in texels. The font's glyphs are
