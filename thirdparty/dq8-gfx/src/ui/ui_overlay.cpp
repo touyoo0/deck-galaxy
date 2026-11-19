@@ -957,6 +957,34 @@ void Overlay::drawMenuBar() {
             }
             ImGui::EndMenu();
         }
+        // Save states (Steam Deck fork: added): the quick keys' slot, and a
+        // submenu a slot to save into, load from, or make the current one.
+        if (m_host.saveSlots && beginMenu("Save states")) {
+            const std::vector<HostServices::SaveSlot> slots = m_host.saveSlots();
+            const int current = m_host.saveSlotCurrent ? m_host.saveSlotCurrent() : 1;
+            const bool currentUsed =
+                current >= 1 && current <= static_cast<int>(slots.size()) && slots[current - 1].used;
+            if (menuItem("Quick save", "F5") && m_host.saveSlotSave)
+                m_host.saveSlotSave(current);
+            if (menuItem("Quick load", "F8", false, currentUsed) && m_host.saveSlotLoad)
+                m_host.saveSlotLoad(current);
+            ImGui::Separator();
+            for (int index = 0; index < static_cast<int>(slots.size()); ++index) {
+                const int slot = index + 1;
+                const std::string label = Lf("Slot %d", slot) + "  -  " +
+                                          (slots[index].used ? slots[index].when : std::string(L("empty")));
+                if (beginSubmenu(label.c_str())) {
+                    if (menuItem("Save here") && m_host.saveSlotSave)
+                        m_host.saveSlotSave(slot);
+                    if (menuItem("Load", nullptr, false, slots[index].used) && m_host.saveSlotLoad)
+                        m_host.saveSlotLoad(slot);
+                    if (menuItem("Use for the quick keys", nullptr, slot == current) && m_host.saveSlotSelect)
+                        m_host.saveSlotSelect(slot);
+                    ImGui::EndMenu();
+                }
+            }
+            ImGui::EndMenu();
+        }
         if (beginMenu("Settings")) {
             static constexpr const char *kPages[] = {"Display",  "Sound",        "Controls",  "Game",
                                                      "Language", "Achievements", "Interface"};

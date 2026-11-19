@@ -26,6 +26,8 @@ What each page here is for, by who it is for. New to the project? Start with
 
 - [HOW-IT-WORKS.md](HOW-IT-WORKS.md): how the project works, in plain words,
   with a glossary.
+- [SAVESTATES.md](SAVESTATES.md): quick save and quick load, the five slots,
+  and how a whole game is written to a file.
 - [STATUS.md](STATUS.md): the work log, from the first build to now, and what
   the game needs.
 

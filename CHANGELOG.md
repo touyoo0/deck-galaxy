@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Quick save and quick load: five slots that hold the whole game at one
+  moment, loaded at once, in the same run or after closing the game. F5 saves
+  and F8 loads (Back + R1 and Back + L1 on a controller), Page Up and Page Down
+  (Back + D-pad) pick the slot, and the menu's new Save states list the five
+  slots. Not while a movie plays. See `docs/SAVESTATES.md`.
+
 ### Changed
 
 - The home screen's update is no longer a button among Play, Options and Quit:

@@ -158,6 +158,19 @@ struct HostServices {
         bool listed = true;
     };
     std::vector<Shortcut> gameShortcuts;
+    // Save states (Steam Deck fork: added): the slots of the Save states menu,
+    // each with when it was written (empty while it holds nothing), the one
+    // the quick keys use, and what its entries do. Empty when the host has
+    // none: the menu is then not there.
+    struct SaveSlot {
+        bool used = false;
+        std::string when;
+    };
+    std::function<std::vector<SaveSlot>()> saveSlots;
+    std::function<int()> saveSlotCurrent;
+    std::function<void(int slot)> saveSlotSelect;
+    std::function<void(int slot)> saveSlotSave;
+    std::function<void(int slot)> saveSlotLoad;
 };
 
 // Game: Rogue Galaxy's own switches (added).
