@@ -8,7 +8,8 @@
   moment, loaded at once, in the same run or after closing the game. F5 saves
   and F8 loads (Back + R1 and Back + L1 on a controller), Page Up and Page Down
   (Back + D-pad) pick the slot, and the menu's new Save states list the five
-  slots. Not while a movie plays. See `docs/SAVESTATES.md`.
+  slots, each with a picture of the game and the time. A state takes about
+  10 MB on disk. Not while a movie plays. See `docs/SAVESTATES.md`.
 
 ### Changed
 

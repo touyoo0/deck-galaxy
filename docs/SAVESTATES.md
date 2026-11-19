@@ -13,11 +13,14 @@ saves; they do not replace them.
 | Quick load | F8 | Back + L1 |
 | Previous / next slot | Page Up / Page Down | Back + D-pad left / right |
 
-The F1 menu's **Save states** menu lists the five slots with the time each was
-written, and saves into, loads from or picks any of them. A message says what
-happened. The files are in `states/` next to `settings.ini`
-(`~/.local/share/RogueGalaxy/states/slot1.rgs` to `slot5.rgs`), about 42 MB
-each.
+The F1 menu's **Save states** menu lists the five slots with a picture of
+the game and the time of each, and saves into, loads from or picks any of them.
+A message says what happened. The files are in `states/` next to
+`settings.ini` (`~/.local/share/RogueGalaxy/states/slot1.rgs` to `slot5.rgs`,
+and `slotN.<time>.thumb.bmp`, the picture, 69 KB). A state is 42 MB in memory
+and about 10 MB on disk: zstd-compressed (0.05 s to compress, 0.04 s to
+decompress), written by a thread of its own so the game does not stop for it,
+and waited for when the game quits.
 
 A state is refused, with a message, **while a movie plays** (the cutscenes and
 the title screen: the video decoder is not part of it), **while a callback, a DMA
@@ -48,8 +51,17 @@ handlers that park set their result first and do nothing after.
 
 `src/savestate.cpp` runs a request on the EE executor, between guest
 dispatches (`EeScheduler::requestExecutorTask`), after waiting for the VIF1
-thread's lists. The file starts with a magic, a format version, the RAM size
-and the resident overlay's name.
+thread's lists. The stream starts with a magic, a format version, the RAM size
+and the resident overlay's name; the file wraps it in a small header (magic,
+codec, size). `libzstd.so.1` is loaded when first needed (`dlopen`), not
+linked: the build container has no development files for it. Without it a
+state is written uncompressed, and a compressed one cannot be read. A state
+written by the first build (no wrapper) still loads.
+
+The thumbnail is a frame the presenter captures when the save is asked
+(`backend.requestCapture`), scaled to 192 pixels wide and written as a BMP
+(`dq8-gfx` reads BMP since this feature). Its name carries a time because the
+menu keeps a file's pixels as long as the process runs.
 
 ## What is not in a state
 

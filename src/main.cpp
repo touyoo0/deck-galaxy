@@ -216,6 +216,8 @@ int run(int argc, char **argv)
     std::fflush(stdout);
 
     runtime.run();
+    // A save made just before quitting may still be being written.
+    rg::savestate::flush();
     rg::debug::stopSampler();
     rg::debug::stopStallWatch();
     rg::vif1::shutdown();

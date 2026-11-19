@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,15 @@ void install(PS2Runtime &runtime);
 void requestSave(PS2Runtime &runtime, int slot);
 void requestLoad(PS2Runtime &runtime, int slot);
 
+// A frame of the game for the slot that is being saved (RGBA, top row first),
+// from the presenter's thread, after requestSave: scaled down and kept beside
+// the state. Whichever of the two arrives second writes the file.
+void offerThumbnail(int slot, const uint8_t *rgba, uint32_t width, uint32_t height);
+
+// Waits (up to ten seconds) for the files still being written, as the game
+// ends: a save made just before quitting is otherwise cut short.
+void flush();
+
 // The next line to show the player ("Saved to slot 2"), false when none.
 bool takeMessage(std::string &text);
 
@@ -39,6 +49,9 @@ struct SlotInfo
 {
     bool used = false;
     std::string when;
+    // A picture of the game at that moment (a BMP on disk), empty while there
+    // is none.
+    std::string picture;
 };
 std::vector<SlotInfo> slots();
 

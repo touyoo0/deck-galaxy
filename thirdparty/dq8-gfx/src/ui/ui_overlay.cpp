@@ -973,7 +973,22 @@ void Overlay::drawMenuBar() {
                 const int slot = index + 1;
                 const std::string label = Lf("Slot %d", slot) + "  -  " +
                                           (slots[index].used ? slots[index].when : std::string(L("empty")));
+                // The slot's picture beside it, when it has one.
+                ImTextureRef picture;
+                ImVec2 pictureSize;
+                const bool hasPicture = slots[index].used && !slots[index].picture.empty() &&
+                                        fileTexture(slots[index].picture.c_str(), picture, pictureSize);
+                if (hasPicture) {
+                    const float height = ImGui::GetTextLineHeight() * 2.4f;
+                    ImGui::Image(picture, ImVec2(height * pictureSize.x / pictureSize.y, height));
+                    ImGui::SameLine();
+                }
                 if (beginSubmenu(label.c_str())) {
+                    if (hasPicture) {
+                        const float width = em(12.0f);
+                        ImGui::Image(picture, ImVec2(width, width * pictureSize.y / pictureSize.x));
+                        ImGui::Separator();
+                    }
                     if (menuItem("Save here") && m_host.saveSlotSave)
                         m_host.saveSlotSave(slot);
                     if (menuItem("Load", nullptr, false, slots[index].used) && m_host.saveSlotLoad)

@@ -165,6 +165,7 @@ struct HostServices {
     struct SaveSlot {
         bool used = false;
         std::string when;
+        std::string picture; // a BMP on disk, empty while there is none
     };
     std::function<std::vector<SaveSlot>()> saveSlots;
     std::function<int()> saveSlotCurrent;

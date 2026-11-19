@@ -5,6 +5,7 @@
 #include "runtime/ee_scheduler.h"
 #include "vif1_thread.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -19,7 +20,9 @@
 #include <thread>
 #include <vector>
 
+#include <condition_variable>
 #include <ctime>
+#include <dlfcn.h>
 #include <sys/stat.h>
 
 namespace rg::savestate
@@ -109,6 +112,229 @@ std::string checkHeader(Reader &in)
     return {};
 }
 
+// ---- thumbnails: a small picture of the game at the moment of a save, beside
+// the slot as "slotN.<time>.thumb.bmp". The picture is the presenter's, the
+// state the executor's, and either may come first: whichever arrives second
+// writes the file. The name changes with each picture: the menu's texture
+// cache keeps a file's pixels for as long as the process runs.
+constexpr uint32_t kThumbnailWidth = 192;
+
+struct Thumbnail
+{
+    std::vector<uint8_t> rgb; // top row first
+    uint32_t width = 0, height = 0;
+};
+std::mutex g_thumbMutex;
+Thumbnail g_thumbPending[kSlots + 1];
+bool g_thumbAwaiting[kSlots + 1] = {};
+
+std::string thumbnailPrefix(int slot)
+{
+    return "slot" + std::to_string(slot) + ".";
+}
+
+bool isThumbnailOf(const std::filesystem::path &path, int slot)
+{
+    const std::string name = path.filename().string();
+    return name.rfind(thumbnailPrefix(slot), 0) == 0 && name.size() > 10 &&
+           name.compare(name.size() - 10, 10, ".thumb.bmp") == 0;
+}
+
+void removeThumbnails(int slot)
+{
+    std::error_code ec;
+    for (const auto &entry : std::filesystem::directory_iterator(stateDir(), ec))
+        if (isThumbnailOf(entry.path(), slot))
+            std::filesystem::remove(entry.path(), ec);
+}
+
+// A 24-bit BMP, which the menu's picture loader reads.
+void writeBmp(const std::filesystem::path &path, const Thumbnail &picture)
+{
+    const uint32_t rowBytes = (picture.width * 3u + 3u) & ~3u;
+    const uint32_t imageBytes = rowBytes * picture.height;
+    std::vector<uint8_t> file(54u + imageBytes, 0u);
+    const auto put32 = [&](size_t at, uint32_t value) { std::memcpy(&file[at], &value, 4); };
+    file[0] = 'B';
+    file[1] = 'M';
+    put32(2, static_cast<uint32_t>(file.size()));
+    put32(10, 54u);
+    put32(14, 40u);
+    put32(18, picture.width);
+    put32(22, picture.height); // positive: rows bottom first
+    const uint16_t planes = 1, bits = 24;
+    std::memcpy(&file[26], &planes, 2);
+    std::memcpy(&file[28], &bits, 2);
+    put32(34, imageBytes);
+    for (uint32_t y = 0; y < picture.height; ++y)
+    {
+        uint8_t *row = &file[54u + (picture.height - 1u - y) * rowBytes];
+        const uint8_t *source = &picture.rgb[static_cast<size_t>(y) * picture.width * 3u];
+        for (uint32_t x = 0; x < picture.width; ++x)
+        {
+            row[x * 3u + 0] = source[x * 3u + 2];
+            row[x * 3u + 1] = source[x * 3u + 1];
+            row[x * 3u + 2] = source[x * 3u + 0];
+        }
+    }
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out.write(reinterpret_cast<const char *>(file.data()), static_cast<std::streamsize>(file.size()));
+}
+
+// With g_thumbMutex held.
+void writeThumbnailLocked(int slot)
+{
+    std::error_code ec;
+    std::filesystem::create_directories(stateDir(), ec);
+    removeThumbnails(slot);
+    writeBmp(stateDir() / (thumbnailPrefix(slot) + std::to_string(static_cast<long long>(std::time(nullptr))) + "." +
+                           std::to_string(std::chrono::steady_clock::now().time_since_epoch().count() % 100000) +
+                           ".thumb.bmp"),
+             g_thumbPending[slot]);
+    g_thumbPending[slot] = {};
+    g_thumbAwaiting[slot] = false;
+}
+
+// The state of `slot` is on disk: its picture goes with it, now or when it
+// arrives. One that never comes leaves no picture rather than the old state's.
+void thumbnailSaved(int slot)
+{
+    std::lock_guard lock(g_thumbMutex);
+    if (!g_thumbPending[slot].rgb.empty())
+    {
+        writeThumbnailLocked(slot);
+        return;
+    }
+    removeThumbnails(slot);
+    g_thumbAwaiting[slot] = true;
+}
+
+// ---- the file: a small header, then the stream, zstd-compressed when the
+// library is there. libzstd is loaded when first needed rather than linked: the
+// build container has no development files for it, and the stream is the same
+// without it, only four times larger (a slot is 42 MB raw, 11 MB compressed,
+// in 0.05 s and 0.04 s).
+constexpr uint32_t kFileMagic = ps2_savestate::makeTag('R', 'G', 'S', 'F');
+enum Codec : uint32_t
+{
+    kRaw = 0,
+    kZstd = 1,
+};
+struct FileHeader
+{
+    uint32_t magic = kFileMagic;
+    uint32_t codec = kRaw;
+    uint64_t rawSize = 0;
+};
+constexpr int kZstdLevel = 3;
+
+struct Zstd
+{
+    size_t (*compressBound)(size_t) = nullptr;
+    size_t (*compress)(void *, size_t, const void *, size_t, int) = nullptr;
+    size_t (*decompress)(void *, size_t, const void *, size_t) = nullptr;
+    unsigned (*isError)(size_t) = nullptr;
+};
+
+const Zstd *zstd()
+{
+    static const Zstd *library = []() -> const Zstd *
+    {
+        void *handle = dlopen("libzstd.so.1", RTLD_NOW);
+        if (!handle)
+            return nullptr;
+        static Zstd functions;
+        functions.compressBound = reinterpret_cast<decltype(functions.compressBound)>(dlsym(handle, "ZSTD_compressBound"));
+        functions.compress = reinterpret_cast<decltype(functions.compress)>(dlsym(handle, "ZSTD_compress"));
+        functions.decompress = reinterpret_cast<decltype(functions.decompress)>(dlsym(handle, "ZSTD_decompress"));
+        functions.isError = reinterpret_cast<decltype(functions.isError)>(dlsym(handle, "ZSTD_isError"));
+        if (!functions.compressBound || !functions.compress || !functions.decompress || !functions.isError)
+            return nullptr;
+        return &functions;
+    }();
+    return library;
+}
+
+// The file's bytes for a stream: header and payload.
+std::vector<uint8_t> encodeFile(const std::vector<uint8_t> &raw)
+{
+    FileHeader header;
+    header.rawSize = raw.size();
+    std::vector<uint8_t> file;
+    if (const Zstd *z = zstd())
+    {
+        const size_t bound = z->compressBound(raw.size());
+        file.resize(sizeof(FileHeader) + bound);
+        const size_t packed = z->compress(file.data() + sizeof(FileHeader), bound, raw.data(), raw.size(), kZstdLevel);
+        if (!z->isError(packed))
+        {
+            header.codec = kZstd;
+            file.resize(sizeof(FileHeader) + packed);
+            std::memcpy(file.data(), &header, sizeof(header));
+            return file;
+        }
+    }
+    file.resize(sizeof(FileHeader) + raw.size());
+    std::memcpy(file.data(), &header, sizeof(header));
+    std::memcpy(file.data() + sizeof(FileHeader), raw.data(), raw.size());
+    return file;
+}
+
+// The stream in a file's bytes; empty, with the reason, when it cannot be had.
+// A file without the header is a stream as the first build wrote it.
+std::vector<uint8_t> decodeFile(std::vector<uint8_t> file, std::string &why)
+{
+    uint32_t magic = 0;
+    if (file.size() >= sizeof(magic))
+        std::memcpy(&magic, file.data(), sizeof(magic));
+    if (magic != kFileMagic)
+        return file;
+    FileHeader header;
+    if (file.size() < sizeof(header))
+    {
+        why = "a damaged save state";
+        return {};
+    }
+    std::memcpy(&header, file.data(), sizeof(header));
+    const uint8_t *payload = file.data() + sizeof(header);
+    const size_t payloadSize = file.size() - sizeof(header);
+    if (header.rawSize > (256ull << 20))
+    {
+        why = "a damaged save state";
+        return {};
+    }
+    if (header.codec == kRaw)
+    {
+        if (payloadSize != header.rawSize)
+        {
+            why = "a damaged save state";
+            return {};
+        }
+        return std::vector<uint8_t>(payload, payload + payloadSize);
+    }
+    const Zstd *z = header.codec == kZstd ? zstd() : nullptr;
+    if (!z)
+    {
+        why = "this save state needs libzstd, which is not on this system";
+        return {};
+    }
+    std::vector<uint8_t> raw(static_cast<size_t>(header.rawSize));
+    const size_t got = z->decompress(raw.data(), raw.size(), payload, payloadSize);
+    if (z->isError(got) || got != raw.size())
+    {
+        why = "a damaged save state";
+        return {};
+    }
+    return raw;
+}
+
+// A file being written, per slot: a load waits for it. And a count, so the
+// game does not end with one half done (flush()).
+std::mutex g_slotLock[kSlots + 1];
+std::mutex g_writerMutex;
+std::condition_variable g_writerDone;
+int g_writers = 0;
+
 struct Pending
 {
     std::chrono::steady_clock::time_point since = std::chrono::steady_clock::now();
@@ -137,50 +363,80 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
         return;
     }
 
-    std::error_code ec;
-    std::filesystem::create_directories(stateDir(), ec);
-    const std::filesystem::path path = slotPath(slot);
-    const std::filesystem::path temp = path.string() + ".tmp";
+    // Compressing and writing take longer than a frame: off the game's thread,
+    // the stream handed over. The slot's old file stays until the new one is
+    // whole.
     {
-        std::ofstream file(temp, std::ios::binary | std::ios::trunc);
-        file.write(reinterpret_cast<const char *>(out.buffer().data()),
-                   static_cast<std::streamsize>(out.buffer().size()));
-        if (!file)
+        std::lock_guard lock(g_writerMutex);
+        ++g_writers;
+    }
+    std::thread(
+        [slot, since = pending->since, raw = std::move(out.buffer())]
         {
-            say("Could not write the save state");
-            done = true;
-            return;
-        }
-    }
-    std::filesystem::rename(temp, path, ec);
-    if (ec)
-    {
-        say("Could not write the save state: " + ec.message());
-        done = true;
-        return;
-    }
-    say("Saved to slot " + std::to_string(slot));
-    std::fprintf(stderr, "[savestate] slot %d: %zu bytes, after %.2f s\n", slot, out.buffer().size(),
-                 std::chrono::duration<double>(std::chrono::steady_clock::now() - pending->since).count());
+            std::lock_guard slotLock(g_slotLock[slot]);
+            const std::vector<uint8_t> file = encodeFile(raw);
+            std::error_code ec;
+            std::filesystem::create_directories(stateDir(), ec);
+            const std::filesystem::path path = slotPath(slot);
+            const std::filesystem::path temp = path.string() + ".tmp";
+            bool ok = false;
+            {
+                std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+                out.write(reinterpret_cast<const char *>(file.data()), static_cast<std::streamsize>(file.size()));
+                ok = static_cast<bool>(out);
+            }
+            if (ok)
+            {
+                std::filesystem::rename(temp, path, ec);
+                ok = !ec;
+            }
+            if (ok)
+            {
+                std::fprintf(stderr, "[savestate] slot %d: %zu bytes (%zu on disk), after %.2f s\n", slot, raw.size(),
+                             file.size(), std::chrono::duration<double>(std::chrono::steady_clock::now() - since).count());
+                say("Saved to slot " + std::to_string(slot));
+                thumbnailSaved(slot);
+            }
+            else
+            {
+                say("Could not write the save state");
+            }
+            std::lock_guard lock(g_writerMutex);
+            --g_writers;
+            g_writerDone.notify_all();
+        })
+        .detach();
     done = true;
 }
 
 void doLoad(PS2Runtime &runtime, int slot, bool &done)
 {
     done = true;
-    std::ifstream file(slotPath(slot), std::ios::binary | std::ios::ate);
-    if (!file)
+    std::vector<uint8_t> bytes;
     {
-        say("Slot " + std::to_string(slot) + " is empty");
-        return;
-    }
-    const std::streamsize size = file.tellg();
-    file.seekg(0);
-    std::vector<uint8_t> bytes(static_cast<size_t>(size));
-    if (!file.read(reinterpret_cast<char *>(bytes.data()), size))
-    {
-        say("Could not read the save state");
-        return;
+        // A save still being written to this slot is waited for.
+        std::lock_guard slotLock(g_slotLock[slot]);
+        std::ifstream file(slotPath(slot), std::ios::binary | std::ios::ate);
+        if (!file)
+        {
+            say("Slot " + std::to_string(slot) + " is empty");
+            return;
+        }
+        const std::streamsize size = file.tellg();
+        file.seekg(0);
+        std::vector<uint8_t> packed(static_cast<size_t>(size));
+        if (!file.read(reinterpret_cast<char *>(packed.data()), size))
+        {
+            say("Could not read the save state");
+            return;
+        }
+        std::string why;
+        bytes = decodeFile(std::move(packed), why);
+        if (bytes.empty())
+        {
+            say("Could not load: " + why);
+            return;
+        }
     }
 
     rg::vif1::drainForSnapshot();
@@ -211,6 +467,12 @@ void requestSave(PS2Runtime &runtime, int slot)
 {
     if (!validSlot(slot))
         return;
+    {
+        // A picture left from an earlier request is not this save's.
+        std::lock_guard lock(g_thumbMutex);
+        g_thumbPending[slot] = {};
+        g_thumbAwaiting[slot] = false;
+    }
     auto pending = std::make_shared<Pending>();
     runtime.eeScheduler().requestExecutorTask(
         [&runtime, slot, pending]
@@ -244,6 +506,50 @@ bool takeMessage(std::string &text)
     return true;
 }
 
+void offerThumbnail(int slot, const uint8_t *rgba, uint32_t width, uint32_t height)
+{
+    if (!validSlot(slot) || !rgba || width == 0u || height == 0u)
+        return;
+    // A box filter down to kThumbnailWidth, the picture's own shape.
+    Thumbnail small;
+    small.width = std::min(kThumbnailWidth, width);
+    small.height = std::max(1u, static_cast<uint32_t>(static_cast<uint64_t>(small.width) * height / width));
+    small.rgb.resize(static_cast<size_t>(small.width) * small.height * 3u);
+    for (uint32_t y = 0; y < small.height; ++y)
+    {
+        const uint32_t y0 = static_cast<uint32_t>(static_cast<uint64_t>(y) * height / small.height);
+        const uint32_t y1 = std::max(y0 + 1u, static_cast<uint32_t>(static_cast<uint64_t>(y + 1u) * height / small.height));
+        for (uint32_t x = 0; x < small.width; ++x)
+        {
+            const uint32_t x0 = static_cast<uint32_t>(static_cast<uint64_t>(x) * width / small.width);
+            const uint32_t x1 = std::max(x0 + 1u, static_cast<uint32_t>(static_cast<uint64_t>(x + 1u) * width / small.width));
+            uint32_t sum[3] = {0, 0, 0}, count = 0;
+            for (uint32_t sy = y0; sy < y1; ++sy)
+                for (uint32_t sx = x0; sx < x1; ++sx)
+                {
+                    const uint8_t *pixel = rgba + (static_cast<size_t>(sy) * width + sx) * 4u;
+                    sum[0] += pixel[0];
+                    sum[1] += pixel[1];
+                    sum[2] += pixel[2];
+                    ++count;
+                }
+            uint8_t *out = &small.rgb[(static_cast<size_t>(y) * small.width + x) * 3u];
+            for (int c = 0; c < 3; ++c)
+                out[c] = static_cast<uint8_t>(sum[c] / count);
+        }
+    }
+    std::lock_guard lock(g_thumbMutex);
+    g_thumbPending[slot] = std::move(small);
+    if (g_thumbAwaiting[slot])
+        writeThumbnailLocked(slot);
+}
+
+void flush()
+{
+    std::unique_lock lock(g_writerMutex);
+    g_writerDone.wait_for(lock, std::chrono::seconds(10), [] { return g_writers == 0; });
+}
+
 std::vector<SlotInfo> slots()
 {
     std::vector<SlotInfo> result(kSlots);
@@ -260,6 +566,10 @@ std::vector<SlotInfo> slots()
         char text[32];
         std::strftime(text, sizeof(text), "%Y-%m-%d %H:%M", &local);
         entry.when = text;
+        std::error_code ec;
+        for (const auto &file : std::filesystem::directory_iterator(stateDir(), ec))
+            if (isThumbnailOf(file.path(), slot))
+                entry.picture = file.path().string();
     }
     return result;
 }

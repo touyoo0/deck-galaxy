@@ -543,6 +543,16 @@ std::atomic<unsigned> g_f6Presses{0u};
 std::atomic<unsigned> g_f5Presses{0u};
 std::atomic<unsigned> g_f8Presses{0u};
 std::atomic<int> g_slotSteps{0};
+
+// A save, with the game's picture of the moment for the slot's thumbnail. From
+// the presenter's thread (the keys, the menu), where a capture can be asked.
+void saveWithThumbnail(PS2Runtime &runtime, dq8::gfx::SdlGpuBackend &backend, int slot)
+{
+    rg::savestate::requestSave(runtime, slot);
+    backend.requestCapture(false,
+                           [slot](dq8::gfx::SdlGpuCapture capture)
+                           { rg::savestate::offerThumbnail(slot, capture.rgba.data(), capture.width, capture.height); });
+}
 // The longest gap between two pump() calls since the stats line last printed
 // it. The presenter loop calls pump several times a frame, so this is not the
 // frame time (the backend's "longest frame" is) but the longest the main
@@ -817,7 +827,7 @@ bool pump(void *userData)
             g_menu->notify("Save slot " + std::to_string(slot), dq8::ui::Icon::Info);
     }
     if (g_f5Presses.exchange(0u, std::memory_order_relaxed) != 0u)
-        rg::savestate::requestSave(*g_runtime, rg::savestate::currentSlot());
+        saveWithThumbnail(*g_runtime, *backend, rg::savestate::currentSlot());
     if (g_f8Presses.exchange(0u, std::memory_order_relaxed) != 0u)
         rg::savestate::requestLoad(*g_runtime, rg::savestate::currentSlot());
     for (std::string text; g_menu && rg::savestate::takeMessage(text);)
@@ -988,14 +998,14 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
     host.saveSlots = [] {
         std::vector<dq8::ui::HostServices::SaveSlot> slots;
         for (const rg::savestate::SlotInfo &info : rg::savestate::slots())
-            slots.push_back({info.used, info.when});
+            slots.push_back({info.used, info.when, info.picture});
         return slots;
     };
     host.saveSlotCurrent = [] { return rg::savestate::currentSlot(); };
     host.saveSlotSelect = [](int slot) { rg::savestate::setCurrentSlot(slot); };
-    host.saveSlotSave = [&runtime](int slot) {
+    host.saveSlotSave = [&runtime, &backend](int slot) {
         rg::savestate::setCurrentSlot(slot);
-        rg::savestate::requestSave(runtime, slot);
+        saveWithThumbnail(runtime, backend, slot);
     };
     host.saveSlotLoad = [&runtime](int slot) {
         rg::savestate::setCurrentSlot(slot);
