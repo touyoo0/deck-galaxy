@@ -15,6 +15,7 @@ or RG_LANG=CODE forces one.
 
 For tests: --iso FILE, --dir FOLDER, --zip ARCHIVE (a release's source
 archive instead of the download), --no-steam, --start (skip the pages),
+--demo (the install page with a made-up build, nothing installed),
 --shots FOLDER (a PNG of the window; --tour also shows the European option
 and the install page). RG_UPDATE_REPO=owner/name and
 RG_UPDATE_API=URL point the release lookup elsewhere; RG_SETUP_REF=BRANCH is
@@ -50,7 +51,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 gi.require_version("Gsk", "4.0")
 gi.require_version("Graphene", "1.0")
-from gi.repository import Gdk, Gio, GLib, Graphene, Gsk, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
 REPO = os.environ.get("RG_UPDATE_REPO", "touyoo0/deck-galaxy")
 API = os.environ.get("RG_UPDATE_API", f"https://api.github.com/repos/{REPO}/releases?per_page=10")
@@ -76,6 +77,10 @@ window { background: #04061a; color: #f2f3fc; }
 .bad { color: #ff7b72; }
 .card { background: rgba(8,12,42,0.74); border: 1px solid rgba(244,203,82,0.30); border-radius: 14px;
         padding: 6px 12px; box-shadow: 0 10px 34px rgba(0,0,0,0.5); }
+.tip-title { font-size: 12px; font-weight: 700; letter-spacing: 3px; color: #f4cb52; }
+.tip { font-size: 22px; color: #e6e9fa; }
+.tip-head { font-size: 34px; font-weight: 800; color: #f4cb52; text-shadow: 0 2px 0 #6b3d00; }
+.tip-count { font-size: 12px; color: #9ea8cc; }
 button { background: rgba(28,40,110,0.65); color: #f2f3fc; border: 1px solid rgba(127,212,255,0.4);
          border-radius: 9px; padding: 5px 14px; box-shadow: none; background-image: none; }
 button:hover { background: rgba(48,66,160,0.8); border-color: #7fd4ff; }
@@ -393,7 +398,68 @@ STRINGS = {
                      "Configurazione della compilazione del gioco"),
     "ph_game": ("Building the game", "Compilation du jeu", "Spiel wird erstellt", "Compilando el juego",
                 "Compilazione del gioco"),
+    # the tips shown while it builds (one after the other, every few seconds)
+    "tips_title": ("While you wait", "Pendant que vous patientez", "Während du wartest", "Mientras esperas",
+                   "Nell'attesa"),
+    "tipt_why": ('Why the wait?', 'Pourquoi attendre ?', 'Warum das Warten?', '¿Por qué esperar?', 'Perché attendere?'),
+    "tipt_menu": ("The game's menu", 'Le menu du jeu', 'Das Spielmenü', 'El menú del juego', 'Il menu del gioco'),
+    "tipt_home": ('A home screen', "Un écran d'accueil", 'Ein Startbildschirm', 'Una pantalla de inicio', 'Una schermata iniziale'),
+    "tipt_states": ('Save states', 'Sauvegardes rapides', 'Schnellspeicher', 'Estados guardados', 'Salvataggi rapidi'),
+    "tipt_back": ('Back buttons', 'Boutons arrière', 'Rückentasten', 'Botones traseros', 'Tasti posteriori'),
+    "tipt_fps": ('60 frames per second', '60 images par seconde', '60 Bilder pro Sekunde', '60 fotogramas por segundo', '60 fotogrammi al secondo'),
+    "tipt_options": ('Your own game', 'Un jeu à votre main', 'Dein eigenes Spiel', 'Un juego a tu medida', 'Un gioco su misura'),
+    "tipt_achievements": ('130 achievements', '130 succès', '130 Erfolge', '130 logros', '130 obiettivi'),
+    "tipt_languages": ('Five languages', 'Cinq langues', 'Fünf Sprachen', 'Cinco idiomas', 'Cinque lingue'),
+    "tip_menu": ("View + Menu opens the game's menu at any time: options, save states, achievements, language.",
+                 "Vue + Menu ouvre à tout moment le menu du jeu : options, sauvegardes rapides, succès, langue.",
+                 "Ansicht + Menü öffnet jederzeit das Spielmenü: Optionen, Schnellspeicher, Erfolge, Sprache.",
+                 "Vista + Menú abre en cualquier momento el menú del juego: opciones, estados guardados, logros, idioma.",
+                 "Vista + Menu apre in qualsiasi momento il menu del gioco: opzioni, salvataggi rapidi, obiettivi, lingua."),
+    "tip_states": ("Five slots hold the whole game at one moment, and they survive closing the game.",
+                   "Cinq emplacements gardent tout le jeu à un instant donné, même après avoir fermé le jeu.",
+                   "Fünf Slots halten das ganze Spiel in einem Moment fest, auch nach dem Schließen.",
+                   "Cinco ranuras guardan todo el juego en un momento dado, incluso tras cerrarlo.",
+                   "Cinque slot conservano l'intero gioco in un istante, anche dopo averlo chiuso."),
+    "tip_back": ("Added to Steam, the game uses the Deck's back buttons: L4 opens the menu, L5 pauses, R4 saves a state, R5 loads one.",
+                 "Une fois ajouté à Steam, le jeu utilise les boutons arrière : L4 ouvre le menu, L5 met en pause, R4 sauvegarde, R5 charge.",
+                 "In Steam eingetragen, nutzt das Spiel die Rückentasten des Decks: L4 öffnet das Menü, L5 pausiert, R4 speichert, R5 lädt.",
+                 "Añadido a Steam, el juego usa los botones traseros: L4 abre el menú, L5 pausa, R4 guarda un estado y R5 carga uno.",
+                 "Aggiunto a Steam, il gioco usa i tasti posteriori: L4 apre il menu, L5 mette in pausa, R4 salva, R5 carica."),
+    "tip_home": ("The game opens on a home screen with Play, Update and Quit. Update fetches new versions without this installer.",
+                 "Le jeu s'ouvre sur un écran d'accueil : Jouer, Mettre à jour, Quitter. Mettre à jour récupère les nouvelles versions sans cet installateur.",
+                 "Das Spiel startet mit einem Startbildschirm: Spielen, Aktualisieren, Beenden. Aktualisieren holt neue Versionen ohne diesen Installer.",
+                 "El juego se abre en una pantalla de inicio: Jugar, Actualizar, Salir. Actualizar obtiene nuevas versiones sin este instalador.",
+                 "Il gioco si apre su una schermata iniziale: Gioca, Aggiorna, Esci. Aggiorna scarica le nuove versioni senza questo installatore."),
+    "tip_fps": ("The game runs at 60 frames per second instead of the original 30; the menu can put the 30 back.",
+                "Le jeu tourne à 60 images par seconde au lieu des 30 d'origine ; le menu permet de remettre les 30.",
+                "Das Spiel läuft mit 60 statt der originalen 30 Bildern pro Sekunde; im Menü lassen sich die 30 wiederherstellen.",
+                "El juego va a 60 fotogramas por segundo en vez de los 30 originales; el menú permite volver a los 30.",
+                "Il gioco gira a 60 fotogrammi al secondo invece dei 30 originali; dal menu si possono ripristinare i 30."),
+    "tip_options": ("Make it your own game: encounter rate, experience, money, drops, shop prices, camera distance, field of view...",
+                    "Un jeu à votre main : fréquence des combats, expérience, argent, butin, prix des boutiques, distance de caméra, champ de vision...",
+                    "Mach das Spiel zu deinem: Begegnungsrate, Erfahrung, Geld, Beute, Ladenpreise, Kameraabstand, Sichtfeld...",
+                    "Un juego a tu medida: frecuencia de combates, experiencia, dinero, botín, precios, distancia de cámara, campo de visión...",
+                    "Un gioco su misura: frequenza degli scontri, esperienza, denaro, bottino, prezzi, distanza della camera, campo visivo..."),
+    "tip_achievements": ("The game's 130 RetroAchievements can be turned on later, from the menu's Achievements page.",
+                         "Les 130 succès RetroAchievements du jeu peuvent être activés plus tard, depuis la page Succès du menu.",
+                         "Die 130 RetroAchievements des Spiels lassen sich später auf der Erfolge-Seite des Menüs aktivieren.",
+                         "Los 130 logros de RetroAchievements se pueden activar más tarde, desde la página Logros del menú.",
+                         "I 130 obiettivi RetroAchievements si possono attivare più tardi dalla pagina Obiettivi del menu."),
+    "tip_languages": ("The menu speaks English, French, German, Spanish and Italian; the game's texts in those languages need the European disc.",
+                      "Le menu parle anglais, français, allemand, espagnol et italien ; les textes du jeu dans ces langues demandent le disque européen.",
+                      "Das Menü spricht Englisch, Französisch, Deutsch, Spanisch und Italienisch; die Spieltexte in diesen Sprachen brauchen die europäische Disc.",
+                      "El menú habla inglés, francés, alemán, español e italiano; los textos del juego en esos idiomas requieren el disco europeo.",
+                      "Il menu parla inglese, francese, tedesco, spagnolo e italiano; i testi del gioco in queste lingue richiedono il disco europeo."),
+    "tip_why": ("The game is rebuilt here, from your own disc, into a program made for this Deck. Nothing of it leaves the Deck.",
+                "Le jeu est recompilé ici, à partir de votre disque, en un programme fait pour ce Steam Deck. Rien n'en sort.",
+                "Das Spiel wird hier aus deiner Disc in ein Programm für dieses Deck umgebaut. Nichts verlässt das Gerät.",
+                "El juego se reconstruye aquí, desde tu disco, en un programa hecho para esta Steam Deck. Nada sale de ella.",
+                "Il gioco viene ricostruito qui, dal tuo disco, in un programma fatto per questo Steam Deck. Nulla esce dal dispositivo."),
 }
+
+TIP_SECONDS = 9  # how long each tip stays on the install page
+TIPS = ("tip_why", "tip_menu", "tip_home", "tip_states", "tip_back", "tip_fps", "tip_options",
+        "tip_achievements", "tip_languages")
 
 
 def tr(key: str, **values) -> str:
@@ -747,6 +813,8 @@ class Job(threading.Thread):
         return " ".join(lines[-2:])[:300]
 
     def run(self) -> None:
+        if self.cfg.demo:
+            return self.run_demo()
         try:
             self.fetch()
             self.build()
@@ -763,6 +831,21 @@ class Job(threading.Thread):
         except Exception as error:  # a bug here must still reach the window
             GLib.idle_add(self.ui.on_failed, tr("unexpected", error=error))
             return
+        GLib.idle_add(self.ui.on_done)
+
+    def run_demo(self) -> None:
+        """--demo: the install page with a made-up build, to look at it. Touches nothing."""
+        steps = [self.PHASES[i] for i in (0, 1, 3, 4, 5, 6, 7, 8, 9)]
+        for index, (_line, lo, hi, key) in enumerate(steps):
+            last = index == len(steps) - 1
+            for n in range(60 if last else 12):
+                if self.cancelled:
+                    GLib.idle_add(self.ui.on_cancelled)
+                    return
+                fraction = lo + (hi - lo) * n / (60 if last else 12)
+                self.say(tr(key) if not last else tr("building", n=n * 5, m=300), fraction)
+                GLib.idle_add(self.ui.on_log, f"demo: {key} {n}")
+                time.sleep(0.5)
         GLib.idle_add(self.ui.on_done)
 
     # -- running a program, its output line by line
@@ -1287,6 +1370,189 @@ class Flag(Gtk.Widget):
         snap.append_border(edge, [1.0] * 4, [rgba(255, 255, 255, 0.35)] * 4)
 
 
+
+# ---------------------------------------------------------------- the pictures of the tips
+GOLD, SKY, CORAL, GREEN = rgba(244, 203, 82), rgba(127, 212, 255), rgba(255, 140, 122), rgba(112, 222, 142)
+WHITE, NAVY, DEEP = rgba(242, 243, 252), rgba(40, 56, 140), rgba(8, 12, 42)
+
+
+def box(snap: Gtk.Snapshot, color: Gdk.RGBA, x: float, y: float, w: float, h: float, r: float = 0.0) -> None:
+    if r > 0:
+        clip = Gsk.RoundedRect()
+        clip.init_from_rect(rect(x, y, w, h), min(r, w / 2, h / 2))
+        snap.push_rounded_clip(clip)
+        snap.append_color(color, rect(x, y, w, h))
+        snap.pop()
+    else:
+        snap.append_color(color, rect(x, y, w, h))
+
+
+def disc(snap: Gtk.Snapshot, color: Gdk.RGBA, cx: float, cy: float, r: float) -> None:
+    box(snap, color, cx - r, cy - r, 2 * r, 2 * r, r)
+
+
+def ring(snap: Gtk.Snapshot, color: Gdk.RGBA, cx: float, cy: float, r: float, t: float) -> None:
+    snap.append_border(circle(cx, cy, r), [t] * 4, [color] * 4)
+
+
+def line(snap: Gtk.Snapshot, color: Gdk.RGBA, x1: float, y1: float, x2: float, y2: float, t: float) -> None:
+    snap.save()
+    snap.translate(point((x1 + x2) / 2, (y1 + y2) / 2))
+    snap.rotate(math.degrees(math.atan2(y2 - y1, x2 - x1)))
+    length = math.hypot(x2 - x1, y2 - y1)
+    snap.append_color(color, rect(-length / 2, -t / 2, length, t))
+    snap.restore()
+
+
+class TipArt(Gtk.Widget):
+    """One drawing per tip, in a 220 x 220 square: the Deck, the disc, the buttons the tip is about."""
+    __gtype_name__ = "RogueGalaxyTipArt"
+
+    def __init__(self) -> None:
+        super().__init__(width_request=290, height_request=290, valign=Gtk.Align.CENTER)
+        self.kind = "why"
+        self.start = time.monotonic()
+        self.add_tick_callback(lambda *_: self.queue_draw() or True)
+
+    def set_kind(self, kind: str) -> None:
+        self.kind = kind
+        self.queue_draw()
+
+    def text(self, snap: Gtk.Snapshot, s: str, x: float, y: float, size: float, color: Gdk.RGBA) -> None:
+        layout = self.create_pango_layout(s)
+        font = Pango.FontDescription.from_string("Sans Bold")
+        font.set_absolute_size(size * Pango.SCALE)
+        layout.set_font_description(font)
+        w, h = layout.get_pixel_size()
+        snap.save()
+        snap.translate(point(x - w / 2, y - h / 2))
+        snap.append_layout(layout, color)
+        snap.restore()
+
+    def deck(self, snap: Gtk.Snapshot, x: float, y: float, w: float, h: float) -> tuple[float, float, float, float]:
+        """The Steam Deck seen from the front; returns its screen."""
+        box(snap, rgba(24, 34, 96), x, y, w, h, h * 0.32)
+        edge = Gsk.RoundedRect()
+        edge.init_from_rect(rect(x, y, w, h), h * 0.32)
+        snap.append_border(edge, [2.0] * 4, [rgba(127, 212, 255, 0.55)] * 4)
+        sx, sy, sw, sh = x + w * 0.2, y + h * 0.1, w * 0.6, h * 0.8
+        box(snap, DEEP, sx, sy, sw, sh, 5)
+        disc(snap, SKY, x + w * 0.1, y + h * 0.34, h * 0.09)
+        disc(snap, SKY, x + w * 0.1, y + h * 0.7, h * 0.07)
+        disc(snap, GOLD, x + w * 0.9, y + h * 0.34, h * 0.06)
+        disc(snap, CORAL, x + w * 0.9, y + h * 0.66, h * 0.06)
+        return sx, sy, sw, sh
+
+    def draw_kind(self, snap: Gtk.Snapshot) -> None:
+        k = self.kind
+        if k == "why":
+            disc(snap, SKY, 110, 52, 34)
+            disc(snap, DEEP, 110, 52, 9)
+            ring(snap, WHITE, 110, 52, 34, 2)
+            line(snap, GOLD, 110, 94, 110, 120, 7)
+            line(snap, GOLD, 110, 124, 98, 110, 7)
+            line(snap, GOLD, 110, 124, 122, 110, 7)
+            sx, sy, sw, sh = self.deck(snap, 30, 132, 160, 76)
+            box(snap, NAVY, sx + 8, sy + sh / 2 - 5, sw - 16, 10, 5)
+            box(snap, GOLD, sx + 8, sy + sh / 2 - 5, (sw - 16) * 0.6, 10, 5)
+        elif k == "menu":
+            sx, sy, sw, sh = self.deck(snap, 14, 46, 192, 128)
+            box(snap, rgba(30, 44, 120), sx + 6, sy + 6, sw - 12, sh - 12, 4)
+            for i in range(4):
+                box(snap, GOLD if i == 0 else SKY, sx + 12, sy + 14 + i * 16, 26, 7, 3)
+            for i in range(3):
+                box(snap, WHITE, sx + 48, sy + 16 + i * 20, sw - 66 - i * 14, 6, 3)
+        elif k == "home":
+            sx, sy, sw, sh = self.deck(snap, 14, 46, 192, 128)
+            box(snap, GOLD, sx + sw / 2 - 28, sy + 8, 56, 8, 4)
+            box(snap, GOLD, sx + sw / 2 - 34, sy + 26, 68, 18, 9)
+            box(snap, SKY, sx + sw / 2 - 34, sy + 50, 68, 18, 9)
+            box(snap, rgba(158, 168, 204), sx + sw / 2 - 34, sy + 74, 68, 18, 9)
+        elif k == "states":
+            for i in range(5):
+                x = 12 + i * 41
+                on = i == 2
+                box(snap, GOLD if on else NAVY, x - 2, 38, 40, 58, 6)
+                box(snap, SKY if on else rgba(70, 90, 170), x, 40, 36, 54, 5)
+                box(snap, WHITE, x + 6, 70, 24, 14, 3)
+                disc(snap, GOLD if not on else WHITE, x + 26, 54, 5)
+            line(snap, GOLD, 110, 108, 110, 128, 6)
+            line(snap, GOLD, 110, 132, 100, 120, 6)
+            line(snap, GOLD, 110, 132, 120, 120, 6)
+            box(snap, SKY, 76, 140, 68, 62, 8)
+            box(snap, WHITE, 88, 146, 44, 26, 3)
+            box(snap, DEEP, 94, 182, 32, 20, 3)
+        elif k == "back":
+            box(snap, rgba(24, 34, 96), 14, 70, 192, 112, 48)
+            edge = Gsk.RoundedRect()
+            edge.init_from_rect(rect(14, 70, 192, 112), 48)
+            snap.append_border(edge, [2.0] * 4, [rgba(127, 212, 255, 0.55)] * 4)
+            for label, x, y in (("L5", 28, 42), ("L4", 28, 78), ("R5", 152, 42), ("R4", 152, 78)):
+                box(snap, GOLD, x, y, 40, 22, 11)
+                self.text(snap, label, x + 20, y + 11, 15, DEEP)
+            box(snap, DEEP, 78, 96, 64, 52, 6)
+        elif k == "fps":
+            for i, y in enumerate((74, 96, 118)):
+                box(snap, SKY, 10 + i * 6, y, 34 - i * 6, 6, 3)
+            self.text(snap, "60", 122, 96, 92, GOLD)
+            self.text(snap, "FPS", 118, 166, 34, SKY)
+        elif k == "options":
+            for y, share in ((60, 0.3), (110, 0.75), (160, 0.5)):
+                box(snap, NAVY, 20, y - 6, 180, 12, 6)
+                box(snap, GOLD, 20, y - 6, 180 * share, 12, 6)
+                disc(snap, WHITE, 20 + 180 * share, y, 14)
+        elif k == "achievements":
+            box(snap, GOLD, 70, 40, 80, 84, 36)
+            ring(snap, GOLD, 64, 76, 20, 7)
+            ring(snap, GOLD, 156, 76, 20, 7)
+            box(snap, GOLD, 99, 120, 22, 34)
+            box(snap, rgba(214, 160, 40), 72, 150, 76, 20, 8)
+            self.text(snap, "130", 110, 80, 30, DEEP)
+            for x, y in ((28, 34), (190, 40), (186, 150), (34, 150)):
+                disc(snap, WHITE, x, y, 4)
+        elif k == "languages":
+            for i, (code, color) in enumerate((("EN", GOLD), ("FR", SKY), ("DE", CORAL), ("ES", GREEN), ("IT", WHITE))):
+                x = 14 + (i % 3) * 66 if i < 3 else 47 + (i - 3) * 66
+                y = 52 if i < 3 else 118
+                box(snap, color, x, y, 58, 50, 16)
+                self.text(snap, code, x + 29, y + 25, 24, DEEP)
+
+    def do_snapshot(self, snap: Gtk.Snapshot) -> None:
+        w, h = float(self.get_width()), float(self.get_height())
+        if w < 2 or h < 2:
+            return
+        t = time.monotonic() - self.start
+        scale = min(w, h) / 220
+        snap.save()
+        snap.translate(point((w - 220 * scale) / 2, (h - 220 * scale) / 2))
+        snap.scale(scale, scale)
+        snap.translate(point(0, math.sin(t * 1.6) * 4))
+        self.draw_kind(snap)
+        snap.restore()
+
+
+class TipPage(Gtk.Box):
+    """A picture on the left, a title and a few lines on the right."""
+
+    def __init__(self) -> None:
+        super().__init__(spacing=18)
+        self.art = TipArt()
+        column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, valign=Gtk.Align.CENTER, hexpand=True)
+        self.head = Gtk.Label(label="", xalign=0, wrap=True, max_width_chars=20)
+        self.head.add_css_class("tip-head")
+        self.body = Gtk.Label(label="", xalign=0, wrap=True, max_width_chars=26)
+        self.body.add_css_class("tip")
+        column.append(self.head)
+        column.append(self.body)
+        self.append(self.art)
+        self.append(column)
+
+    def show(self, key: str) -> None:
+        self.art.set_kind(key.split("_", 1)[1])
+        self.head.set_text(tr("tipt_" + key.split("_", 1)[1]))
+        self.body.set_text(tr(key))
+
+
 # ---------------------------------------------------------------- the window
 
 
@@ -1300,6 +1566,7 @@ class Window(Gtk.ApplicationWindow):
         self.custom_dir: Path | None = None
         self.job: Job | None = None
         self.pulse_id = 0
+        self.tip_id = 0
         self.set_default_size(1100, 760)
         self.running = False
         self.connect("close-request", self.on_close_request)
@@ -1322,7 +1589,7 @@ class Window(Gtk.ApplicationWindow):
             if cfg.tour:
                 GLib.timeout_add(1500, self.tour_european)
                 GLib.timeout_add(3000, self.tour_install)
-        if cfg.start:
+        if cfg.start or cfg.demo:
             GLib.idle_add(self.begin)
         if cfg.test_cancel:  # a test: cancel as the dialog's second button would
             GLib.timeout_add_seconds(cfg.test_cancel, lambda: self.cancel_install() or False)
@@ -1348,6 +1615,7 @@ class Window(Gtk.ApplicationWindow):
         for widget, fn in list(self.live_texts.items()):
             self.apply_text(widget, fn())
         self.language_drop.set_tooltip_text(tr("language"))
+        self.show_tip()
         self.update_buttons()
 
     def build_language_picker(self) -> Gtk.Widget:
@@ -1577,7 +1845,8 @@ class Window(Gtk.ApplicationWindow):
         card.append(self.fail_label)
         card.append(self.done_label)
         content.append(card)
-        expander = Gtk.Expander(vexpand=True)
+        content.append(self.build_tips())
+        expander = Gtk.Expander()
         self.live(expander, lambda: tr("details"))
         self.log_view = Gtk.TextView(editable=False, monospace=True, wrap_mode=Gtk.WrapMode.CHAR)
         self.log_scroll = Gtk.ScrolledWindow(min_content_height=200, child=self.log_view)
@@ -1591,6 +1860,51 @@ class Window(Gtk.ApplicationWindow):
         page.append(self.beside_art(content))
         page.append(self.close_button)  # centred in the window, like Install
         return page
+
+    # -- the tips under the bar, one after the other while it builds
+    def build_tips(self) -> Gtk.Widget:
+        self.tips_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, vexpand=True,
+                                valign=Gtk.Align.CENTER, margin_top=6)
+        self.tips_box.add_css_class("card")
+        head = Gtk.Box(spacing=8)
+        title = Gtk.Label(label="", xalign=0, hexpand=True)
+        title.add_css_class("tip-title")
+        self.live(title, lambda: tr("tips_title").upper())
+        self.tip_count = Gtk.Label(label="", xalign=1)
+        self.tip_count.add_css_class("tip-count")
+        head.append(title)
+        head.append(self.tip_count)
+        self.tip_stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=600,
+                                   hhomogeneous=True, vhomogeneous=True)
+        self.tip_pages = (TipPage(), TipPage())
+        self.tip_stack.add_named(self.tip_pages[0], "0")
+        self.tip_stack.add_named(self.tip_pages[1], "1")
+        self.tips_box.append(head)
+        self.tips_box.append(self.tip_stack)
+        self.tip_index = 0
+        self.tip_page = 0
+        self.show_tip()
+        self.tip_id = GLib.timeout_add_seconds(TIP_SECONDS, self.next_tip)
+        return self.tips_box
+
+    def show_tip(self) -> None:
+        """The tip now on show, again (a new language)."""
+        self.tip_pages[self.tip_page].show(TIPS[self.tip_index])
+        self.tip_count.set_text(f"{self.tip_index + 1} / {len(TIPS)}")
+
+    def next_tip(self) -> bool:
+        self.tip_index = (self.tip_index + 1) % len(TIPS)
+        self.tip_page = 1 - self.tip_page
+        self.tip_pages[self.tip_page].show(TIPS[self.tip_index])
+        self.tip_stack.set_visible_child_name(str(self.tip_page))
+        self.tip_count.set_text(f"{self.tip_index + 1} / {len(TIPS)}")
+        return True
+
+    def stop_tips(self) -> None:
+        if self.tip_id:
+            GLib.source_remove(self.tip_id)
+            self.tip_id = 0
+        self.tips_box.set_visible(False)
 
     # -- RetroAchievements
     def on_ra_sign_in(self) -> None:
@@ -1715,8 +2029,9 @@ class Window(Gtk.ApplicationWindow):
         self.pulse_id = GLib.timeout_add(120, self.pulse)
         self.job = Job(self.cfg, self)
         self.running = True
-        self.awake = KeepAwake()
-        self.awake.start("Installing Rogue Galaxy")
+        if not self.cfg.demo:
+            self.awake = KeepAwake()
+            self.awake.start("Installing Rogue Galaxy")
         self.job.start()
 
     # -- closing the window while it builds: ask, then really stop
@@ -1793,6 +2108,7 @@ class Window(Gtk.ApplicationWindow):
         self.running = False
         self.release_awake()
         self.pulsing = False
+        self.stop_tips()
         self.fail_label.set_text(message)
         self.fail_label.set_visible(True)
         self.step_label.set_text(tr("stopped"))
@@ -1805,6 +2121,7 @@ class Window(Gtk.ApplicationWindow):
         self.running = False
         self.release_awake()
         self.pulsing = False
+        self.stop_tips()
         self.bar.set_fraction(1.0)
         self.install_title.set_text(tr("done"))
         self.install_sub.set_text(tr("done_sub"))
@@ -1860,6 +2177,7 @@ def main() -> int:
     ap.add_argument("--japanese", type=Path)
     ap.add_argument("--european", type=Path)
     ap.add_argument("--no-steam", dest="steam", action="store_false")
+    ap.add_argument("--demo", action="store_true", help="show the install page with a made-up build (nothing is installed)")
     ap.add_argument("--start", action="store_true", help="skip the pages and install now (needs --dir)")
     ap.add_argument("--lang", choices=CODES, help="the window's language (else the Deck's, or RG_LANG)")
     ap.add_argument("--shots", help="save a PNG of each page in this folder")
