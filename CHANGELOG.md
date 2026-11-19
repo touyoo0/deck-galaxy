@@ -4,6 +4,9 @@
 
 ### Added
 
+- A loading transition after Play: the home screen fades out as the picture
+  dives into a stream of stars, then a loading screen (logo, bar) stays up
+  until the game is drawing and lifts in a jump forward.
 - Save states: five slots that hold the whole game at one moment, loaded at
   once, in the same run or after closing the game. F2 opens the slots to save
   into and F3 the slots to load from; nothing is saved or loaded until you pick

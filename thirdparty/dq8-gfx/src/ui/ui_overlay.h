@@ -299,6 +299,10 @@ private:
     void drawQuitPrompt();
     void drawSaveSlots();
     void drawHome();
+    // Play: the home screen leaves in a warp, then the game starts behind a
+    // loading screen that lifts once it is drawing (Steam Deck fork: added).
+    void startLaunch();
+    void drawLoadingVeil();
 
     // Frame side.
     void updateScale();
@@ -411,6 +415,14 @@ private:
     bool m_focusPage = false;
     bool m_quitAsk = false;
     bool m_homeOpen = false;
+    // Play's transition: when Play was pressed (home still open, game paused),
+    // then when the game started behind the loading screen, when that screen
+    // began to lift, the renders at its start and its bar (-1: not running).
+    double m_launchAt = -1.0;
+    double m_veilAt = -1.0;
+    double m_veilDoneAt = -1.0;
+    uint64_t m_veilBase = 0;
+    float m_veilBar = 0.0f;
     // The slot window: 0 closed, 1 saving, 2 loading; the slot the cursor
     // starts on, the one waiting for its overwrite to be confirmed, and
     // whether Back answers that question.
