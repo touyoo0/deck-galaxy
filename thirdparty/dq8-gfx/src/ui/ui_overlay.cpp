@@ -1384,6 +1384,9 @@ void Overlay::drawHome() {
         ImGui::SetNextWindowSize(ImVec2(panelW, panelH));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(1.4f), em(1.2f)));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, em(1.1f));
+        // Its text leaves with the rest once Play is pressed (the window's own
+        // alpha reaches the text and the update button; `fade` only its plate).
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, fade / std::max(intro, 0.001f));
         ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(10, 12, 18, static_cast<int>(176 * fade)));
         if (ImGui::Begin("##homenews", nullptr,
                          ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove |
@@ -1548,7 +1551,7 @@ void Overlay::drawHome() {
         }
         ImGui::End();
         ImGui::PopStyleColor();
-        ImGui::PopStyleVar(2);
+        ImGui::PopStyleVar(3);
     }
 
     // The column: title, buttons, update status.
