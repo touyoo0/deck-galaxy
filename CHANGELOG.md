@@ -14,6 +14,9 @@
   before it is overwritten. The menu's new Save states has the same two
   entries, for a controller. A state takes about 10 MB on disk. Not while a
   movie plays. See `docs/SAVESTATES.md`.
+- Adding the game to Steam also sets the Steam Deck's back buttons: L4 opens
+  the menu (F1), L5 pauses (F5), R4 saves a state (F2) and R5 loads one (F3).
+  A layout you already made for the game is left alone.
 
 ### Changed
 

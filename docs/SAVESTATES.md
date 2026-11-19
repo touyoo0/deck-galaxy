@@ -23,9 +23,12 @@ that holds a state asks first; an empty slot cannot be loaded. The F1 menu's
 **Save states** page does the same without F2 and F3.
 
 The pause moved from F2 to F5 to make room (and the menu's frame-rate
-counter, F3, is gone: the Steam Deck has its own). On a Steam Deck, Steam
-Input can give a back button a key, which puts them under a finger: for
-example L4 = F1 (the menu), R4 = F2 (save) and R5 = F3 (load).
+counter, F3, is gone: the Steam Deck has its own). On a Steam Deck, the
+installer gives the back buttons a key when it adds the game to Steam (Steam
+Input, a layout of the Gamepad With Joystick Trackpad template): L4 = F1 (the
+menu), L5 = F5 (pause), R4 = F2 (save) and R5 = F3 (load). A layout the game
+already has in Steam is not touched; Steam shows the new one after a restart
+(game mode does it).
 
 The files are in `states/` next to `settings.ini`
 (`~/.local/share/RogueGalaxy/states/slot1.rgs` to `slot5.rgs`, and
