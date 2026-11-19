@@ -25,6 +25,8 @@
 
 ### Changed
 
+- In the menu, the line that says what an option needs (a disc to add, a
+  restart) no longer lands on the option's description: it goes under it.
 - The hints for the Japanese and European discs and for updating named
   `Install-Undub.bat`, `Install-European.bat` and `Update.bat`, which belong
   to the Windows version. They now say to add the disc in the installer, and

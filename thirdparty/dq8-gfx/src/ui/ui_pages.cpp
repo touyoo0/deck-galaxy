@@ -40,25 +40,15 @@ constexpr ImGuiWindowFlags kDialogFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWin
 
 ImVec4 color(ImU32 packed) { return ImGui::ColorConvertU32ToFloat4(packed); }
 
-// A setting that does nothing now, given the line that says what would make
-// it work (null while it works): what is drawn while this lives is greyed
-// out, and the line goes under it (Rogue Galaxy: added).
+// A setting that does nothing now (a reason given, null while it works): what
+// is drawn while this lives is greyed out (Rogue Galaxy: added). The line that
+// says what would make it work goes in settingRow's note.
 class Blocked {
 public:
-    explicit Blocked(const char *reason) : m_reason(reason) { ImGui::BeginDisabled(reason != nullptr); }
-    ~Blocked() {
-        ImGui::EndDisabled();
-        if (m_reason) {
-            ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextColored(color(palette::kWarn), "%s", L(m_reason));
-            ImGui::PopTextWrapPos();
-        }
-    }
+    explicit Blocked(const char *reason) { ImGui::BeginDisabled(reason != nullptr); }
+    ~Blocked() { ImGui::EndDisabled(); }
     Blocked(const Blocked &) = delete;
     Blocked &operator=(const Blocked &) = delete;
-
-private:
-    const char *m_reason;
 };
 
 // A round "x" in a window's corner, for the mouse: keyboard and controller
@@ -752,11 +742,12 @@ void Overlay::drawGameOptions(const std::string &page, const char *emptyText, co
         const char *reason = m_host.gameOptionBlocked ? m_host.gameOptionBlocked(option.key) : nullptr;
         {
             const Blocked blocked(reason);
-            settingRow(option.label.c_str(), option.help.empty() ? nullptr : option.help.c_str());
+            const bool restart = !reason && waitsForRestart(option);
+            settingRow(option.label.c_str(), option.help.empty() ? nullptr : option.help.c_str(), nullptr,
+                       reason ? reason : restart ? "Restart the game for this to take effect." : nullptr,
+                       reason ? palette::kWarn : palette::kBad);
             drawGameControl(option);
         }
-        if (!reason && waitsForRestart(option))
-            ImGui::TextColored(color(palette::kBad), "%s", L("Restart the game for this to take effect."));
     }
     if (table)
         endSettings();
