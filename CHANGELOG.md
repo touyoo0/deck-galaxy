@@ -4,6 +4,11 @@
 
 ### Added
 
+- The installer's progress page shows illustrated tips while the game builds
+  (why the wait, the menu, the home screen, save states, the back buttons, 60
+  fps, the options, achievements, the languages): a drawing, a title and a few
+  lines, in the window's language, one every 9 seconds. `--demo` shows that
+  page with a made-up build, to look at it without installing anything.
 - A loading transition after Play: the home screen fades out as the picture
   dives into a stream of stars, then a loading screen (logo, bar) stays up
   until the game is drawing and lifts in a jump forward.
