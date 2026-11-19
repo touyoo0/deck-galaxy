@@ -58,8 +58,22 @@ export DQ8_GFX_STATS_EVERY="${DQ8_GFX_STATS_EVERY:-60}"
 export SDL_APP_ID="${SDL_APP_ID:-rogue-galaxy}"
 
 [ -f build/last-run.log ] && cp -f build/last-run.log build/last-run.prev.log
-"$game" "$disc" "$@" >build/last-run.log 2>&1 </dev/null
+# The game runs in the background and is waited for, so that a stop asked of this
+# script (Steam's "Quit game" sends SIGTERM) reaches the game: it takes its
+# state for Continue, then ends. Run in the foreground it would be left behind.
+stopped=
+"$game" "$disc" "$@" >build/last-run.log 2>&1 </dev/null &
+child=$!
+trap 'stopped=1; kill -TERM "$child" 2>/dev/null' TERM INT HUP
+wait "$child"
 code=$?
+# A trapped signal ends the first wait early: wait for the game itself.
+while kill -0 "$child" 2>/dev/null; do
+    wait "$child"
+    code=$?
+done
+trap - TERM INT HUP
+[ -n "$stopped" ] && exit 0
 if [ "$code" -ne 0 ]; then
     fail "The game stopped (code $code). The end of build/last-run.log:
 $(tail -n 8 build/last-run.log)"
