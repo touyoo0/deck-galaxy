@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.11.0 - 2026-11-19
+
 ### Added
 
 - Continue: the home screen offers to go back to where the game was left. The
