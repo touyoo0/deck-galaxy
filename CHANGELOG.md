@@ -25,6 +25,9 @@
 
 ### Changed
 
+- The game pauses when its window is no longer in front (the Steam menu, another
+  window), by default: Interface > Pause in the background, which was off.
+  A settings file made before keeps its choice.
 - The help line under an option in the menu runs across the whole width of the
   window instead of a narrow column beside the name.
 - The menu has no bar along the top any more: everything is in the window in

@@ -46,6 +46,8 @@ The menu has ten pages, written here as F1 > Game and so on:
   game's text language and the undub, [below](#language).
 - **Achievements**: the account and the list.
 - **Interface**: the menu's size, notifications, pause and fast-forward.
+  "Pause in the background" (on by default) stops the game while its window is
+  not in front.
 - **Help**: the shortcuts, the project page, where to report a problem, and
   About.
 
