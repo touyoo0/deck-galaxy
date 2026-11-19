@@ -37,6 +37,7 @@
 #include "loading_screen.h"
 #include "opening.h"
 #include "quick_scenes.h"
+#include "savestate.h"
 #include "scene_timing.h"
 #include "settings_pages.h"
 #include "shop_prices.h"
@@ -107,7 +108,7 @@ bool onSteamDeck()
 #if defined(RG_HAS_SDLGPU)
 bool g_hasMenu = false;
 dq8::ui::Overlay *g_menu = nullptr;
-// The menu's pause (F2, or with the window's focus lost): the mouse camera
+// The menu's pause (F5, or with the window's focus lost): the mouse camera
 // lets the mouse go meanwhile.
 std::atomic<bool> g_hostPaused{false};
 PS2Runtime *g_runtime = nullptr;
@@ -537,6 +538,19 @@ std::atomic<unsigned> g_f10Presses{0u};
 std::atomic<unsigned> g_f7Presses{0u};
 // F6 turns the free camera on or off.
 std::atomic<unsigned> g_f6Presses{0u};
+// The save states' slot window for a save (F2) and for a load (F3).
+std::atomic<unsigned> g_savePresses{0u};
+std::atomic<unsigned> g_loadPresses{0u};
+
+// A save, with the game's picture of the moment for the slot's thumbnail. From
+// the presenter's thread (the keys, the menu), where a capture can be asked.
+void saveWithThumbnail(PS2Runtime &runtime, dq8::gfx::SdlGpuBackend &backend, int slot)
+{
+    rg::savestate::requestSave(runtime, slot);
+    backend.requestCapture(false,
+                           [slot](dq8::gfx::SdlGpuCapture capture)
+                           { rg::savestate::offerThumbnail(slot, capture.rgba.data(), capture.width, capture.height); });
+}
 // The longest gap between two pump() calls since the stats line last printed
 // it. The presenter loop calls pump several times a frame, so this is not the
 // frame time (the backend's "longest frame" is) but the longest the main
@@ -566,6 +580,14 @@ bool SDLCALL countMarkKeys(void *, SDL_Event *event)
         else if (event->key.scancode == SDL_SCANCODE_F7)
         {
             g_f7Presses.fetch_add(1u, std::memory_order_relaxed);
+        }
+        else if (event->key.scancode == SDL_SCANCODE_F2 && !(g_menu && g_menu->capturingBinding()))
+        {
+            g_savePresses.fetch_add(1u, std::memory_order_relaxed);
+        }
+        else if (event->key.scancode == SDL_SCANCODE_F3 && !(g_menu && g_menu->capturingBinding()))
+        {
+            g_loadPresses.fetch_add(1u, std::memory_order_relaxed);
         }
         else if (event->key.scancode == SDL_SCANCODE_F6 && !(g_menu && g_menu->capturingBinding()))
         {
@@ -757,6 +779,15 @@ bool pump(void *userData)
     {
         rg::freecamera::setEnabled(!rg::freecamera::enabled());
     }
+    // The save states: the keys open the slot window, which asks for the slot
+    // (a save or a load never happens without it). The request it makes runs
+    // on the EE executor; what it has to say comes back through takeMessage().
+    if (g_savePresses.exchange(0u, std::memory_order_relaxed) != 0u && g_menu)
+        g_menu->openSaveSlots(true);
+    if (g_loadPresses.exchange(0u, std::memory_order_relaxed) != 0u && g_menu)
+        g_menu->openSaveSlots(false);
+    for (std::string text; g_menu && rg::savestate::takeMessage(text);)
+        g_menu->notify(text, dq8::ui::Icon::Info);
     // Changes made on the game's Settings screen (its pages are there with
     // the menu alone), kept as the menu's own.
     for (rg::settingspages::Change change; g_menu && rg::settingspages::takeChange(change);)
@@ -898,8 +929,8 @@ dq8::gfx::SdlGpuWindowPlacement initialWindowPlacement(const dq8::ui::Settings &
     return placement;
 }
 
-// DQ8-Recompiled's in-game menu over the window: display, sound, controls
-// and the frame-rate counter (thirdparty/dq8-gfx/src/ui). What it asks of
+// DQ8-Recompiled's in-game menu over the window: display, sound and controls
+// (thirdparty/dq8-gfx/src/ui). What it asks of
 // the game goes through HostServices.
 std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlGpuBackend &backend,
                                              dq8::ui::Settings settings, const std::string &settingsPath)
@@ -911,10 +942,21 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
     // The game's own keys (countMarkKeys), kept out of Controls: F6 listed
     // beside the menu's in the Shortcuts window; the diagnostics keys, which
     // act in every run, not.
-    host.gameShortcuts = {{SDL_SCANCODE_F6, "Free camera"},
+    host.gameShortcuts = {{SDL_SCANCODE_F2, "Save"},
+                          {SDL_SCANCODE_F3, "Load"},
+                          {SDL_SCANCODE_F6, "Free camera"},
                           {SDL_SCANCODE_F7, "Frame capture and state report", false},
                           {SDL_SCANCODE_F9, "A mark in the log", false},
                           {SDL_SCANCODE_F10, "Stall report", false}};
+    // The Save states menu.
+    host.saveSlots = [] {
+        std::vector<dq8::ui::HostServices::SaveSlot> slots;
+        for (const rg::savestate::SlotInfo &info : rg::savestate::slots())
+            slots.push_back({info.used, info.when, info.picture});
+        return slots;
+    };
+    host.saveSlotSave = [&runtime, &backend](int slot) { saveWithThumbnail(runtime, backend, slot); };
+    host.saveSlotLoad = [&runtime](int slot) { rg::savestate::requestLoad(runtime, slot); };
     // RG_MUTE=1 keeps the game silent whatever the menu's volume says.
     const bool mute = env("RG_MUTE", "0") != "0";
     host.setVolume = [mute](float volume) { ps2_native_iop::setVolume(mute ? 0.0f : volume); };
@@ -1215,9 +1257,8 @@ Setup::Setup(PS2Runtime &runtime)
     if (env("RG_GS", "sdlgpu") == "sdlgpu")
     {
         const bool noWindow = env("RG_GS_NO_WINDOW", "0") != "0";
-        // RG_SHOW_FPS=1 turns the menu's counter on; without a window of
-        // ours the backend's readout in the title stands in, which it reads
-        // under its DQ8-Recompiled name.
+        // RG_SHOW_FPS=1: without a window of ours, the backend's readout in
+        // the title, which it reads under its DQ8-Recompiled name.
         const bool showFps = env("RG_SHOW_FPS", "0") != "0";
         if (showFps && noWindow)
         {
@@ -1279,10 +1320,6 @@ Setup::Setup(PS2Runtime &runtime)
             runDisplay.presentMode = mode == "vsync"       ? SDL_GPU_PRESENTMODE_VSYNC
                                      : mode == "immediate" ? SDL_GPU_PRESENTMODE_IMMEDIATE
                                                            : SDL_GPU_PRESENTMODE_MAILBOX;
-        }
-        if (showFps)
-        {
-            settings.showFps = true;
         }
         sdl->setResolutionScale(runScale);
         // The VIF1 thread's share of the wall on every stats line, beside the

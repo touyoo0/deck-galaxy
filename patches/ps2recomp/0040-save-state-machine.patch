@@ -1,0 +1,1499 @@
+diff --git a/ps2xIOP/include/ps2x/iop/native_iop.h b/ps2xIOP/include/ps2x/iop/native_iop.h
+index 7cf6d92..1985614 100644
+--- a/ps2xIOP/include/ps2x/iop/native_iop.h
++++ b/ps2xIOP/include/ps2x/iop/native_iop.h
+@@ -46,6 +46,14 @@ namespace ps2x::iop
+         void render(int16_t *frames, uint32_t count);
+         bool active() const;
+ 
++        // Save states: the emulated IOP and SPU2 as bytes (empty while no
++        // module has loaded). saveState says no, with the reason in whyNot,
++        // while an EE request is in flight. loadState throws
++        // std::runtime_error on bytes that do not fit; the IOP is then in an
++        // undefined state and the caller must treat the load as failed.
++        bool saveState(std::vector<uint8_t> &out, std::string &whyNot);
++        void loadState(const uint8_t *data, size_t size);
++
+     private:
+         class Impl;
+         std::unique_ptr<Impl> m_impl;
+diff --git a/ps2xIOP/src/lle/bus.h b/ps2xIOP/src/lle/bus.h
+index 7072536..0120389 100644
+--- a/ps2xIOP/src/lle/bus.h
++++ b/ps2xIOP/src/lle/bus.h
+@@ -26,6 +26,9 @@ namespace ps2x::iop::lle
+ 
+         uint8_t *ram() { return m_ram.data(); }
+         const uint8_t *ram() const { return m_ram.data(); }
++        uint8_t *scratchpad() { return m_scratchpad.data(); }
++        const uint8_t *scratchpad() const { return m_scratchpad.data(); }
++        static constexpr uint32_t kScratchpadBytes = 1024u;
+ 
+         uint32_t fetch(uint32_t address) { return read32(address); }
+ 
+diff --git a/ps2xIOP/src/lle/iop.cpp b/ps2xIOP/src/lle/iop.cpp
+index 625d38c..308720a 100644
+--- a/ps2xIOP/src/lle/iop.cpp
++++ b/ps2xIOP/src/lle/iop.cpp
+@@ -3,6 +3,7 @@
+ #include <algorithm>
+ #include <cstdio>
+ #include <cstring>
++#include <type_traits>
+ 
+ namespace ps2x::iop::lle
+ {
+@@ -611,4 +612,161 @@ namespace ps2x::iop::lle
+         m_ee.log("[iop] started " + irx.name + " at " + hex(base) + ", " + std::to_string(size) + " bytes");
+         return module.id;
+     }
++    namespace
++    {
++        constexpr uint32_t kIopTag = 0x31504F49u; // "IOP1"
++    }
++
++    bool Iop::saveState(StateWriter &out, std::string &whyNot) const
++    {
++        if (!m_requests.empty() || !m_active.empty())
++        {
++            whyNot = "an IOP request is in flight";
++            return false;
++        }
++        if (m_inInterrupt)
++        {
++            whyNot = "the IOP is inside an interrupt";
++            return false;
++        }
++        static_assert(std::is_trivially_copyable_v<Thread> && std::is_trivially_copyable_v<Semaphore> &&
++                          std::is_trivially_copyable_v<EventFlag> && std::is_trivially_copyable_v<Alarm> &&
++                          std::is_trivially_copyable_v<HardTimer> && std::is_trivially_copyable_v<Interrupt> &&
++                          std::is_trivially_copyable_v<Server> && std::is_trivially_copyable_v<DmaChannel>,
++                      "the kernel objects are saved as they are");
++
++        out.put<uint32_t>(kIopTag);
++        out.bytes(m_bus.ram(), Bus::kRamBytes);
++        out.bytes(m_bus.scratchpad(), Bus::kScratchpadBytes);
++        out.put<uint32_t>(m_cpu.cop0Status());
++        out.put<uint64_t>(m_cycle);
++
++        out.put<uint32_t>(static_cast<uint32_t>(m_exports.size()));
++        for (const auto &[name, functions] : m_exports)
++        {
++            out.string(name);
++            out.put<uint32_t>(static_cast<uint32_t>(functions.size()));
++            out.bytes(functions.data(), functions.size() * sizeof(uint32_t));
++        }
++        out.map(m_threads);
++        out.map(m_semaphores);
++        out.map(m_eventFlags);
++        out.put<uint32_t>(static_cast<uint32_t>(m_mailboxes.size()));
++        for (const auto &[id, mailbox] : m_mailboxes)
++        {
++            out.put<int32_t>(id);
++            out.put<uint32_t>(mailbox.attr);
++            out.put<uint32_t>(mailbox.option);
++            out.put<uint32_t>(static_cast<uint32_t>(mailbox.messages.size()));
++            for (const uint32_t message : mailbox.messages)
++                out.put<uint32_t>(message);
++        }
++        out.put<uint32_t>(static_cast<uint32_t>(m_alarms.size()));
++        for (const auto &[handler, alarm] : m_alarms)
++        {
++            out.put<uint32_t>(handler);
++            out.put(alarm);
++        }
++        out.put(m_timers);
++        out.map(m_interrupts);
++        out.put<uint32_t>(static_cast<uint32_t>(m_pendingInterrupts.size()));
++        for (const uint32_t line : m_pendingInterrupts)
++            out.put<uint32_t>(line);
++        out.map(m_servers);
++        out.map(m_queues);
++        out.map(m_saved);
++        out.put(m_dma);
++        out.put<uint32_t>(static_cast<uint32_t>(m_modules.size()));
++        for (const Module &module : m_modules)
++        {
++            out.put<int32_t>(module.id);
++            out.string(module.name);
++            out.put<uint32_t>(module.base);
++            out.put<uint32_t>(module.size);
++        }
++        out.map(m_allocations);
++
++        out.put<int32_t>(m_nextId);
++        out.put<int32_t>(m_current);
++        out.put<uint64_t>(m_readySequence);
++        out.put<uint8_t>(m_reschedule ? 1u : 0u);
++        out.put<int32_t>(m_intrSuspend);
++        out.put<int32_t>(m_loaderThread);
++        out.put<uint32_t>(m_loaderResult);
++        out.put<uint32_t>(m_sifDmaId);
++
++        m_spu2.saveState(out);
++        return true;
++    }
++
++    void Iop::loadState(StateReader &in)
++    {
++        in.expect(kIopTag);
++        in.bytes(m_bus.ram(), Bus::kRamBytes);
++        in.bytes(m_bus.scratchpad(), Bus::kScratchpadBytes);
++        m_cpu.setCop0Status(in.get<uint32_t>());
++        m_cycle = in.get<uint64_t>();
++
++        m_exports.clear();
++        for (uint32_t i = 0, n = in.count(); i < n; ++i)
++        {
++            std::string name = in.string();
++            std::vector<uint32_t> functions(in.count());
++            in.bytes(functions.data(), functions.size() * sizeof(uint32_t));
++            m_exports[std::move(name)] = std::move(functions);
++        }
++        in.map(m_threads);
++        in.map(m_semaphores);
++        in.map(m_eventFlags);
++        m_mailboxes.clear();
++        for (uint32_t i = 0, n = in.count(); i < n; ++i)
++        {
++            const int32_t id = in.get<int32_t>();
++            Mailbox &mailbox = m_mailboxes[id];
++            mailbox.attr = in.get<uint32_t>();
++            mailbox.option = in.get<uint32_t>();
++            for (uint32_t j = 0, m = in.count(); j < m; ++j)
++                mailbox.messages.push_back(in.get<uint32_t>());
++        }
++        m_alarms.clear();
++        for (uint32_t i = 0, n = in.count(); i < n; ++i)
++        {
++            const uint32_t handler = in.get<uint32_t>();
++            m_alarms.emplace(handler, in.get<Alarm>());
++        }
++        m_timers = in.get<std::array<HardTimer, 6>>();
++        in.map(m_interrupts);
++        m_pendingInterrupts.clear();
++        for (uint32_t i = 0, n = in.count(); i < n; ++i)
++            m_pendingInterrupts.push_back(in.get<uint32_t>());
++        in.map(m_servers);
++        in.map(m_queues);
++        in.map(m_saved);
++        m_dma = in.get<std::array<DmaChannel, 2>>();
++        m_modules.clear();
++        for (uint32_t i = 0, n = in.count(); i < n; ++i)
++        {
++            Module module;
++            module.id = in.get<int32_t>();
++            module.name = in.string();
++            module.base = in.get<uint32_t>();
++            module.size = in.get<uint32_t>();
++            m_modules.push_back(std::move(module));
++        }
++        in.map(m_allocations);
++
++        m_nextId = in.get<int32_t>();
++        m_current = in.get<int32_t>();
++        m_readySequence = in.get<uint64_t>();
++        m_reschedule = in.get<uint8_t>() != 0u;
++        m_intrSuspend = in.get<int32_t>();
++        m_loaderThread = in.get<int32_t>();
++        m_loaderResult = in.get<uint32_t>();
++        m_sifDmaId = in.get<uint32_t>();
++        m_requests.clear();
++        m_active.clear();
++        m_inInterrupt = false;
++
++        m_spu2.loadState(in);
++    }
+ }
+diff --git a/ps2xIOP/src/lle/iop.h b/ps2xIOP/src/lle/iop.h
+index 434efac..1d6d2ed 100644
+--- a/ps2xIOP/src/lle/iop.h
++++ b/ps2xIOP/src/lle/iop.h
+@@ -4,6 +4,7 @@
+ #include "cpu.h"
+ #include "irx.h"
+ #include "spu2.h"
++#include "state_stream.h"
+ 
+ #include <array>
+ #include <cstdint>
+@@ -71,6 +72,14 @@ namespace ps2x::iop::lle
+         // Advance time by one output sample and produce it.
+         void step(int16_t &left, int16_t &right);
+ 
++        // Save states: the whole emulated IOP (memory, threads and kernel
++        // objects, interrupts, timers, the SPU2). False, with the reason, while
++        // an EE request is queued or being served: the EE thread that made it
++        // waits for it, so none is in flight when the EE is stopped to save.
++        bool saveState(StateWriter &out, std::string &whyNot) const;
++        void loadState(StateReader &in);
++        size_t moduleCount() const { return m_modules.size(); }
++
+         // IoDevice
+         uint32_t ioRead(uint32_t physical, unsigned bytes) override;
+         void ioWrite(uint32_t physical, uint32_t value, unsigned bytes) override;
+diff --git a/ps2xIOP/src/lle/spu2.cpp b/ps2xIOP/src/lle/spu2.cpp
+index 5871d56..8384509 100644
+--- a/ps2xIOP/src/lle/spu2.cpp
++++ b/ps2xIOP/src/lle/spu2.cpp
+@@ -1,5 +1,7 @@
+ #include "spu2.h"
+ 
++#include <type_traits>
++
+ #include <algorithm>
+ #include <cstdlib>
+ #include <cstring>
+@@ -690,4 +692,29 @@ namespace ps2x::iop::lle
+         if (offset < 0x760u)
+             writeCore(offset >= 0x400u ? 1 : 0, offset & 0x3FFu, value);
+     }
++    namespace
++    {
++        constexpr uint32_t kSpu2Tag = 0x31553253u; // "S2U1"
++    }
++
++    void Spu2::saveState(StateWriter &out) const
++    {
++        static_assert(std::is_trivially_copyable_v<Core>, "the cores are saved as they are");
++        out.put<uint32_t>(kSpu2Tag);
++        out.bytes(m_ram.data(), m_ram.size() * sizeof(uint16_t));
++        out.put(m_regs);
++        out.put(m_cores);
++        out.put(m_irqInfo);
++        out.put(m_outputPos);
++    }
++
++    void Spu2::loadState(StateReader &in)
++    {
++        in.expect(kSpu2Tag);
++        in.bytes(m_ram.data(), m_ram.size() * sizeof(uint16_t));
++        m_regs = in.get<std::array<uint16_t, 0x400>>();
++        m_cores = in.get<std::array<Core, 2>>();
++        m_irqInfo = in.get<uint16_t>();
++        m_outputPos = in.get<uint32_t>();
++    }
+ }
+diff --git a/ps2xIOP/src/lle/spu2.h b/ps2xIOP/src/lle/spu2.h
+index 075673d..b84855e 100644
+--- a/ps2xIOP/src/lle/spu2.h
++++ b/ps2xIOP/src/lle/spu2.h
+@@ -1,5 +1,7 @@
+ #pragma once
+ 
++#include "state_stream.h"
++
+ #include <array>
+ #include <cstdint>
+ #include <vector>
+@@ -43,6 +45,11 @@ namespace ps2x::iop::lle
+ 
+         uint16_t *ram() { return m_ram.data(); }
+ 
++        // Save states: sound memory, the registers, both cores' voices and
++        // effects, as they are.
++        void saveState(StateWriter &out) const;
++        void loadState(StateReader &in);
++
+     private:
+         struct Envelope
+         {
+diff --git a/ps2xIOP/src/lle/state_stream.h b/ps2xIOP/src/lle/state_stream.h
+new file mode 100644
+index 0000000..2101ff9
+--- /dev/null
++++ b/ps2xIOP/src/lle/state_stream.h
+@@ -0,0 +1,118 @@
++#pragma once
++
++#include <cstddef>
++#include <cstdint>
++#include <cstring>
++#include <map>
++#include <stdexcept>
++#include <string>
++#include <type_traits>
++#include <vector>
++
++namespace ps2x::iop::lle
++{
++    // A flat byte stream for the IOP's save state. Plain data goes through
++    // put/get; a container writes its size first, and a Reader that runs past
++    // its end, or reads a size no state of this build could hold, throws.
++    class StateWriter
++    {
++    public:
++        template <typename T>
++        void put(const T &value)
++        {
++            static_assert(std::is_trivially_copyable_v<T>, "put needs plain data");
++            bytes(&value, sizeof(T));
++        }
++
++        void bytes(const void *data, size_t size)
++        {
++            const auto *p = static_cast<const uint8_t *>(data);
++            m_buffer.insert(m_buffer.end(), p, p + size);
++        }
++
++        void string(const std::string &text)
++        {
++            put<uint32_t>(static_cast<uint32_t>(text.size()));
++            bytes(text.data(), text.size());
++        }
++
++        template <typename Key, typename Value>
++        void map(const std::map<Key, Value> &values)
++        {
++            put<uint32_t>(static_cast<uint32_t>(values.size()));
++            for (const auto &[key, value] : values)
++            {
++                put(key);
++                put(value);
++            }
++        }
++
++        std::vector<uint8_t> &buffer() { return m_buffer; }
++
++    private:
++        std::vector<uint8_t> m_buffer;
++    };
++
++    class StateReader
++    {
++    public:
++        StateReader(const uint8_t *data, size_t size) : m_data(data), m_size(size) {}
++
++        template <typename T>
++        T get()
++        {
++            static_assert(std::is_trivially_copyable_v<T>, "get needs plain data");
++            T value;
++            bytes(&value, sizeof(T));
++            return value;
++        }
++
++        void bytes(void *out, size_t size)
++        {
++            if (size > m_size - m_pos)
++                throw std::runtime_error("IOP state is truncated");
++            std::memcpy(out, m_data + m_pos, size);
++            m_pos += size;
++        }
++
++        // A count that sizes a container: bounded, so a damaged file cannot
++        // ask for gigabytes.
++        uint32_t count(uint32_t limit = 1u << 20)
++        {
++            const uint32_t value = get<uint32_t>();
++            if (value > limit)
++                throw std::runtime_error("IOP state holds an implausible count");
++            return value;
++        }
++
++        std::string string()
++        {
++            const uint32_t length = count(4096u);
++            std::string text(length, '\0');
++            bytes(text.data(), length);
++            return text;
++        }
++
++        template <typename Key, typename Value>
++        void map(std::map<Key, Value> &values)
++        {
++            values.clear();
++            for (uint32_t i = 0, n = count(); i < n; ++i)
++            {
++                const Key key = get<Key>();
++                values.emplace(key, get<Value>());
++            }
++        }
++
++        void expect(uint32_t tag)
++        {
++            if (get<uint32_t>() != tag)
++                throw std::runtime_error("IOP state section mismatch");
++        }
++
++    private:
++        const uint8_t *m_data;
++        size_t m_size;
++        size_t m_pos = 0;
++    };
++}
+diff --git a/ps2xIOP/src/native_iop.cpp b/ps2xIOP/src/native_iop.cpp
+index 6325ee0..c767938 100644
+--- a/ps2xIOP/src/native_iop.cpp
++++ b/ps2xIOP/src/native_iop.cpp
+@@ -204,4 +204,27 @@ namespace ps2x::iop
+         std::lock_guard lock(m_impl->mutex);
+         return m_impl->loaded;
+     }
++    bool NativeIop::saveState(std::vector<uint8_t> &out, std::string &whyNot)
++    {
++        std::lock_guard lock(m_impl->mutex);
++        out.clear();
++        if (!m_impl->loaded)
++            return true;
++        lle::StateWriter writer;
++        if (!m_impl->iop.saveState(writer, whyNot))
++            return false;
++        out = std::move(writer.buffer());
++        return true;
++    }
++
++    void NativeIop::loadState(const uint8_t *data, size_t size)
++    {
++        {
++            std::lock_guard lock(m_impl->mutex);
++            lle::StateReader reader(data, size);
++            m_impl->iop.loadState(reader);
++            m_impl->loaded = m_impl->iop.moduleCount() != 0u;
++        }
++        m_impl->progressed.notify_all();
++    }
+ }
+diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
+index 43c6252..74eda1c 100644
+--- a/ps2xRuntime/include/runtime/ee_scheduler.h
++++ b/ps2xRuntime/include/runtime/ee_scheduler.h
+@@ -2,6 +2,7 @@
+ 
+ #include "ps2_runtime.h"
+ #include "runtime/ee_fiber.h"
++#include "runtime/ps2_savestate.h"
+ 
+ #include <memory>
+ 
+@@ -447,6 +448,27 @@ public:
+     [[nodiscard]] bool hostPaused() const;
+     [[nodiscard]] double hostSpeed() const;
+ 
++    // Save states. requestExecutorTask runs `task` on the executor's own stack
++    // between guest dispatches, where no guest fiber is running; it returns
++    // true when it is done and false to be asked again at the next pass (a
++    // save that found the scheduler mid-callback). Any thread.
++    void requestExecutorTask(std::function<bool()> task);
++    // Executor only, from such a task. saveState returns false, with the
++    // reason in whyNot, when the scheduler holds something that cannot be
++    // written (a callback in flight, a wait with a completion, a thread
++    // parked anywhere but just after a syscall); it writes nothing then.
++    // loadState throws SaveStateError on a stream that does not fit.
++    bool saveState(ps2_savestate::Writer &out, std::string &whyNot);
++    void loadState(ps2_savestate::Reader &in);
++    // The whole guest-visible machine: this scheduler, the memories and
++    // registers, the runtime's guest heap and EE kernel tables. Kept here, not
++    // in PS2Runtime and PS2Memory, so that a change to it does not touch the
++    // headers every generated file includes. loadMachine reads the scheduler
++    // whole before it changes anything; the memories are written in place, so
++    // a stream that fails after that leaves a half-loaded machine.
++    bool saveMachine(ps2_savestate::Writer &out, std::string &whyNot);
++    void loadMachine(ps2_savestate::Reader &in);
++
+ private:
+     friend struct EeSchedulerPacingTestAccess;
+     struct ScheduledEvent
+@@ -515,6 +537,7 @@ private:
+     // priority or above takes the EE, else a new slice.
+     bool sliceEnded() noexcept;
+     void copyMainContextToRuntime();
++    void runExecutorTasks();
+ 
+     PS2Runtime &m_runtime;
+     uint8_t *m_rdram = nullptr;
+@@ -588,6 +611,10 @@ private:
+     // once it is back on its own stack.
+     std::exception_ptr m_fiberException;
+ 
++    std::mutex m_taskMutex;
++    std::vector<std::function<bool()>> m_tasks;
++    std::atomic<uint32_t> m_taskCount{0};
++
+     mutable std::mutex m_eventMutex;
+     std::condition_variable m_eventCv;
+     std::deque<EeEvent> m_events;
+diff --git a/ps2xRuntime/include/runtime/ps2_savestate.h b/ps2xRuntime/include/runtime/ps2_savestate.h
+new file mode 100644
+index 0000000..1c30528
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/ps2_savestate.h
+@@ -0,0 +1,95 @@
++#ifndef PS2_SAVESTATE_H
++#define PS2_SAVESTATE_H
++
++#include <cstddef>
++#include <cstdint>
++#include <cstring>
++#include <stdexcept>
++#include <string>
++#include <type_traits>
++#include <vector>
++
++// A flat byte stream for save states. Plain data goes through put/get; a
++// container writes its size first. A Reader that runs past its end throws
++// SaveStateError, so a truncated or foreign file fails the load instead of
++// reading beyond the buffer.
++namespace ps2_savestate
++{
++struct SaveStateError : std::runtime_error
++{
++    using std::runtime_error::runtime_error;
++};
++
++class Writer
++{
++public:
++    template <typename T>
++    void put(const T &value)
++    {
++        static_assert(std::is_trivially_copyable_v<T>, "put needs plain data");
++        bytes(&value, sizeof(T));
++    }
++
++    void bytes(const void *data, size_t size)
++    {
++        const auto *p = static_cast<const uint8_t *>(data);
++        m_buffer.insert(m_buffer.end(), p, p + size);
++    }
++
++    // A section tag, so a reader that has drifted fails at the next boundary
++    // instead of decoding garbage.
++    void tag(uint32_t value) { put(value); }
++
++    [[nodiscard]] std::vector<uint8_t> &buffer() { return m_buffer; }
++    [[nodiscard]] const std::vector<uint8_t> &buffer() const { return m_buffer; }
++
++private:
++    std::vector<uint8_t> m_buffer;
++};
++
++class Reader
++{
++public:
++    Reader(const uint8_t *data, size_t size) : m_data(data), m_size(size) {}
++
++    template <typename T>
++    T get()
++    {
++        static_assert(std::is_trivially_copyable_v<T>, "get needs plain data");
++        T value;
++        bytes(&value, sizeof(T));
++        return value;
++    }
++
++    void bytes(void *out, size_t size)
++    {
++        if (size > m_size - m_pos)
++            throw SaveStateError("save state is truncated");
++        std::memcpy(out, m_data + m_pos, size);
++        m_pos += size;
++    }
++
++    void expectTag(uint32_t value)
++    {
++        if (get<uint32_t>() != value)
++            throw SaveStateError("save state section mismatch");
++    }
++
++    [[nodiscard]] size_t remaining() const { return m_size - m_pos; }
++
++private:
++    const uint8_t *m_data;
++    size_t m_size;
++    size_t m_pos = 0;
++};
++
++constexpr uint32_t makeTag(char a, char b, char c, char d)
++{
++    return static_cast<uint32_t>(static_cast<uint8_t>(a)) |
++           (static_cast<uint32_t>(static_cast<uint8_t>(b)) << 8) |
++           (static_cast<uint32_t>(static_cast<uint8_t>(c)) << 16) |
++           (static_cast<uint32_t>(static_cast<uint8_t>(d)) << 24);
++}
++} // namespace ps2_savestate
++
++#endif // PS2_SAVESTATE_H
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index 869fd54..b8c2ef7 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -1,5 +1,6 @@
+ #include "runtime/ee_scheduler.h"
+ #include "EeHostPacing.h"
++#include "ps2x/iop/iop_subsystem.h"
+ 
+ #include "ps2_log.h"
+ #include "ps2_runtime_macros.h"
+@@ -254,6 +255,10 @@ void EeScheduler::run()
+         {
+             break;
+         }
++        if (m_taskCount.load(std::memory_order_acquire) != 0u)
++        {
++            runExecutorTasks();
++        }
+ 
+         if (m_currentThreadId == 0)
+         {
+@@ -2739,3 +2744,816 @@ void EeScheduler::copyMainContextToRuntime()
+         m_runtime.m_cpuContext = main->context;
+     }
+ }
++
++// ---------------------------------------------------------------------------
++// Save states
++//
++// A guest thread is restorable from its R5900Context alone when it is waiting
++// to be dispatched at a pc the generated code can re-enter (every function
++// starts with a switch on ctx->pc that jumps to the labels after its calls and
++// syscalls). A thread parked on its fiber inside a syscall has that pc: the
++// generated code stores the address after the syscall before calling the
++// handler, and the handlers that park (WaitSema, SleepThread, WaitEventFlag,
++// and the yield at the end of SignalSema and the like) set the result before
++// they park and do nothing after. Its C++ stack holds nothing the context does
++// not, so a restore drops the fiber and dispatches the pc, as for a thread a
++// checkpoint unwound.
++namespace
++{
++using ps2_savestate::makeTag;
++using ps2_savestate::Reader;
++using ps2_savestate::SaveStateError;
++using ps2_savestate::Writer;
++
++constexpr uint32_t kTagScheduler = makeTag('E', 'E', 'S', '1');
++constexpr uint32_t kTagThreads = makeTag('T', 'H', 'R', 'D');
++constexpr uint32_t kTagObjects = makeTag('O', 'B', 'J', 'S');
++constexpr uint32_t kTagEvents = makeTag('E', 'V', 'N', 'T');
++constexpr uint32_t kSyscallWord = 0x0000000Cu;
++
++void putDeque(Writer &out, const std::deque<int> &queue)
++{
++    out.put<uint32_t>(static_cast<uint32_t>(queue.size()));
++    for (const int value : queue)
++        out.put<int32_t>(value);
++}
++
++void getDeque(Reader &in, std::deque<int> &queue)
++{
++    queue.clear();
++    const uint32_t count = in.get<uint32_t>();
++    if (count > 65536u)
++        throw SaveStateError("save state queue is implausibly long");
++    for (uint32_t i = 0; i < count; ++i)
++        queue.push_back(in.get<int32_t>());
++}
++
++void putWait(Writer &out, const EeWaitState &wait)
++{
++    out.put<uint8_t>(static_cast<uint8_t>(wait.reason));
++    out.put<uint32_t>(static_cast<uint32_t>(wait.payload.index()));
++    switch (wait.payload.index())
++    {
++    case 1:
++        out.put(std::get<EeSemaphoreWait>(wait.payload));
++        break;
++    case 2:
++        out.put(std::get<EeEventFlagWait>(wait.payload));
++        break;
++    case 3:
++        out.put(std::get<EeVSyncWait>(wait.payload));
++        break;
++    case 4:
++        out.put(std::get<EeExternalWait>(wait.payload));
++        break;
++    default:
++        break;
++    }
++}
++
++void getWait(Reader &in, EeWaitState &wait)
++{
++    wait = {};
++    wait.reason = static_cast<EeWaitReason>(in.get<uint8_t>());
++    switch (in.get<uint32_t>())
++    {
++    case 1:
++        wait.payload = in.get<EeSemaphoreWait>();
++        break;
++    case 2:
++        wait.payload = in.get<EeEventFlagWait>();
++        break;
++    case 3:
++        wait.payload = in.get<EeVSyncWait>();
++        break;
++    case 4:
++        wait.payload = in.get<EeExternalWait>();
++        break;
++    default:
++        break;
++    }
++}
++} // namespace
++
++void EeScheduler::requestExecutorTask(std::function<bool()> task)
++{
++    {
++        std::lock_guard lock(m_taskMutex);
++        m_tasks.push_back(std::move(task));
++        m_taskCount.store(static_cast<uint32_t>(m_tasks.size()), std::memory_order_release);
++    }
++    // Wake an idle executor: an external wake that no wait matches.
++    postEvent(EeEvent{EeEventType::ExternalWake, 0xFFFFFFFFu, 0xFFFFFFFFFFFFFFFFull});
++}
++
++void EeScheduler::runExecutorTasks()
++{
++    assertExecutor();
++    std::vector<std::function<bool()>> tasks;
++    {
++        std::lock_guard lock(m_taskMutex);
++        tasks.swap(m_tasks);
++        m_taskCount.store(0u, std::memory_order_release);
++    }
++    std::vector<std::function<bool()>> again;
++    for (auto &task : tasks)
++    {
++        bool done = true;
++        try
++        {
++            done = task();
++        }
++        catch (const std::exception &error)
++        {
++            std::fprintf(stderr, "[savestate] task failed: %s\n", error.what());
++        }
++        if (!done)
++            again.push_back(std::move(task));
++    }
++    if (!again.empty())
++    {
++        std::lock_guard lock(m_taskMutex);
++        for (auto &task : again)
++            m_tasks.push_back(std::move(task));
++        m_taskCount.store(static_cast<uint32_t>(m_tasks.size()), std::memory_order_release);
++    }
++}
++
++bool EeScheduler::saveState(Writer &out, std::string &whyNot)
++{
++    assertExecutor();
++    char text[160];
++    if (m_activeFiber != nullptr)
++    {
++        whyNot = "inside a guest call";
++        return false;
++    }
++    if (!m_pendingInvocations.empty())
++    {
++        whyNot = "an interrupt callback is queued";
++        return false;
++    }
++    {
++        std::lock_guard lock(m_eventMutex);
++        if (!m_events.empty())
++        {
++            // Posted by another thread and not serviced yet; the next pass
++            // takes them, then this save asks again.
++            whyNot = "events are waiting to be processed";
++            return false;
++        }
++    }
++    for (const auto &[id, thread] : m_threads)
++    {
++        if (!thread.invocations.empty())
++        {
++            std::snprintf(text, sizeof(text), "thread %d is inside a callback", id);
++            whyNot = text;
++            return false;
++        }
++        if (thread.wait.completion || thread.resumeCompletion)
++        {
++            std::snprintf(text, sizeof(text), "thread %d waits with a completion (pc %08X)", id, thread.context.pc);
++            whyNot = text;
++            return false;
++        }
++        if (thread.inGuestCall)
++        {
++            // The fiber stands inside a syscall handler: the word before the
++            // saved pc must be the syscall instruction.
++            const uint32_t pc = thread.context.pc & PS2_RAM_MASK;
++            uint32_t before = 0u;
++            if (pc >= 4u)
++                std::memcpy(&before, m_rdram + pc - 4u, sizeof(before));
++            if (before != kSyscallWord)
++            {
++                std::snprintf(text, sizeof(text), "thread %d is parked outside a syscall (pc %08X)", id, thread.context.pc);
++                whyNot = text;
++                return false;
++            }
++        }
++    }
++
++    out.tag(kTagScheduler);
++    out.put<int32_t>(m_nextThreadId);
++    out.put<int32_t>(m_nextInvocationThreadId);
++    out.put<int32_t>(m_nextSemaphoreId);
++    out.put<int32_t>(m_nextEventFlagId);
++    out.put<int32_t>(m_nextAlarmId);
++    out.put<int32_t>(m_nextIntcHandlerId);
++    out.put<int32_t>(m_nextDmacHandlerId);
++    out.put<int32_t>(m_intcHeadOrder);
++    out.put<int32_t>(m_intcTailOrder);
++    out.put<int32_t>(m_dmacHeadOrder);
++    out.put<int32_t>(m_dmacTailOrder);
++    out.put<uint32_t>(m_enabledIntcMask);
++    out.put<uint32_t>(m_enabledDmacMask);
++    out.put<uint32_t>(m_pendingIntcMask);
++    out.put<uint32_t>(m_pendingDmacMask);
++    out.put<int32_t>(m_currentThreadId);
++    out.put<int32_t>(m_lastRunThreadId);
++    out.put<uint8_t>(m_rescheduleRequested ? 1u : 0u);
++    out.put<uint8_t>(m_timeSliceExpired ? 1u : 0u);
++    out.put<uint32_t>(m_pendingEeTimerInterrupts);
++    out.put<uint64_t>(m_eeCycle);
++    out.put<uint64_t>(m_sliceEndCycle);
++    out.put<uint64_t>(m_eventSequence);
++    out.put<uint64_t>(m_invocationSequence);
++    out.put<uint64_t>(m_vsyncTick);
++    out.put<uint32_t>(m_vsyncFlagAddress);
++    out.put<uint32_t>(m_vsyncTickAddress);
++    out.put<uint32_t>(m_gsVSyncCallback);
++    out.put<uint32_t>(m_gsVSyncCallbackGp);
++    out.put<uint32_t>(m_gsVSyncCallbackSp);
++
++    out.tag(kTagThreads);
++    out.put<uint32_t>(static_cast<uint32_t>(m_threads.size()));
++    for (const auto &[id, thread] : m_threads)
++    {
++        out.put<int32_t>(id);
++        out.put(thread.context);
++        out.put<uint32_t>(thread.entry);
++        out.put<uint32_t>(thread.stack);
++        out.put<uint32_t>(thread.stackSize);
++        out.put<uint32_t>(thread.gp);
++        out.put<uint32_t>(thread.attr);
++        out.put<uint32_t>(thread.option);
++        out.put<uint32_t>(thread.arg);
++        out.put<int32_t>(thread.initialPriority);
++        out.put<int32_t>(thread.currentPriority);
++        out.put<uint8_t>(static_cast<uint8_t>(thread.status));
++        out.put<int32_t>(thread.suspendCount);
++        out.put<uint32_t>(thread.wakeupCount);
++        out.put<uint8_t>(thread.ownsStack ? 1u : 0u);
++        out.put<uint32_t>(thread.tlsBase);
++        putWait(out, thread.wait);
++    }
++    uint32_t nonEmptyQueues = 0u;
++    for (const auto &queue : m_readyQueues)
++        nonEmptyQueues += queue.empty() ? 0u : 1u;
++    out.put<uint32_t>(nonEmptyQueues);
++    for (int priority = 0; priority < kPriorityCount; ++priority)
++    {
++        if (m_readyQueues[static_cast<size_t>(priority)].empty())
++            continue;
++        out.put<int32_t>(priority);
++        putDeque(out, m_readyQueues[static_cast<size_t>(priority)]);
++    }
++
++    out.tag(kTagObjects);
++    out.put<uint32_t>(static_cast<uint32_t>(m_semaphores.size()));
++    for (const auto &[id, sema] : m_semaphores)
++    {
++        out.put<int32_t>(id);
++        out.put<int32_t>(sema.count);
++        out.put<int32_t>(sema.maxCount);
++        out.put<int32_t>(sema.initCount);
++        out.put<uint32_t>(sema.attr);
++        out.put<uint32_t>(sema.option);
++        putDeque(out, sema.waiters);
++    }
++    out.put<uint32_t>(static_cast<uint32_t>(m_eventFlags.size()));
++    for (const auto &[id, flag] : m_eventFlags)
++    {
++        out.put<int32_t>(id);
++        out.put<uint32_t>(flag.attr);
++        out.put<uint32_t>(flag.option);
++        out.put<uint32_t>(flag.initBits);
++        out.put<uint32_t>(flag.bits);
++        putDeque(out, flag.waiters);
++    }
++    out.put<uint32_t>(static_cast<uint32_t>(m_alarms.size()));
++    for (const auto &[id, alarm] : m_alarms)
++    {
++        out.put<int32_t>(id);
++        out.put(alarm);
++    }
++    out.put<uint32_t>(static_cast<uint32_t>(m_intcHandlers.size()));
++    for (const auto &[id, handler] : m_intcHandlers)
++    {
++        out.put<int32_t>(id);
++        out.put(handler);
++    }
++    out.put<uint32_t>(static_cast<uint32_t>(m_dmacHandlers.size()));
++    for (const auto &[id, handler] : m_dmacHandlers)
++    {
++        out.put<int32_t>(id);
++        out.put(handler);
++    }
++    out.put<uint32_t>(static_cast<uint32_t>(m_invocationStackTops.size()));
++    for (const auto &[key, top] : m_invocationStackTops)
++    {
++        out.put<uint64_t>(key);
++        out.put<uint32_t>(top);
++    }
++    out.put<uint32_t>(static_cast<uint32_t>(m_freeInvocationStacks.size()));
++    for (const uint32_t top : m_freeInvocationStacks)
++        out.put<uint32_t>(top);
++
++    // Deadlines carry a host time: saved as the time left, put back against
++    // the pacing clock of the moment, so a load does not fire them all at once
++    // or leave them hours away.
++    out.tag(kTagEvents);
++    {
++        std::lock_guard lock(m_eventMutex);
++        const auto now = pacingNow();
++        out.put<uint32_t>(static_cast<uint32_t>(m_deadlines.size()));
++        for (const ScheduledEvent &scheduled : m_deadlines)
++        {
++            const int64_t leftNs = std::max<int64_t>(
++                0, std::chrono::duration_cast<std::chrono::nanoseconds>(scheduled.hostDeadline - now).count());
++            out.put<uint64_t>(scheduled.deadlineCycle);
++            out.put<int64_t>(leftNs);
++            out.put(scheduled.event);
++            out.put<uint64_t>(scheduled.sequence);
++        }
++    }
++    return true;
++}
++
++void EeScheduler::loadState(Reader &in)
++{
++    assertExecutor();
++    in.expectTag(kTagScheduler);
++
++    // Nothing is touched until the stream has been read whole into locals, so
++    // a bad file leaves the running scheduler alone.
++    const int32_t nextThreadId = in.get<int32_t>();
++    const int32_t nextInvocationThreadId = in.get<int32_t>();
++    const int32_t nextSemaphoreId = in.get<int32_t>();
++    const int32_t nextEventFlagId = in.get<int32_t>();
++    const int32_t nextAlarmId = in.get<int32_t>();
++    const int32_t nextIntcHandlerId = in.get<int32_t>();
++    const int32_t nextDmacHandlerId = in.get<int32_t>();
++    const int32_t intcHeadOrder = in.get<int32_t>();
++    const int32_t intcTailOrder = in.get<int32_t>();
++    const int32_t dmacHeadOrder = in.get<int32_t>();
++    const int32_t dmacTailOrder = in.get<int32_t>();
++    const uint32_t enabledIntcMask = in.get<uint32_t>();
++    const uint32_t enabledDmacMask = in.get<uint32_t>();
++    const uint32_t pendingIntcMask = in.get<uint32_t>();
++    const uint32_t pendingDmacMask = in.get<uint32_t>();
++    const int32_t currentThreadId = in.get<int32_t>();
++    const int32_t lastRunThreadId = in.get<int32_t>();
++    const bool rescheduleRequested = in.get<uint8_t>() != 0u;
++    const bool timeSliceExpired = in.get<uint8_t>() != 0u;
++    const uint32_t pendingEeTimerInterrupts = in.get<uint32_t>();
++    const uint64_t eeCycle = in.get<uint64_t>();
++    const uint64_t sliceEndCycle = in.get<uint64_t>();
++    const uint64_t eventSequence = in.get<uint64_t>();
++    const uint64_t invocationSequence = in.get<uint64_t>();
++    const uint64_t vsyncTick = in.get<uint64_t>();
++    const uint32_t vsyncFlagAddress = in.get<uint32_t>();
++    const uint32_t vsyncTickAddress = in.get<uint32_t>();
++    const uint32_t gsVSyncCallback = in.get<uint32_t>();
++    const uint32_t gsVSyncCallbackGp = in.get<uint32_t>();
++    const uint32_t gsVSyncCallbackSp = in.get<uint32_t>();
++
++    in.expectTag(kTagThreads);
++    std::unordered_map<int, GuestThread> threads;
++    const uint32_t threadCount = in.get<uint32_t>();
++    if (threadCount > 4096u)
++        throw SaveStateError("save state has too many threads");
++    for (uint32_t i = 0; i < threadCount; ++i)
++    {
++        GuestThread thread{};
++        thread.id = in.get<int32_t>();
++        thread.context = in.get<R5900Context>();
++        thread.entry = in.get<uint32_t>();
++        thread.stack = in.get<uint32_t>();
++        thread.stackSize = in.get<uint32_t>();
++        thread.gp = in.get<uint32_t>();
++        thread.attr = in.get<uint32_t>();
++        thread.option = in.get<uint32_t>();
++        thread.arg = in.get<uint32_t>();
++        thread.initialPriority = in.get<int32_t>();
++        thread.currentPriority = in.get<int32_t>();
++        thread.status = static_cast<EeThreadStatus>(in.get<uint8_t>());
++        thread.suspendCount = in.get<int32_t>();
++        thread.wakeupCount = in.get<uint32_t>();
++        thread.ownsStack = in.get<uint8_t>() != 0u;
++        thread.tlsBase = in.get<uint32_t>();
++        getWait(in, thread.wait);
++        const int id = thread.id;
++        threads.emplace(id, std::move(thread));
++    }
++    std::array<std::deque<int>, kPriorityCount> readyQueues{};
++    const uint32_t queueCount = in.get<uint32_t>();
++    for (uint32_t i = 0; i < queueCount; ++i)
++    {
++        const int32_t priority = in.get<int32_t>();
++        if (priority < 0 || priority >= kPriorityCount)
++            throw SaveStateError("save state ready queue has a bad priority");
++        getDeque(in, readyQueues[static_cast<size_t>(priority)]);
++    }
++
++    in.expectTag(kTagObjects);
++    std::unordered_map<int, EeSemaphore> semaphores;
++    for (uint32_t i = 0, n = in.get<uint32_t>(); i < n; ++i)
++    {
++        EeSemaphore sema{};
++        sema.id = in.get<int32_t>();
++        sema.count = in.get<int32_t>();
++        sema.maxCount = in.get<int32_t>();
++        sema.initCount = in.get<int32_t>();
++        sema.attr = in.get<uint32_t>();
++        sema.option = in.get<uint32_t>();
++        getDeque(in, sema.waiters);
++        const int id = sema.id;
++        semaphores.emplace(id, std::move(sema));
++    }
++    std::unordered_map<int, EeEventFlag> eventFlags;
++    for (uint32_t i = 0, n = in.get<uint32_t>(); i < n; ++i)
++    {
++        EeEventFlag flag{};
++        flag.id = in.get<int32_t>();
++        flag.attr = in.get<uint32_t>();
++        flag.option = in.get<uint32_t>();
++        flag.initBits = in.get<uint32_t>();
++        flag.bits = in.get<uint32_t>();
++        getDeque(in, flag.waiters);
++        const int id = flag.id;
++        eventFlags.emplace(id, std::move(flag));
++    }
++    std::unordered_map<int, EeAlarm> alarms;
++    for (uint32_t i = 0, n = in.get<uint32_t>(); i < n; ++i)
++    {
++        const int id = in.get<int32_t>();
++        alarms.emplace(id, in.get<EeAlarm>());
++    }
++    std::unordered_map<int, EeIrqHandler> intcHandlers;
++    for (uint32_t i = 0, n = in.get<uint32_t>(); i < n; ++i)
++    {
++        const int id = in.get<int32_t>();
++        intcHandlers.emplace(id, in.get<EeIrqHandler>());
++    }
++    std::unordered_map<int, EeIrqHandler> dmacHandlers;
++    for (uint32_t i = 0, n = in.get<uint32_t>(); i < n; ++i)
++    {
++        const int id = in.get<int32_t>();
++        dmacHandlers.emplace(id, in.get<EeIrqHandler>());
++    }
++    std::unordered_map<uint64_t, uint32_t> invocationStackTops;
++    for (uint32_t i = 0, n = in.get<uint32_t>(); i < n; ++i)
++    {
++        const uint64_t key = in.get<uint64_t>();
++        invocationStackTops.emplace(key, in.get<uint32_t>());
++    }
++    std::vector<uint32_t> freeInvocationStacks;
++    for (uint32_t i = 0, n = in.get<uint32_t>(); i < n; ++i)
++        freeInvocationStacks.push_back(in.get<uint32_t>());
++
++    in.expectTag(kTagEvents);
++    struct SavedDeadline
++    {
++        uint64_t deadlineCycle;
++        int64_t leftNs;
++        EeEvent event;
++        uint64_t sequence;
++    };
++    std::vector<SavedDeadline> deadlines;
++    for (uint32_t i = 0, n = in.get<uint32_t>(); i < n; ++i)
++    {
++        SavedDeadline saved{};
++        saved.deadlineCycle = in.get<uint64_t>();
++        saved.leftNs = in.get<int64_t>();
++        saved.event = in.get<EeEvent>();
++        saved.sequence = in.get<uint64_t>();
++        deadlines.push_back(saved);
++    }
++
++    // Past this point nothing can fail. The old threads' fibers are dropped
++    // without unwinding: their C++ frames hold nothing the guest state needs.
++    m_exitedThread = {};
++    m_threads.clear();
++    m_threadIndex.fill(nullptr);
++    m_threads = std::move(threads);
++    for (auto &[id, thread] : m_threads)
++    {
++        thread.fiber.reset();
++        thread.inGuestCall = false;
++        if (id > 0 && id <= kLastThreadId)
++            m_threadIndex[static_cast<size_t>(id)] = &thread;
++    }
++    m_readyQueues = std::move(readyQueues);
++    m_readyMask.fill(0u);
++    for (int priority = 0; priority < kPriorityCount; ++priority)
++        refreshReadyMask(priority);
++    m_semaphores = std::move(semaphores);
++    m_eventFlags = std::move(eventFlags);
++    m_alarms = std::move(alarms);
++    m_intcHandlers = std::move(intcHandlers);
++    m_dmacHandlers = std::move(dmacHandlers);
++    m_invocationStackTops = std::move(invocationStackTops);
++    m_freeInvocationStacks = std::move(freeInvocationStacks);
++
++    m_nextThreadId = nextThreadId;
++    m_nextInvocationThreadId = nextInvocationThreadId;
++    m_nextSemaphoreId = nextSemaphoreId;
++    m_nextEventFlagId = nextEventFlagId;
++    m_nextAlarmId = nextAlarmId;
++    m_nextIntcHandlerId = nextIntcHandlerId;
++    m_nextDmacHandlerId = nextDmacHandlerId;
++    m_intcHeadOrder = intcHeadOrder;
++    m_intcTailOrder = intcTailOrder;
++    m_dmacHeadOrder = dmacHeadOrder;
++    m_dmacTailOrder = dmacTailOrder;
++    m_enabledIntcMask = enabledIntcMask;
++    m_enabledDmacMask = enabledDmacMask;
++    m_pendingIntcMask = pendingIntcMask;
++    m_pendingDmacMask = pendingDmacMask;
++    m_currentThreadId = currentThreadId;
++    m_lastRunThreadId = lastRunThreadId;
++    m_rescheduleRequested = rescheduleRequested;
++    m_timeSliceExpired = timeSliceExpired;
++    m_insideInterrupt = false;
++    m_pendingEeTimerInterrupts = pendingEeTimerInterrupts;
++    m_eeCycle = eeCycle;
++    m_sliceEndCycle = sliceEndCycle;
++    m_eventSequence = eventSequence;
++    m_invocationSequence = invocationSequence;
++    m_vsyncTick = vsyncTick;
++    m_vsyncFlagAddress = vsyncFlagAddress;
++    m_vsyncTickAddress = vsyncTickAddress;
++    m_gsVSyncCallback = gsVSyncCallback;
++    m_gsVSyncCallbackGp = gsVSyncCallbackGp;
++    m_gsVSyncCallbackSp = gsVSyncCallbackSp;
++    m_dispatchedThreadId = 0;
++    m_checkpointPending.store(false, std::memory_order_release);
++
++    {
++        std::lock_guard lock(m_eventMutex);
++        m_events.clear();
++        m_pendingEventCount.store(0u, std::memory_order_release);
++        m_pendingInvocations.clear();
++        m_deadlines.clear();
++        const auto now = pacingNow();
++        for (const SavedDeadline &saved : deadlines)
++        {
++            m_deadlines.push_back(ScheduledEvent{saved.deadlineCycle,
++                                                 now + std::chrono::nanoseconds(saved.leftNs),
++                                                 saved.event,
++                                                 saved.sequence});
++        }
++        updateNextDeadline();
++    }
++    m_eventCv.notify_one();
++    publishSnapshotNow();
++}
++
++namespace
++{
++constexpr uint32_t kTagMemory = ps2_savestate::makeTag('P', 'M', 'E', '1');
++constexpr uint32_t kTagRegisters = ps2_savestate::makeTag('P', 'R', 'E', 'G');
++constexpr uint32_t kTagRuntime = ps2_savestate::makeTag('P', 'R', 'T', '1');
++constexpr uint32_t kTagIop = ps2_savestate::makeTag('P', 'I', 'O', 'P');
++
++// The memories and registers the guest can see. The pending transfer lists and
++// the masked PATH3 FIFO must be empty (the VIF1 thread has drained by the time
++// this runs); a half-done transfer fails the save and the caller asks again.
++bool saveMemory(PS2Memory &memory, ps2_savestate::Writer &out, std::string &whyNot)
++{
++    if (!memory.m_pendingGifTransfers.empty() || !memory.m_pendingVif0Transfers.empty() ||
++        !memory.m_pendingVif1Transfers.empty())
++    {
++        whyNot = "a DMA transfer is pending";
++        return false;
++    }
++    if (!memory.m_path3MaskedFifo.empty())
++    {
++        whyNot = "the masked PATH3 FIFO holds data";
++        return false;
++    }
++    memory.settleEeTimers();
++
++    out.tag(kTagMemory);
++    out.bytes(memory.m_rdram, PS2_RAM_SIZE);
++    out.bytes(memory.m_scratchpad, PS2_SCRATCHPAD_SIZE);
++    out.bytes(memory.m_gsVRAM, PS2_GS_VRAM_SIZE);
++    out.bytes(memory.m_vu0Code, PS2_VU0_CODE_SIZE);
++    out.bytes(memory.m_vu0Data, PS2_VU0_DATA_SIZE);
++    out.bytes(memory.m_vu1Code, PS2_VU1_CODE_SIZE);
++    out.bytes(memory.m_vu1Data, PS2_VU1_DATA_SIZE);
++
++    out.tag(kTagRegisters);
++    out.put<uint32_t>(static_cast<uint32_t>(memory.m_ioRegisters.size()));
++    for (const auto &[address, value] : memory.m_ioRegisters)
++    {
++        out.put<uint32_t>(address);
++        out.put<uint32_t>(value);
++    }
++    // GSRegisters holds two atomics; written as the plain words they are.
++    const uint64_t *gsWords = reinterpret_cast<const uint64_t *>(&memory.gs_regs);
++    for (size_t i = 0; i < sizeof(GSRegisters) / sizeof(uint64_t); ++i)
++        out.put<uint64_t>(gsWords[i]);
++    out.put(memory.vif0_regs);
++    out.put(memory.vif1_regs);
++    for (const DMARegisters &dma : memory.dma_regs)
++        out.put(dma);
++    out.put<uint32_t>(static_cast<uint32_t>(memory.m_tlbEntries.size()));
++    for (const PS2Memory::TLBEntry &entry : memory.m_tlbEntries)
++    {
++        out.put<uint32_t>(entry.vpn);
++        out.put<uint32_t>(entry.pfn);
++        out.put<uint32_t>(entry.mask);
++        out.put<uint8_t>(entry.valid ? 1u : 0u);
++    }
++    out.put<uint8_t>(memory.m_path3Masked ? 1u : 0u);
++    out.put<uint32_t>(memory.m_vif1PendingPath2ImageQwc);
++    out.put<uint8_t>(memory.m_vif1PendingPath2DirectHl ? 1u : 0u);
++    for (const PS2Memory::EeTimer &timer : memory.m_eeTimers)
++        out.put(timer);
++    return true;
++}
++
++void loadMemory(PS2Memory &memory, ps2_savestate::Reader &in)
++{
++    in.expectTag(kTagMemory);
++    in.bytes(memory.m_rdram, PS2_RAM_SIZE);
++    in.bytes(memory.m_scratchpad, PS2_SCRATCHPAD_SIZE);
++    in.bytes(memory.m_gsVRAM, PS2_GS_VRAM_SIZE);
++    in.bytes(memory.m_vu0Code, PS2_VU0_CODE_SIZE);
++    in.bytes(memory.m_vu0Data, PS2_VU0_DATA_SIZE);
++    in.bytes(memory.m_vu1Code, PS2_VU1_CODE_SIZE);
++    in.bytes(memory.m_vu1Data, PS2_VU1_DATA_SIZE);
++
++    in.expectTag(kTagRegisters);
++    memory.m_ioRegisters.clear();
++    for (uint32_t i = 0, n = in.get<uint32_t>(); i < n; ++i)
++    {
++        const uint32_t address = in.get<uint32_t>();
++        memory.m_ioRegisters[address] = in.get<uint32_t>();
++    }
++    uint64_t *gsWords = reinterpret_cast<uint64_t *>(&memory.gs_regs);
++    for (size_t i = 0; i < sizeof(GSRegisters) / sizeof(uint64_t); ++i)
++        gsWords[i] = in.get<uint64_t>();
++    memory.vif0_regs = in.get<VIFRegisters>();
++    memory.vif1_regs = in.get<VIFRegisters>();
++    for (DMARegisters &dma : memory.dma_regs)
++        dma = in.get<DMARegisters>();
++    memory.m_tlbEntries.clear();
++    for (uint32_t i = 0, n = in.get<uint32_t>(); i < n; ++i)
++    {
++        PS2Memory::TLBEntry entry{};
++        entry.vpn = in.get<uint32_t>();
++        entry.pfn = in.get<uint32_t>();
++        entry.mask = in.get<uint32_t>();
++        entry.valid = in.get<uint8_t>() != 0u;
++        memory.m_tlbEntries.push_back(entry);
++    }
++    memory.m_path3Masked = in.get<uint8_t>() != 0u;
++    memory.m_vif1PendingPath2ImageQwc = in.get<uint32_t>();
++    memory.m_vif1PendingPath2DirectHl = in.get<uint8_t>() != 0u;
++    for (PS2Memory::EeTimer &timer : memory.m_eeTimers)
++        timer = in.get<PS2Memory::EeTimer>();
++    memory.refreshEeTimersCued();
++
++    memory.m_pendingGifTransfers.clear();
++    memory.m_pendingVif0Transfers.clear();
++    memory.m_pendingVif1Transfers.clear();
++    memory.m_path3MaskedFifo.clear();
++    {
++        std::lock_guard lock(memory.m_completedDmacMutex);
++        memory.m_completedDmacCauses.clear();
++    }
++    // Everything cached from the VU code is stale.
++    memory.markVU0CodeModified();
++    memory.markVU1CodeModified();
++}
++} // namespace
++
++namespace ps2_stubs
++{
++bool mpegMovieActive();
++}
++
++bool EeScheduler::saveMachine(ps2_savestate::Writer &out, std::string &whyNot)
++{
++    if (ps2_stubs::mpegMovieActive())
++    {
++        whyNot = "a movie is playing";
++        return false;
++    }
++    if (!saveState(out, whyNot))
++        return false;
++    if (!saveMemory(m_runtime.m_memory, out, whyNot))
++        return false;
++
++    out.tag(kTagRuntime);
++    {
++        std::lock_guard lock(m_runtime.m_guestHeapMutex);
++        out.put<uint32_t>(m_runtime.m_guestHeapBase);
++        out.put<uint32_t>(m_runtime.m_guestHeapEnd);
++        out.put<uint32_t>(m_runtime.m_guestHeapLimit);
++        out.put<uint32_t>(m_runtime.m_guestHeapCeiling);
++        out.put<uint32_t>(m_runtime.m_guestHeapSuggestedBase);
++        out.put<uint8_t>(m_runtime.m_guestHeapConfigured ? 1u : 0u);
++        out.put<uint32_t>(static_cast<uint32_t>(m_runtime.m_guestHeapBlocks.size()));
++        for (const PS2Runtime::GuestHeapBlock &block : m_runtime.m_guestHeapBlocks)
++        {
++            out.put<uint32_t>(block.addr);
++            out.put<uint32_t>(block.size);
++            out.put<uint8_t>(block.free ? 1u : 0u);
++        }
++    }
++    {
++        std::lock_guard lock(m_runtime.m_asyncCallbackStackMutex);
++        out.put<uint32_t>(m_runtime.m_asyncCallbackStackFloor);
++        out.put<uint32_t>(m_runtime.m_asyncCallbackStackTop);
++    }
++    {
++        std::lock_guard lock(m_runtime.m_eeKernelStateMutex);
++        out.put<uint32_t>(static_cast<uint32_t>(m_runtime.m_eeExitHandlers.size()));
++        for (const auto &[threadId, handlers] : m_runtime.m_eeExitHandlers)
++        {
++            out.put<int32_t>(threadId);
++            out.put<uint32_t>(static_cast<uint32_t>(handlers.size()));
++            for (const PS2Runtime::EeExitHandlerRegistration &handler : handlers)
++                out.put(handler);
++        }
++        out.put<uint32_t>(static_cast<uint32_t>(m_runtime.m_eeSyscallOverrides.size()));
++        for (const auto &[number, handler] : m_runtime.m_eeSyscallOverrides)
++        {
++            out.put<uint32_t>(number);
++            out.put<uint32_t>(handler);
++        }
++    }
++
++    // The emulated IOP and SPU2 (sound), as one length-prefixed blob.
++    out.tag(kTagIop);
++    std::vector<uint8_t> iop;
++    if (m_runtime.m_iopSubsystem && !m_runtime.m_iopSubsystem->native().saveState(iop, whyNot))
++        return false;
++    out.put<uint64_t>(static_cast<uint64_t>(iop.size()));
++    out.bytes(iop.data(), iop.size());
++    return true;
++}
++
++void EeScheduler::loadMachine(ps2_savestate::Reader &in)
++{
++    if (ps2_stubs::mpegMovieActive())
++        throw ps2_savestate::SaveStateError("a movie is playing");
++    loadState(in);
++    loadMemory(m_runtime.m_memory, in);
++
++    in.expectTag(kTagRuntime);
++    {
++        std::lock_guard lock(m_runtime.m_guestHeapMutex);
++        m_runtime.m_guestHeapBase = in.get<uint32_t>();
++        m_runtime.m_guestHeapEnd = in.get<uint32_t>();
++        m_runtime.m_guestHeapLimit = in.get<uint32_t>();
++        m_runtime.m_guestHeapCeiling = in.get<uint32_t>();
++        m_runtime.m_guestHeapSuggestedBase = in.get<uint32_t>();
++        m_runtime.m_guestHeapConfigured = in.get<uint8_t>() != 0u;
++        m_runtime.m_guestHeapBlocks.clear();
++        for (uint32_t i = 0, n = in.get<uint32_t>(); i < n; ++i)
++        {
++            PS2Runtime::GuestHeapBlock block;
++            block.addr = in.get<uint32_t>();
++            block.size = in.get<uint32_t>();
++            block.free = in.get<uint8_t>() != 0u;
++            m_runtime.m_guestHeapBlocks.push_back(block);
++        }
++    }
++    {
++        std::lock_guard lock(m_runtime.m_asyncCallbackStackMutex);
++        m_runtime.m_asyncCallbackStackFloor = in.get<uint32_t>();
++        m_runtime.m_asyncCallbackStackTop = in.get<uint32_t>();
++    }
++    {
++        std::lock_guard lock(m_runtime.m_eeKernelStateMutex);
++        m_runtime.m_eeExitHandlers.clear();
++        for (uint32_t i = 0, n = in.get<uint32_t>(); i < n; ++i)
++        {
++            const int threadId = in.get<int32_t>();
++            auto &handlers = m_runtime.m_eeExitHandlers[threadId];
++            for (uint32_t j = 0, m = in.get<uint32_t>(); j < m; ++j)
++                handlers.push_back(in.get<PS2Runtime::EeExitHandlerRegistration>());
++        }
++        m_runtime.m_eeSyscallOverrides.clear();
++        for (uint32_t i = 0, n = in.get<uint32_t>(); i < n; ++i)
++        {
++            const uint32_t number = in.get<uint32_t>();
++            m_runtime.m_eeSyscallOverrides[number] = in.get<uint32_t>();
++        }
++    }
++
++    in.expectTag(kTagIop);
++    const uint64_t iopSize = in.get<uint64_t>();
++    if (iopSize > (64ull << 20))
++        throw ps2_savestate::SaveStateError("save state IOP section is implausibly large");
++    std::vector<uint8_t> iop(static_cast<size_t>(iopSize));
++    in.bytes(iop.data(), iop.size());
++    if (!iop.empty() && m_runtime.m_iopSubsystem)
++    {
++        try
++        {
++            m_runtime.m_iopSubsystem->native().loadState(iop.data(), iop.size());
++        }
++        catch (const std::runtime_error &error)
++        {
++            throw ps2_savestate::SaveStateError(error.what());
++        }
++    }
++    copyMainContextToRuntime();
++}
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+index 77b3ff1..6d7cec5 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+@@ -914,8 +914,16 @@ namespace ps2_stubs
+             return readStackArg(rdram, ctx, 0x10u);
+         }
+ 
++        // When the game last called into the MPEG API (steady clock, ns): a
++        // movie is playing while it keeps doing so (mpegMovieActive).
++        std::atomic<int64_t> g_mpegLastCallNanos{0};
++
+         MpegPlaybackState &getPlaybackState(uint32_t mpegAddr)
+         {
++            g_mpegLastCallNanos.store(std::chrono::duration_cast<std::chrono::nanoseconds>(
++                                          std::chrono::steady_clock::now().time_since_epoch())
++                                          .count(),
++                                      std::memory_order_relaxed);
+             return g_mpeg_stub_state.playbackByMpeg[mpegAddr];
+         }
+ 
+@@ -2886,4 +2894,22 @@ namespace ps2_stubs
+         getPlaybackState(mpegAddr).imageBufferAddr = imageBufferAddr;
+         setReturnS32(ctx, 0);
+     }
++    // True while a movie is being played: the host holds its stream, its
++    // pending elementary stream and the decoder's state, none of which a save
++    // state keeps (EeScheduler::saveMachine, loadMachine refuse meanwhile).
++    // The stub keeps a movie's state after it ends, so "playing" is "the game
++    // called the MPEG API in the last half second", which a movie does every
++    // picture and nothing else does.
++    bool mpegMovieActive()
++    {
++        const int64_t last = g_mpegLastCallNanos.load(std::memory_order_relaxed);
++        if (last == 0)
++        {
++            return false;
++        }
++        const int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
++                                std::chrono::steady_clock::now().time_since_epoch())
++                                .count();
++        return now - last < 500'000'000;
++    }
+ }

@@ -482,14 +482,6 @@ void Overlay::drawInterfacePage() {
             endSettings();
         }
     }
-
-    sectionHeader("Frame rate");
-    if (beginSettings("framerate")) {
-        settingRow("Show the frame rate", "Frames the game draws each second. F3 toggles it.");
-        if (toggle("fps", &m_settings.showFps))
-            markDirty();
-        endSettings();
-    }
 }
 
 // The game's own switches, in the host's sections (Rogue Galaxy: added).
@@ -832,13 +824,12 @@ void Overlay::drawShortcuts() {
         if (ImGui::BeginTable("##keys", 2, ImGuiTableFlags_None)) {
             ImGui::TableSetupColumn("keys", ImGuiTableColumnFlags_WidthFixed, em(7.5f));
             ImGui::TableSetupColumn("what", ImGuiTableColumnFlags_WidthFixed, em(15.0f));
-            static constexpr const char *kF1[] = {"F1"}, *kF2[] = {"F2"}, *kF3[] = {"F3"}, *kF4[] = {"F4"},
+            static constexpr const char *kF1[] = {"F1"}, *kF4[] = {"F4"}, *kF5[] = {"F5"},
                                         *kF11[] = {"F11"}, *kAltEnter[] = {"Alt", "Enter"}, *kF12[] = {"F12"},
                                         *kShiftF12[] = {"Shift", "F12"}, *kEsc[] = {"Esc"};
             shortcutRow(kF1, 1, "Open or close this menu");
             if (canPause())
-                shortcutRow(kF2, 1, "Pause or resume");
-            shortcutRow(kF3, 1, "Show the frame rate");
+                shortcutRow(kF5, 1, "Pause or resume");
             if (canChangeSpeed())
                 shortcutRow(kF4, 1, "Fast-forward");
             // The game's own keys (Rogue Galaxy: added; F6, the free camera).
@@ -878,6 +869,145 @@ void Overlay::drawShortcuts() {
     }
     ImGui::End();
     ImGui::PopStyleVar();
+}
+
+// The save states' slots, to save into or load from (Steam Deck fork: added).
+// A row a picture, the slot and its time; Enter or A chooses, Esc or B leaves.
+// A saved slot asks before it is overwritten; an empty one cannot be loaded.
+void Overlay::drawSaveSlots() {
+    const bool saving = m_slotMode == 1;
+    const std::vector<HostServices::SaveSlot> slots = m_host.saveSlots ? m_host.saveSlots() : std::vector<HostServices::SaveSlot>{};
+    if (slots.empty()) {
+        closeSaveSlots();
+        return;
+    }
+    const ImGuiIO &io = ImGui::GetIO();
+    const bool back = ((io.ConfigFlags & ImGuiConfigFlags_NavEnableGamepad) &&
+                       ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)) ||
+                      ((io.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) &&
+                       ImGui::IsKeyPressed(ImGuiKey_Escape, false));
+    if (back) {
+        if (m_slotConfirm != 0) {
+            m_slotCancel = true;
+        } else {
+            closeSaveSlots();
+            return;
+        }
+    }
+    const bool anyUsed = std::any_of(slots.begin(), slots.end(), [](const HostServices::SaveSlot &slot) { return slot.used; });
+    // Where the cursor starts: the slot used last, or for a load the first one
+    // that holds something.
+    int focus = std::clamp(m_slotLast, 1, static_cast<int>(slots.size()));
+    if (!saving && !slots[focus - 1].used)
+        for (int index = 0; index < static_cast<int>(slots.size()); ++index)
+            if (slots[index].used) {
+                focus = index + 1;
+                break;
+            }
+
+    centerNextWindow();
+    if (m_slotFocus)
+        ImGui::SetNextWindowFocus();
+    ImGui::SetNextWindowSize(ImVec2(std::min(ImGui::GetMainViewport()->WorkSize.x - em(2.0f), em(30.0f)), 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(1.4f), em(1.2f)));
+    bool open = true;
+    if (beginWindow("##slots", nullptr, kDialogFlags & ~ImGuiWindowFlags_AlwaysAutoResize)) {
+        dialogHeader(saving ? Icon::Check : Icon::Disc, saving ? "Save" : "Load", &open);
+        if (!saving && !anyUsed)
+            mutedText("%s", L("No save state yet"));
+        const float thumbHeight = em(3.6f), thumbWidth = thumbHeight * 1.6f, pad = em(0.4f);
+        const float rowHeight = thumbHeight + 2.0f * pad;
+        std::string chosenText;
+        int chosen = 0;
+        for (int index = 0; index < static_cast<int>(slots.size()); ++index) {
+            const int slot = index + 1;
+            const HostServices::SaveSlot &entry = slots[index];
+            ImGui::PushID(slot);
+            ImGui::BeginDisabled(!saving && !entry.used);
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            if (ImGui::Selectable("##slot", false, 0, ImVec2(0.0f, rowHeight)))
+                chosen = slot;
+            if (m_slotFocus && slot == focus) {
+                ImGui::FocusItem();
+                ImGui::SetNavCursorVisible(true);
+            }
+            const bool dim = !saving && !entry.used;
+            ImDrawList *list = ImGui::GetWindowDrawList();
+            const ImVec2 thumbMin(at.x + pad, at.y + pad), thumbMax(thumbMin.x + thumbWidth, thumbMin.y + thumbHeight);
+            ImTextureRef picture;
+            ImVec2 pictureSize;
+            if (entry.used && !entry.picture.empty() && fileTexture(entry.picture.c_str(), picture, pictureSize))
+                list->AddImage(picture, thumbMin, thumbMax);
+            else
+                list->AddRectFilled(thumbMin, thumbMax, withAlpha(palette::kBorderInner, 0.8f), em(0.2f));
+            list->AddRect(thumbMin, thumbMax, withAlpha(palette::kBorder, dim ? 0.15f : 0.4f), em(0.2f));
+            const float textX = thumbMax.x + em(1.0f);
+            const std::string title = Lf("Slot %d", slot);
+            list->AddText(ImVec2(textX, at.y + pad + em(0.3f)), dim ? palette::kTextMuted : palette::kText, title.c_str());
+            const std::string when = entry.used ? entry.when : std::string(L("empty"));
+            list->AddText(ImVec2(textX, at.y + pad + em(1.6f)), entry.used ? palette::kGold : palette::kTextMuted,
+                          when.c_str());
+            ImGui::EndDisabled();
+            ImGui::PopID();
+        }
+        m_slotFocus = false;
+        if (chosen != 0) {
+            m_slotLast = chosen;
+            if (saving && slots[chosen - 1].used) {
+                m_slotConfirm = chosen;
+            } else {
+                const int slot = chosen;
+                closeSaveSlots();
+                if (saving) {
+                    if (m_host.saveSlotSave)
+                        m_host.saveSlotSave(slot);
+                } else if (m_host.saveSlotLoad) {
+                    m_host.saveSlotLoad(slot);
+                }
+            }
+        }
+
+        // The overwrite question.
+        constexpr const char *kQuestion = "##overwrite";
+        if (m_slotConfirm != 0 && !ImGui::IsPopupOpen(kQuestion))
+            ImGui::OpenPopup(kQuestion);
+        ImGui::SetNextWindowPos(ImVec2(ImGui::GetMainViewport()->GetCenter()), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(1.6f), em(1.2f)));
+        if (ImGui::BeginPopupModal(kQuestion, nullptr,
+                                   ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove)) {
+            decorateWindow();
+            ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.2f);
+            ImGui::TextUnformatted(Lf("Overwrite slot %d?", m_slotConfirm).c_str());
+            ImGui::PopFont();
+            mutedText("What is in it is lost.");
+            ImGui::Dummy(ImVec2(0.0f, em(0.6f)));
+            const ImVec2 buttonSize(em(7.0f), 0.0f);
+            // Cancel first: it is where the cursor starts.
+            if (ImGui::Button(L("Cancel"), buttonSize) || m_slotCancel) {
+                ImGui::CloseCurrentPopup();
+                m_slotConfirm = 0;
+            }
+            ImGui::SetItemDefaultFocus();
+            ImGui::SameLine();
+            if (ImGui::Button(L("Overwrite"), buttonSize)) {
+                const int slot = m_slotConfirm;
+                ImGui::CloseCurrentPopup();
+                closeSaveSlots();
+                if (m_host.saveSlotSave)
+                    m_host.saveSlotSave(slot);
+            }
+            ImGui::EndPopup();
+        } else if (m_slotConfirm != 0 && m_slotCancel) {
+            m_slotConfirm = 0;
+        }
+        ImGui::PopStyleVar();
+        m_slotCancel = false;
+    }
+    ImGui::End();
+    ImGui::PopStyleVar();
+    if (!open)
+        closeSaveSlots();
 }
 
 void Overlay::drawAchievementsPage() {

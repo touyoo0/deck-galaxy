@@ -162,8 +162,8 @@ const TextEntry kTextsHome[] = {
      "Öffne das Menü: Spiel > Pause in der oberen Leiste setzt fort",
      "Abre el menú: Juego > Pausa en la barra superior reanuda",
      "Apri il menu: Gioco > Pausa nella barra in alto riprende"},
-    {"Press F2 to resume", "Appuyez sur F2 pour reprendre", "Drücke F2 zum Fortsetzen",
-     "Pulsa F2 para reanudar", "Premi F2 per riprendere"},
+    {"Press F5 to resume", "Appuyez sur F5 pour reprendre", "Drücke F5 zum Fortsetzen",
+     "Pulsa F5 para reanudar", "Premi F5 per riprendere"},
 
     // the prompt that asks for a key or a button
     {"Press %s for %s", "Appuyez sur %s pour %s", "Drücke %s für %s", "Pulsa %s para %s", "Premi %s per %s"},

@@ -100,6 +100,7 @@ add_executable(roguegalaxy
     mouse_camera.cpp
     movie_audio.cpp
     quick_scenes.cpp
+    savestate.cpp
     return_hook.cpp
     instant_text.cpp
     libc_rand.cpp

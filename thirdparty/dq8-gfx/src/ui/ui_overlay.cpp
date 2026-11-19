@@ -30,8 +30,8 @@ constexpr const char *kIssuesUrl = "https://github.com/victor-takai/rogue-galaxy
 // Function keys the menu owns; with the game's own (HostServices::
 // gameShortcuts: Rogue Galaxy's F6, the free camera), never bound: binding
 // one would fight the shortcut.
-constexpr SDL_Scancode kMenuKeys[] = {SDL_SCANCODE_F1, SDL_SCANCODE_F2,  SDL_SCANCODE_F3,
-                                      SDL_SCANCODE_F4, SDL_SCANCODE_F11, SDL_SCANCODE_F12};
+constexpr SDL_Scancode kMenuKeys[] = {SDL_SCANCODE_F1, SDL_SCANCODE_F4, SDL_SCANCODE_F5,
+                                      SDL_SCANCODE_F11, SDL_SCANCODE_F12};
 
 bool reservedKey(SDL_Scancode scancode, const std::vector<HostServices::Shortcut> &game) {
     return std::find(std::begin(kMenuKeys), std::end(kMenuKeys), scancode) != std::end(kMenuKeys) ||
@@ -229,7 +229,7 @@ int Overlay::gameNumber(const GameOption &option) const {
     return std::clamp(value, option.minimum, option.maximum);
 }
 
-bool Overlay::capturesInput() const { return m_menuOpen || m_capture.active || m_homeOpen; }
+bool Overlay::capturesInput() const { return m_menuOpen || m_capture.active || m_homeOpen || m_slotMode != 0; }
 
 bool Overlay::wantsFrames() {
     if (!m_context)
@@ -237,7 +237,7 @@ bool Overlay::wantsFrames() {
     // Queued input has to be consumed by a frame, or it replays later.
     const bool scriptWaiting = std::any_of(m_script.begin(), m_script.end(),
                                            [](const ScriptStep &step) { return !step.done && step.seconds >= 0.0; });
-    return m_menuOpen || m_homeOpen || m_capture.active || !m_toasts.empty() || m_settings.showFps || m_statsOpen ||
+    return m_menuOpen || m_homeOpen || m_slotMode != 0 || m_capture.active || !m_toasts.empty() || m_statsOpen ||
            m_iconSheet || pausing() || scriptWaiting || !m_context->InputEventsQueue.empty();
 }
 
@@ -280,6 +280,7 @@ void Overlay::openHome() {
     if (!canPause())
         return;
     m_homeOpen = true;
+    m_homeNavReady = false;
     m_toasts.clear(); // the menu's hint does not apply here
     // The button that started the game is still down: it must not press Play.
     m_gamepadNavHeld = true;
@@ -295,6 +296,34 @@ void Overlay::closeHome() {
     // The hint that went unseen behind the home screen.
     if (m_host.steamDeck)
         notify("Press View + Menu for the menu", Icon::Info, 6.0);
+}
+
+void Overlay::openSaveSlots(bool save) {
+    if (m_homeOpen || !m_host.saveSlots)
+        return;
+    const uint8_t mode = save ? 1u : 2u;
+    if (m_slotMode == mode) {
+        closeSaveSlots();
+        return;
+    }
+    setMenuOpen(false);
+    m_slotMode = mode;
+    m_slotConfirm = 0;
+    m_slotFocus = true;
+    // The buttons of the combination that opened it are still down.
+    m_gamepadNavHeld = true;
+    applyPause();
+}
+
+void Overlay::closeSaveSlots() {
+    if (m_slotMode == 0)
+        return;
+    m_slotMode = 0;
+    m_slotConfirm = 0;
+    // The button that chose a slot must not reach the game as it resumes.
+    m_gamepadNavHeld = true;
+    m_backend.padInput().suppressHeld();
+    applyPause();
 }
 
 void Overlay::toggleMenu(bool fromController) {
@@ -474,7 +503,8 @@ bool Overlay::hotkey(const SDL_KeyboardEvent &key) {
     case SDL_SCANCODE_F1:
         toggleMenu(false);
         return true;
-    case SDL_SCANCODE_F2:
+    // F5 pauses: F2 and F3 are the save states' save and load (Rogue Galaxy: moved).
+    case SDL_SCANCODE_F5:
         if (!canPause())
             return false;
         setUserPaused(!m_userPaused);
@@ -483,10 +513,6 @@ bool Overlay::hotkey(const SDL_KeyboardEvent &key) {
         if (!canChangeSpeed())
             return false;
         setFastForward(!m_fastForward);
-        return true;
-    case SDL_SCANCODE_F3:
-        m_settings.showFps = !m_settings.showFps;
-        markDirty();
         return true;
     case SDL_SCANCODE_F11:
         setFullscreen(!m_settings.fullscreen);
@@ -811,7 +837,7 @@ void Overlay::updateNavigation() {
         m_gamepadNavHeld = down;
     }
     io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad);
-    if ((m_menuOpen || m_homeOpen) && !m_capture.active) {
+    if ((m_menuOpen || m_homeOpen || m_slotMode != 0) && !m_capture.active) {
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         if (!m_gamepadNavHeld)
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
@@ -870,8 +896,10 @@ void Overlay::drawFrame() {
     if (m_statsOpen)
         drawStats();
     drawQuitPrompt();
+    if (m_slotMode != 0)
+        drawSaveSlots();
     drawCapturePrompt();
-    drawFps();
+    m_toastTop = 0.0f;
     drawSpeedBadge();
     drawPauseBanner();
     drawToasts();
@@ -921,7 +949,7 @@ void Overlay::drawMenuBar() {
             ImGui::EndMenu();
         }
         if (beginMenu("Game")) {
-            if (canPause() && menuItem("Pause", "F2", m_userPaused))
+            if (canPause() && menuItem("Pause", "F5", m_userPaused))
                 setUserPaused(!m_userPaused);
             if (canChangeSpeed()) {
                 if (menuItem("Fast-forward", "F4", m_fastForward))
@@ -957,6 +985,15 @@ void Overlay::drawMenuBar() {
             }
             ImGui::EndMenu();
         }
+        // Save states (Steam Deck fork: added): the slots, to save into or
+        // load from, in a window of their own.
+        if (m_host.saveSlots && beginMenu("Save states")) {
+            if (menuItem("Save", "F2"))
+                openSaveSlots(true);
+            if (menuItem("Load", "F3"))
+                openSaveSlots(false);
+            ImGui::EndMenu();
+        }
         if (beginMenu("Settings")) {
             static constexpr const char *kPages[] = {"Display",  "Sound",        "Controls",  "Game",
                                                      "Language", "Achievements", "Interface"};
@@ -968,10 +1005,6 @@ void Overlay::drawMenuBar() {
         if (beginMenu("View")) {
             if (menuItem("Fullscreen", "F11", m_settings.fullscreen))
                 setFullscreen(!m_settings.fullscreen);
-            if (menuItem("Frame rate", "F3", m_settings.showFps)) {
-                m_settings.showFps = !m_settings.showFps;
-                markDirty();
-            }
             if (menuItem("Renderer statistics", nullptr, m_statsOpen))
                 m_statsOpen = !m_statsOpen;
             ImGui::EndMenu();
@@ -994,7 +1027,7 @@ void Overlay::drawMenuBar() {
     ImGui::PopStyleVar(3);
 }
 
-// The bar's right end: pause state, frame rate, what is playing, the way out.
+// The bar's right end: pause state, what is playing, the way out.
 void Overlay::drawStatus() {
     const auto controllers = m_backend.padInput().controllers();
     const auto active = std::find_if(controllers.begin(), controllers.end(),
@@ -1004,9 +1037,6 @@ void Overlay::drawStatus() {
     if (active != controllers.end() && active->batteryPercent >= 0 &&
         (active->power == SDL_POWERSTATE_ON_BATTERY || active->power == SDL_POWERSTATE_CHARGING))
         device += " " + std::to_string(active->batteryPercent) + "%";
-    char fps[32] = "- FPS";
-    if (!pausing())
-        std::snprintf(fps, sizeof(fps), "%.0f FPS", m_fps);
     std::string state = pausing() ? L("Paused") : "";
     if (m_fastForward)
         state += (state.empty() ? "" : "  ") + Lf("Fast %s", speedLabel(m_settings.fastForwardSpeed).c_str());
@@ -1015,7 +1045,7 @@ void Overlay::drawStatus() {
     const float iconSize = em(1.05f);
     const float gap = style.ItemSpacing.x;
     float width = iconSize + em(0.4f) + ImGui::CalcTextSize(device.c_str()).x + gap +
-                  ImGui::CalcTextSize(fps).x + gap + ImGui::CalcTextSize("F1").x + em(0.8f);
+                  ImGui::CalcTextSize("F1").x + em(0.8f);
     if (!state.empty())
         width += ImGui::CalcTextSize(state.c_str()).x + gap;
     const float x = ImGui::GetWindowWidth() - width - style.WindowPadding.x - em(0.4f);
@@ -1024,7 +1054,6 @@ void Overlay::drawStatus() {
     ImGui::SetCursorPosX(x);
     if (!state.empty())
         ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(palette::kGold), "%s", state.c_str());
-    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(palette::kTextMuted), "%s", fps);
     const ImVec2 at = ImGui::GetCursorScreenPos();
     const float middle = ImGui::GetWindowPos().y + ImGui::GetWindowHeight() * 0.5f;
     drawIcon(ImGui::GetWindowDrawList(), active != controllers.end() ? Icon::Controls : Icon::Keyboard,
@@ -1686,6 +1715,14 @@ void Overlay::drawHome() {
                                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground |
                                    ImGuiWindowFlags_AlwaysAutoResize;
     if (ImGui::Begin("##home", nullptr, flags)) {
+        // Without this the first A does nothing: the cursor stays hidden
+        // until a direction key shows it. Play is the default focus.
+        if (!m_homeNavReady && !m_settingsOpen &&
+            (ImGui::GetIO().ConfigFlags & (ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard))) {
+            ImGui::SetWindowFocus();
+            ImGui::SetNavCursorVisible(true);
+            m_homeNavReady = true;
+        }
         ImDrawList *list = ImGui::GetWindowDrawList();
         const ImVec2 top = ImGui::GetCursorScreenPos();
         const float slide = (1.0f - fade) * em(1.5f);
@@ -1834,64 +1871,18 @@ void Overlay::sampleFrameRate() {
     if (elapsed < 0.5)
         return;
     m_fps = static_cast<float>(static_cast<double>(renders - m_rateRenders) / elapsed);
-    m_fpsHistory[m_fpsHistoryNext++ % m_fpsHistory.size()] = m_fps;
     m_rateStart = time;
     m_rateRenders = renders;
 }
 
-// The window in points, below the menu bar. The frame-rate counter and the
-// speed badge sit in its corners, as the notifications do, rather than in
+// The window in points, below the menu bar. The speed badge and the
+// notifications sit in its corners, as the notifications do, rather than in
 // the picture's: with bars at the sides (4:3 in a wide window) they moved
 // in with the picture (Rogue Galaxy: changed).
 void Overlay::windowBounds(ImVec2 &min, ImVec2 &max) const {
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
     min = viewport->WorkPos;
     max = ImVec2(viewport->WorkPos.x + viewport->WorkSize.x, viewport->WorkPos.y + viewport->WorkSize.y);
-}
-
-void Overlay::drawFps() {
-    m_toastTop = 0.0f;
-    if (!m_settings.showFps)
-        return;
-    ImVec2 min, max;
-    windowBounds(min, max);
-    const float margin = em(0.6f);
-    // Always the top right corner.
-    ImGui::SetNextWindowPos(ImVec2(max.x - margin, min.y + margin), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(0.7f), em(0.45f)));
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
-                                   ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing |
-                                   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
-                                   ImGuiWindowFlags_NoBringToFrontOnFocus;
-    if (beginWindow("##fps", nullptr, flags)) {
-        ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
-        const bool paused = pausing();
-        const ImU32 color = paused             ? palette::kTextMuted
-                            : m_fps >= 29.0f   ? palette::kGood
-                            : m_fps >= 20.0f   ? palette::kWarn
-                                               : palette::kBad;
-        ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.3f);
-        if (paused)
-            ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(color), "%s", "-");
-        else
-            ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(color), "%.0f", m_fps);
-        ImGui::PopFont();
-        ImGui::SameLine();
-        ImGui::AlignTextToFramePadding();
-        mutedText("FPS");
-        float peak = 30.0f;
-        for (const float value : m_fpsHistory)
-            peak = std::max(peak, value);
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_PlotLines, ImGui::ColorConvertU32ToFloat4(withAlpha(color, 0.85f)));
-        ImGui::PlotLines("##history", m_fpsHistory.data(), static_cast<int>(m_fpsHistory.size()),
-                         static_cast<int>(m_fpsHistoryNext % m_fpsHistory.size()), nullptr, 0.0f, peak * 1.1f,
-                         ImVec2(em(5.5f), em(1.2f)));
-        ImGui::PopStyleColor(2);
-        m_toastTop = ImGui::GetWindowPos().y + ImGui::GetWindowHeight();
-    }
-    ImGui::End();
-    ImGui::PopStyleVar();
 }
 
 void Overlay::drawSpeedBadge() {
@@ -1938,7 +1929,7 @@ void Overlay::drawPauseBanner() {
         ImGui::PopFont();
         mutedText("%s", L(background && !m_userPaused ? "Until the game's window is active again"
                           : padInUse()                ? "Open the menu: Game > Pause in the top bar resumes"
-                                                      : "Press F2 to resume"));
+                                                      : "Press F5 to resume"));
         ImGui::EndGroup();
         drawIconBeside(room, Icon::Pause, palette::kGold);
     }
@@ -2154,7 +2145,7 @@ void Overlay::applyVolume() {
 }
 
 bool Overlay::pausing() const {
-    return canPause() && (m_homeOpen || m_userPaused || (m_settings.pauseInMenu && m_menuOpen) ||
+    return canPause() && (m_homeOpen || m_slotMode != 0 || m_userPaused || (m_settings.pauseInMenu && m_menuOpen) ||
                           (m_settings.pauseInBackground && !m_windowFocused));
 }
 

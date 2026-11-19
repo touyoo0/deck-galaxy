@@ -93,7 +93,7 @@ void Overlay::runStep(const ScriptStep &step, uint64_t frame) {
     static constexpr gfx::SdlGpuFilter kFilterValues[] = {gfx::SdlGpuFilter::Sharp, gfx::SdlGpuFilter::Smooth};
     SettingsPage page{};
     // Settings the script changes are saved as the menu's own changes are.
-    static constexpr const char *kSaved[] = {"filter", "scale", "fps", "speed"};
+    static constexpr const char *kSaved[] = {"filter", "scale", "speed"};
     if (std::find(std::begin(kSaved), std::end(kSaved), command) != std::end(kSaved))
         markDirty();
     if (command == "menu") {
@@ -120,8 +120,6 @@ void Overlay::runStep(const ScriptStep &step, uint64_t frame) {
         m_backend.setDisplayOptions(m_settings.display);
     } else if (command == "scale") {
         requestScale(static_cast<uint32_t>(std::clamp(std::atoi(first.c_str()), 1, 2)));
-    } else if (command == "fps") {
-        m_settings.showFps = on;
     } else if (command == "pause") {
         setUserPaused(on);
     } else if (command == "fastforward") {

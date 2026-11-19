@@ -2,8 +2,20 @@
 
 ## Unreleased
 
+### Added
+
+- Save states: five slots that hold the whole game at one moment, loaded at
+  once, in the same run or after closing the game. F2 opens the slots to save
+  into and F3 the slots to load from; nothing is saved or loaded until you pick
+  a slot, each with a picture of the game and the time, and a used slot asks
+  before it is overwritten. The menu's new Save states has the same two
+  entries, for a controller. A state takes about 10 MB on disk. Not while a
+  movie plays. See `docs/SAVESTATES.md`.
+
 ### Changed
 
+- The pause is on F5 now (it was F2), to make room for the save states'
+  keys.
 - The home screen and the settings are redrawn: flat dark panels with a
   hairline edge, a white pill under the selected entry, thin sliders, soft
   switches and one amber accent, in place of the double white frame, the gold
@@ -14,6 +26,11 @@
   the progress and the errors, a quiet line when there is nothing to do, and a
   gold dot beside the title while an update waits. On a controller, Right
   opens the panel and A starts the update.
+
+### Removed
+
+- The menu's frame-rate counter (View > Frame rate, F3, and its setting): the
+  Steam Deck has its own.
 
 ## 0.10.0 - 2026-11-18
 

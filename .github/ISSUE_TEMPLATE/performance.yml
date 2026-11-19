@@ -17,8 +17,8 @@ body:
     attributes:
       label: What is slow
       description: >-
-        A low frame rate, stutter, or a hitch at one moment. The F3 counter's
-        frame rate there, and what you get elsewhere.
+        A low frame rate, stutter, or a hitch at one moment. The frame rate there (the Steam Deck's
+        performance overlay shows it), and what you get elsewhere.
     validations:
       required: true
 

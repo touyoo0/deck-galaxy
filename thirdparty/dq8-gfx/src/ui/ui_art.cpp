@@ -15,6 +15,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_JPEG
 #define STBI_ONLY_PNG
+// The save states' thumbnails are BMPs (Steam Deck fork: added).
+#define STBI_ONLY_BMP
 #define STBI_NO_STDIO
 #include "ui/stb_image.h"
 

@@ -49,6 +49,7 @@
 #include "opening.h"
 #include "widescreen.h"
 #include "quick_scenes.h"
+#include "savestate.h"
 #include "scene_timing.h"
 #include "settings_pages.h"
 #include "shop_prices.h"
@@ -191,6 +192,7 @@ int run(int argc, char **argv)
     rg::freecamera::install(runtime);
     rg::settingspages::install(runtime);
     rg::quickscenes::install();
+    rg::savestate::install(runtime);
     // Read here, after the menu's settings and before anything native sets
     // itself up, so the whole run sees one answer.
     if (rg::nativerenderer::enabled())
@@ -214,6 +216,8 @@ int run(int argc, char **argv)
     std::fflush(stdout);
 
     runtime.run();
+    // A save made just before quitting may still be being written.
+    rg::savestate::flush();
     rg::debug::stopSampler();
     rg::debug::stopStallWatch();
     rg::vif1::shutdown();
