@@ -153,6 +153,24 @@ game built them. Every reference is an id (`native_records.h`):
   own changes, not carried over. `tools/native-check.sh NAME` checks a
   run's log (`build/run/NAME.log`) against these.
 
+- **Meshes whose matrix does not split**: a mesh whose full
+  matrix is not model x view x projection within 0.2% (the producer's
+  `sameMatrix`) used to reach the renderer with a model and no camera, and
+  was dropped (`no camera` in the stats line): a gate in Salgin's streets
+  blinked as its matrix crossed the threshold from one frame to the next.
+  It is now a `MeshDraw::windowModel`: the model is object straight to the
+  target's pixels, and the newest 3D draw's camera only maps the game's
+  window depth (`native_meshes.cpp`, as the window-space draws that test
+  depth).
+- **Clipping chunks**: the renderer's pipelines clamp the depth
+  rather than clip it (the sky sits past the far plane), so a chunk the VU1's
+  slot E clips (`MeshDraw::clips`, from the chunk's header) was rasterized
+  wrongly where a triangle crosses the eye plane: a wall near the camera
+  vanished at some angles. `native_mesh.vert` cuts those chunks at z = -w and
+  z = w with `gl_ClipDistance`; the other draws are untouched. With it,
+  `RG_VU1_CLIP_ON_GPU` can stay on (off, a third of the chunks stayed on the
+  VU1 and the VIF1 thread reached 95% in a town: 40 to 56 fps).
+
 Under the pipeline the screen shows the renderer's frame alone. Known
 limits: targets clamp alpha above 0x80; 7b needs D32_FLOAT depth; 7c is
 served from the last frame drawn; the title screen has 2D pieces whose
