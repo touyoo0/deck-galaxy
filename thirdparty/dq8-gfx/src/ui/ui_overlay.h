@@ -1,5 +1,5 @@
 // The in-game menu, drawn with Dear ImGui over the SDL GPU backend's window:
-// a window of pages (F1, or Guide / Back+Start on a controller), the settings window,
+// a window of pages (F1, or Guide on a controller), the settings window,
 // and notifications.
 #pragma once
 
@@ -145,9 +145,9 @@ struct HostServices {
     std::function<AchievementAccount()> achievementAccount;
     std::function<void(const std::string &user, const std::string &password)> achievementSignIn;
     std::function<void()> achievementSignOut;
-    // A Steam Deck, whose Steam button belongs to Steam: Back + Start is the
-    // only way to the menu there, so it cannot be turned off, and the menu
-    // names the Deck's buttons (Rogue Galaxy: added).
+    // A Steam Deck, whose Steam button belongs to Steam: the menu is on L4
+    // there (a Steam Input binding to F1), and the menu names the Deck's
+    // buttons (Rogue Galaxy: added).
     bool steamDeck = false;
     // The game's own keys and what each does (Rogue Galaxy: added): never
     // bound in Controls, named in the binding prompt, and, `listed`, shown in

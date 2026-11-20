@@ -110,7 +110,6 @@ void apply(Settings &s, const std::string &section, const std::string &key, cons
         }
         else if (key == "invert_camera_x") parseBool(value, s.pad.invertCameraX);
         else if (key == "invert_camera_y") parseBool(value, s.pad.invertCameraY);
-        else if (key == "back_start_menu") parseBool(value, s.backStartOpensMenu);
     } else if (section == "controller") {
         parseBinding(s.pad, false, key, value);
     } else if (section == "interface") {
@@ -156,8 +155,7 @@ std::string serializeSettings(const Settings &s) {
         << "[controls]\nstick_dead_zone = " << s.pad.stickDeadZone * 100.0f
         << "\ntrigger_threshold = " << s.pad.triggerThreshold * 100.0f
         << "\ninvert_camera_x = " << flag(s.pad.invertCameraX)
-        << "\ninvert_camera_y = " << flag(s.pad.invertCameraY)
-        << "\nback_start_menu = " << flag(s.backStartOpensMenu) << "\n";
+        << "\ninvert_camera_y = " << flag(s.pad.invertCameraY) << "\n";
     {
         constexpr bool keyboard = false;
         out << "\n[controller]\n";

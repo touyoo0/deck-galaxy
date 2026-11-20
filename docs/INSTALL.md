@@ -42,7 +42,7 @@ SteamOS has a read-only root and no compiler, so the installer creates a
 distrobox container named `rg-build` (Ubuntu 24.04), installs the build tools
 in it and builds there. The game it builds runs on SteamOS itself and needs
 nothing from the container. The game opens on its home screen (Play, Update);
-View + Menu opens its menu. The log of the game is `build/last-run.log`.
+L4 opens its menu. The log of the game is `build/last-run.log`.
 
 Without the installer, from a terminal: `git clone --recurse-submodules
 https://github.com/touyoo0/deck-galaxy.git`, then `./install.sh --iso

@@ -91,7 +91,6 @@ add_executable(roguegalaxy
     camera_view.cpp
     dc_balance.cpp
     depth_reads.cpp
-    dev_tools.cpp
     draw_distance.cpp
     ee_fpu.cpp
     flip_pacing.cpp

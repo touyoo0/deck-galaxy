@@ -33,7 +33,6 @@
 #include "button_glyphs.h"
 #include "camera_view.h"
 #include "dc_balance.h"
-#include "dev_tools.h"
 #include "draw_distance.h"
 #include "free_camera.h"
 #include "instant_text.h"
@@ -176,7 +175,6 @@ int run(int argc, char **argv)
     rg::inventory::install(runtime);
     rg::buttons::install(runtime);
     rg::opening::install(runtime);
-    rg::devtools::install(runtime);
     rg::cameraview::install(runtime);
     rg::drawdistance::install(runtime);
     rg::battlerates::install(runtime);

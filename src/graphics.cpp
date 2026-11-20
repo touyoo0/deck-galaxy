@@ -23,7 +23,6 @@
 #include "update_check.h"
 #include "camera_view.h"
 #include "dc_balance.h"
-#include "dev_tools.h"
 #include "draw_distance.h"
 #include "free_camera.h"
 #include "mouse_camera.h"
@@ -421,8 +420,6 @@ void applyGameOption(const std::string &key, bool on)
         rg::mapchests::setEnabled(on);
     else if (key == "achievements")
         rg::achievements::setEnabled(on);
-    else if (key == "dev_tools")
-        rg::devtools::setEnabled(on);
     else if (key == "free_camera")
         rg::freecamera::setEnabled(on);
     else if (key == "faster_camera")
@@ -744,7 +741,7 @@ bool pump(void *userData)
                               {pad.keyboardMouseAt(), pad.mouseMotionAt(), pad.controllerAt()});
     }
     updateButtonGlyphs(*backend);
-    // The menu has F11 and Alt+Enter; without it, F11 still toggles.
+    // The menu has F11; without it, F11 still toggles.
     static bool f11WasDown = false;
     const bool f11Down = !g_hasMenu && SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_F11];
     if (f11Down && !f11WasDown)
@@ -1162,19 +1159,11 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
          "stay English. A few lines have no Japanese voice and play silent. Takes effect the next time the game "
          "starts.",
          false, 0, 0, 0, "", 1, true, true, "language"},
-        {"dev_tools", "Developer tools",
-         "The tools the developers left in the game, switched off for release. Main menu: R3 shows every item's "
-         "icon, R1 + R3 a list of them, and Cross gives you one of the item picked. Help pages and info list: R1 "
-         "+ Select unlocks every entry. Bestiary: Select fills it. Revelation Flow: R2 + Triangle gives one of "
-         "each item the picked cell asks for. Paused in a scene: Triangle + R1 + R2 ends it, even one the game "
-         "does not let you skip; this can leave the story out of order.",
-         false},
     };
     host.gameSections = {
         {"sixty_fps", "Camera and view"},
         {"skip_opening", "Convenience"},
         {"encounter_rate", "Battles and rewards"},
-        {"dev_tools", "Developers"},
     };
     // The game's own Settings screen shows them on pages of its own.
     for (const dq8::ui::GameOption &option : host.gameOptions)
@@ -1305,12 +1294,6 @@ Setup::Setup(PS2Runtime &runtime)
             {
                 settings.fullscreen = true;
             }
-        }
-        // Steam keeps the Deck's Steam button: View + Menu is the only way to
-        // the game's menu there, so it cannot be left off.
-        if (onSteamDeck())
-        {
-            settings.backStartOpensMenu = true;
         }
         uint32_t runScale = settings.resolutionScale;
         if (const std::string scale = env("RG_GS_SCALE", ""); !scale.empty())

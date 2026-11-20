@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Changed
+
+- No button or key combination is left: View + Menu (Back + Start) no longer
+  opens the menu, and Alt+Enter and Shift+F12 are gone. The Deck's L4 (F1)
+  opens it, and the start-up hint says so. The "Back + Start opens the menu"
+  option is removed. The developers' tools left in the game (the "Developer
+  tools" option, `RG_DEV_TOOLS`) are gone too, with their button combinations. The "Connected: controller"
+  notice no longer shows, nor the button hints under the home screen's news.
+
 ## 0.11.0 - 2026-11-19
 
 ### Added

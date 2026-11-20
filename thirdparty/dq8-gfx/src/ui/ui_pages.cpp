@@ -638,15 +638,6 @@ void Overlay::drawInterfacePage() {
         settingRow("Notifications", "Short messages about controllers, screenshots and changes.");
         if (toggle("notifications", &m_settings.notifications))
             markDirty();
-        // Not on a Steam Deck: Steam keeps its own button, so View + Menu is
-        // the only way to the menu there.
-        if (!m_host.steamDeck) {
-            settingRow("Back + Start opens the menu",
-                       "Back and Start are View and Menu on newer Xbox controllers, Share or Create and Options "
-                       "on PlayStation ones. The Guide button (Xbox, PS, Home) always opens the menu.");
-            if (toggle("backstart", &m_settings.backStartOpensMenu))
-                markDirty();
-        }
         endSettings();
     }
 
@@ -1046,8 +1037,7 @@ void Overlay::drawShortcuts() {
             ImGui::TableSetupColumn("keys", ImGuiTableColumnFlags_WidthFixed, em(7.5f));
             ImGui::TableSetupColumn("what", ImGuiTableColumnFlags_WidthFixed, em(15.0f));
             static constexpr const char *kF1[] = {"F1"}, *kF4[] = {"F4"}, *kF5[] = {"F5"},
-                                        *kF11[] = {"F11"}, *kAltEnter[] = {"Alt", "Enter"}, *kF12[] = {"F12"},
-                                        *kShiftF12[] = {"Shift", "F12"}, *kEsc[] = {"Esc"};
+                                        *kF11[] = {"F11"}, *kF12[] = {"F12"}, *kEsc[] = {"Esc"};
             shortcutRow(kF1, 1, "Open or close this menu");
             if (canPause())
                 shortcutRow(kF5, 1, "Pause or resume");
@@ -1061,9 +1051,7 @@ void Overlay::drawShortcuts() {
                 shortcutRow(keys, 1, shortcut.what.c_str());
             }
             shortcutRow(kF11, 1, "Fullscreen");
-            shortcutRow(kAltEnter, 2, "Fullscreen");
             shortcutRow(kF12, 1, "Take screenshot");
-            shortcutRow(kShiftF12, 2, "Screenshot with the menu");
             shortcutRow(kEsc, 1, "Back, in the menu");
             ImGui::EndTable();
         }
@@ -1071,15 +1059,13 @@ void Overlay::drawShortcuts() {
         if (ImGui::BeginTable("##pad", 2, ImGuiTableFlags_None)) {
             ImGui::TableSetupColumn("keys", ImGuiTableColumnFlags_WidthFixed, em(7.5f));
             ImGui::TableSetupColumn("what", ImGuiTableColumnFlags_WidthFixed, em(15.0f));
-            static constexpr const char *kGuide[] = {"Guide"}, *kBackStart[] = {"Back", "Start"},
-                                        *kViewMenu[] = {"View", "Menu"}, *kShoulders[] = {"L1", "R1"},
+            static constexpr const char *kGuide[] = {"Guide"}, *kL4[] = {"L4"},
+                                        *kShoulders[] = {"L1", "R1"},
                                         *kBack[] = {"B / Circle"},
                                         *kClear[] = {"X / Square"};
             if (m_host.steamDeck)
-                shortcutRow(kViewMenu, 2, "Open or close the menu");
-            else if (m_settings.backStartOpensMenu)
-                shortcutRow(kBackStart, 2, "Open or close the menu");
-            if (!m_host.steamDeck)
+                shortcutRow(kL4, 1, "Open or close the menu");
+            else
                 shortcutRow(kGuide, 1, "Open or close the menu");
             shortcutRow(kShoulders, 2, "Previous and next settings page", "/");
             shortcutRow(kBack, 1, "Back, in the menu");
