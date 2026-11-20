@@ -19,7 +19,7 @@ Linux setups are not supported here.
 - 60 fps
 - 16:10 picture, the Steam Deck's screen
 - Up to 8x internal resolution
-- In-game menu (View + Menu on the Deck)
+- In-game menu (L4 on the Deck)
 - [New game settings](docs/OPTIONS.md)
 - Japanese voices and movies (undub)
 - [The Japanese Director's Cut's](docs/DIRECTORS-CUT.md) battle balance,
@@ -84,7 +84,7 @@ All of it can be changed in the game's menu, Settings > Controls.
 
 ### The game's menu
 
-**View + Menu** opens the menu, a window with a list of pages: actions
+**L4** opens the menu on the Deck (**F1** on a keyboard), a window with a list of pages: actions
 (pause, fast-forward, save states, screenshots), display, sound, controls,
 the game options, Language (the text's language, the undub), Achievements,
 Interface and Help. Most game options are

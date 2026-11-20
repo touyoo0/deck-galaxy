@@ -35,7 +35,6 @@ struct Settings {
 
     // Controls
     gfx::PadConfig pad = gfx::PadConfig::defaults();
-    bool backStartOpensMenu = true;
 
     // Interface
     int uiScale = 100; // percent, on top of the display's own scale

@@ -140,12 +140,10 @@ bool Overlay::initialize(SDL_Window *window, SDL_GPUTextureFormat format, std::s
     setMenuLanguage(m_settings.menuLanguage);
     updateScale();
     loadScript();
-    // Guide is often the system's (Steam, the Xbox Game Bar), so Back + Start
-    // is named first.
+    // No button combination opens the menu: on the Deck the Steam Input layout
+    // puts it on L4, elsewhere F1 or the Guide button.
     if (m_host.steamDeck)
-        notify("Press View + Menu for the menu", Icon::Info, 6.0);
-    else if (m_settings.backStartOpensMenu)
-        notify("Press F1, or Back + Start on a controller, for the menu", Icon::Info, 6.0);
+        notify("Press L4 for the menu", Icon::Info, 6.0);
     else
         notify("Press F1, or Guide on a controller, for the menu", Icon::Info, 6.0);
     return true;
@@ -404,7 +402,6 @@ bool Overlay::handleEvent(const SDL_Event &event) {
     case SDL_EVENT_GAMEPAD_ADDED: {
         const char *name = SDL_GetGamepadNameForID(event.gdevice.which);
         m_controllerNames.emplace_back(event.gdevice.which, name ? name : "Controller");
-        notify(Lf("Connected: %s", m_controllerNames.back().second.c_str()), Icon::Controls);
         break;
     }
     case SDL_EVENT_GAMEPAD_REMOVED: {
@@ -473,8 +470,6 @@ bool Overlay::handleEvent(const SDL_Event &event) {
 }
 
 bool Overlay::hotkey(const SDL_KeyboardEvent &key) {
-    const bool shift = (key.mod & SDL_KMOD_SHIFT) != 0;
-    const bool alt = (key.mod & SDL_KMOD_ALT) != 0;
     switch (key.scancode) {
     case SDL_SCANCODE_F1:
         toggleMenu(false);
@@ -494,14 +489,7 @@ bool Overlay::hotkey(const SDL_KeyboardEvent &key) {
         setFullscreen(!m_settings.fullscreen);
         return true;
     case SDL_SCANCODE_F12:
-        takeScreenshot(shift);
-        return true;
-    case SDL_SCANCODE_RETURN:
-        if (!alt)
-            return false;
-        // Enter is Start in game; keep the held key from reaching it.
-        m_backend.padInput().suppressHeld();
-        setFullscreen(!m_settings.fullscreen);
+        takeScreenshot(false);
         return true;
     default:
         return false;
@@ -514,16 +502,7 @@ bool Overlay::gamepadShortcut(const SDL_GamepadButtonEvent &event) {
         toggleMenu(true);
         return true;
     }
-    if (!m_settings.backStartOpensMenu ||
-        (button != SDL_GAMEPAD_BUTTON_BACK && button != SDL_GAMEPAD_BUTTON_START))
-        return false;
-    SDL_Gamepad *gamepad = SDL_GetGamepadFromID(event.which);
-    const SDL_GamepadButton other = button == SDL_GAMEPAD_BUTTON_BACK ? SDL_GAMEPAD_BUTTON_START
-                                                                      : SDL_GAMEPAD_BUTTON_BACK;
-    if (!gamepad || !SDL_GetGamepadButton(gamepad, other))
-        return false;
-    toggleMenu(true);
-    return true;
+    return false;
 }
 
 bool Overlay::captureEvent(const SDL_Event &event) {
@@ -1487,19 +1466,8 @@ void Overlay::drawHome() {
                     ImGui::Dummy(ImVec2(width, height + em(0.5f)));
                 }
             }
-            if (navOn) {
-                const char *hint = L(reading ? (canUpdate ? "Up / Down: scroll    A: update    Left: back"
-                                                          : "Up / Down: scroll    Left: back")
-                                             : canUpdate ? "Right: update" : "Right: read");
-                const float hintSize = em(0.8f);
-                ImFont *hintFont = ImGui::GetFont();
-                const float hintWidth = hintFont->CalcTextSizeA(hintSize, FLT_MAX, 0.0f, hint).x;
-                list->AddText(hintFont, hintSize, ImVec2(wmin.x + panelW - em(1.4f) - hintWidth, wmin.y + panelH - em(2.0f)),
-                              reading ? withAlpha(palette::kText, fade) : withAlpha(palette::kTextMuted, fade),
-                              hint);
-            }
             ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(0, 0, 0, 0));
-            if (ImGui::BeginChild("##homenewsbody", ImVec2(0.0f, -em(2.2f)), ImGuiChildFlags_None,
+            if (ImGui::BeginChild("##homenewsbody", ImVec2(0.0f, -em(0.8f)), ImGuiChildFlags_None,
                                   ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground)) {
                 const float stick = ImGui::GetKeyData(ImGuiKey_GamepadLStickDown)->AnalogValue -
                                     ImGui::GetKeyData(ImGuiKey_GamepadLStickUp)->AnalogValue;
@@ -1691,7 +1659,7 @@ void Overlay::drawLoadingVeil() {
         m_veilDoneAt = -1.0;
         // The hint that went unseen behind the home screen.
         if (m_host.steamDeck)
-            notify("Press View + Menu for the menu", Icon::Info, 6.0);
+            notify("Press L4 for the menu", Icon::Info, 6.0);
         return;
     }
 

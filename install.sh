@@ -373,5 +373,5 @@ the controller its mouse-and-keyboard layout):
   1. In desktop mode open Steam, Games > Add a Non-Steam Game to My Library,
      Browse, pick  $here/rogue-galaxy.sh  (choose "All Files" in the filter).
   2. Back to game mode: Rogue Galaxy is in the library, under Non-Steam.
-Back + Start opens the game's menu (F1).
+L4 (a Steam Input binding to F1) opens the game's menu.
 EOF

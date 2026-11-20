@@ -108,7 +108,6 @@ constexpr Row kSwitches[] = {
     {"map_chests", "Chests on Map", Kind::Switch},
     {"faster_camera", "Faster Camera", Kind::Switch},
     {"free_camera", "Free Camera", Kind::Switch},
-    {"dev_tools", "Developer Tools", Kind::Switch},
     {"sixty_fps", "60 FPS (Next Start)", Kind::Switch},
 };
 constexpr Row kNumbers[] = {
@@ -152,7 +151,6 @@ constexpr Local kLocal[] = {
     {"map_chests", {"Coffres sur la carte", "Truhen auf Karte", "Cofres en el mapa", "Scrigni sulla mappa"}},
     {"faster_camera", {"Cam<'e>ra rapide", "Schnelle Kamera", "C<'a>mara r<'a>pida", "Visuale rapida"}},
     {"free_camera", {"Cam<'e>ra libre", "Freie Kamera", "C<'a>mara libre", "Visuale libera"}},
-    {"dev_tools", {"Outils d<'e>veloppeur", "Entwicklerwerkzeuge", "Modo desarrollador", "Strumenti di sviluppo"}},
     {"sixty_fps", {"60 FPS (red<'e>marrage)", "60 FPS (Neustart)", "60 FPS (reinicio)", "60 FPS (riavvio)"}},
     {"field_of_view", {"Champ de vision", "Sichtfeld", "Campo de visi<'o>n", "Campo visivo"}},
     {"camera_distance", {"Distance cam<'e>ra", "Kameradistanz", "Distancia c<'a>mara", "Distanza visuale"}},

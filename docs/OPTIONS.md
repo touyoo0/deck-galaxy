@@ -3,8 +3,8 @@
 <p align="center"><img src="images/menu-game.jpg" width="70%" alt="The F1 menu's Game page"></p>
 
 **F1** opens the menu: one window in the middle of the screen, with a list of
-pages on the left. There is no bar along the top. The Guide button, or Back +
-Start (View + Menu on the Deck), opens the same window; L1 and R1 turn its
+pages on the left. There is no bar along the top. The Guide button (L4
+on the Deck, through its Steam Input layout) opens the same window; L1 and R1 turn its
 pages.
 
 With only a controller (the menu names its buttons as the controller does:
@@ -63,9 +63,8 @@ whose files are missing.
 | F5 | Pause |
 | F4 | Fast-forward |
 | F6 | Free camera |
-| F11 or Alt+Enter | Fullscreen |
+| F11 | Fullscreen |
 | F12 | Take screenshot |
-| Shift+F12 | Screenshot with the menu |
 
 ## Game options
 
@@ -116,17 +115,6 @@ The numbers are against the game's own, 1.0x.
 | Director's Cut balance | Off by default. Turns on the battle balance of the Japanese Director's Cut (SCPS-17013); what it changes: [DIRECTORS-CUT.md](DIRECTORS-CUT.md#balance). Needs your Japanese disc: run `setup.py extract-japanese` (it serves all three Director's Cut options). Takes effect at the next start. |
 | Director's Cut enemy behavior | Off by default. Turns on the enemies' attacks and AI of the same release ([DIRECTORS-CUT.md](DIRECTORS-CUT.md#enemy-behavior)), with or without the balance. Needs the same disc. Takes effect at the next start. |
 | Director's Cut party AI | Off by default. Turns on the allies' AI of the same release ([DIRECTORS-CUT.md](DIRECTORS-CUT.md#party-ai)). Needs the same disc. Takes effect at the next start. |
-
-**Developers**
-
-| Option | |
-|---|---|
-| Developer tools | What the developers left in the game. In the main menu: R3 shows every item (R1 + R3 as a list, Cross gives one). On the help pages and the info list, R1 + Select unlocks every entry; in the bestiary, Select fills it. R2 + Triangle on the Revelation Flow gives the items a cell needs. Triangle + R1 + R2, paused in a scene, skips it (this can break the story's order). |
-
-<p align="center">
-  <img src="images/salgin-above.jpg" width="49%" alt="Salgin from above">
-  <img src="images/dev-items.jpg" width="49%" alt="Developer tools: the list of every item">
-</p>
 
 ## Language
 

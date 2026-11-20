@@ -121,18 +121,6 @@ const TextEntry kTextsMenu[] = {
      "Die Sprache dieses Menüs und des Startbildschirms. Zu Beginn die des Steam Deck.",
      "El idioma de este menú y de la pantalla de inicio. Al principio, el de la Steam Deck.",
      "La lingua di questo menu e della schermata iniziale. All'inizio è quella dello Steam Deck."},
-    {"Back + Start opens the menu", "Back + Start ouvre le menu", "Back + Start öffnet das Menü",
-     "Back + Start abre el menú", "Back + Start apre il menu"},
-    {"Back and Start are View and Menu on newer Xbox controllers, Share or Create and Options on PlayStation ones. "
-     "The Guide button (Xbox, PS, Home) always opens the menu.",
-     "Back et Start sont View et Menu sur les manettes Xbox récentes, Share ou Create et Options sur celles de PlayStation. "
-     "Le bouton Guide (Xbox, PS, Home) ouvre toujours le menu.",
-     "Back und Start heißen bei neueren Xbox-Controllern View und Menu, bei PlayStation-Controllern Share oder Create und Options. "
-     "Die Guide-Taste (Xbox, PS, Home) öffnet das Menü immer.",
-     "Back y Start son View y Menu en los mandos Xbox recientes, y Share o Create y Options en los de PlayStation. "
-     "El botón Guide (Xbox, PS, Home) siempre abre el menú.",
-     "Back e Start sono View e Menu sui controller Xbox recenti, Share o Create e Options su quelli PlayStation. "
-     "Il pulsante Guide (Xbox, PS, Home) apre sempre il menu."},
     {"Pause and speed", "Pause et vitesse", "Pause und Tempo", "Pausa y velocidad", "Pausa e velocità"},
     {"Pause while the menu is open", "Pause pendant que le menu est ouvert", "Pause, solange das Menü offen ist",
      "Pausar mientras el menú está abierto", "Pausa mentre il menu è aperto"},
@@ -270,8 +258,6 @@ const TextEntry kTextsMenu[] = {
     {"Fullscreen", "Plein écran", "Vollbild", "Pantalla completa", "Schermo intero"},
     {"Take screenshot", "Capture d'écran", "Screenshot aufnehmen", "Hacer captura de pantalla",
      "Fai uno screenshot"},
-    {"Screenshot with the menu", "Capture d'écran avec le menu", "Screenshot mit dem Menü",
-     "Captura de pantalla con el menú", "Screenshot con il menu"},
     {"Back, in the menu", "Retour, dans le menu", "Zurück, im Menü", "Atrás, en el menú", "Indietro, nel menu"},
     {"Open or close the menu", "Ouvrir ou fermer le menu", "Das Menü öffnen oder schließen",
      "Abrir o cerrar el menú", "Apri o chiudi il menu"},
