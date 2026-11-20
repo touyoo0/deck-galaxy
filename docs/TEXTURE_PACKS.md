@@ -11,6 +11,10 @@ author wants to redraw.
 
 ## For players
 
+- Only the GS path draws packs: with one in `textures\hd` or `textures\packs`
+  (or `RG_TEXTURE_PACK`), the game stays on it, and the native renderer, which
+  gives the lighter frame on the Deck, is off (the log says so).
+
 - Put each pack in `textures\packs`, in the game's folder, as a folder or a
   zip. Make the folder `textures\packs` if it is not there.
 - A pack's pictures must be at the top of its folder (or of its zip, or of
