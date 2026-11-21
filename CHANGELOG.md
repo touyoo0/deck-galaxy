@@ -4,6 +4,8 @@
 
 ### Changed
 
+- The loading screen's "Press A" comes up as soon as the game has loaded,
+  instead of after the whole story text has faded in.
 - No button or key combination is left: View + Menu (Back + Start) no longer
   opens the menu, and Alt+Enter and Shift+F12 are gone. The Deck's L4 (F1)
   opens it, and the start-up hint says so. The "Back + Start opens the menu"
