@@ -412,7 +412,7 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         // depth when it tests it. One that only writes depth (test ALWAYS:
         // the menus' text, with no 3D drawn yet) writes a constant without
         // one.
-        if (d.hasModel ? !camera : (m.depthTest != Compare::Always && !camera))
+        if (d.hasModel && !d.windowModel ? !camera : (m.depthTest != Compare::Always && !camera && !d.windowModel))
         {
             ++m_meshCounts.noCamera;
             continue;
@@ -536,7 +536,35 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
             mu.fogColor[i] = float(d.fogColor[i]) / 255.0f;
 
         DrawUniforms du{};
-        if (d.hasModel)
+        if (d.hasModel && d.windowModel)
+        {
+            // Object straight to the target's pixels (homogeneous): only the
+            // depth needs mapping, Zgs to the clip z (Zgs - V32) / V22 as the
+            // window-space draws below, with the program's depthScale.
+            const double v22 = camera ? camera->viewport[10] : 0.0, v32 = camera ? camera->viewport[14] : 0.0;
+            float zMap[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+            float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+            if (v22 != 0.0)
+            {
+                zMap[10] = float(1.0 / v22);
+                zMap[14] = float(-v32 / v22);
+            }
+            else
+                zMap[10] = 0.0f; // no depth map yet: a constant, as a window draw with no camera
+            const bool scaled = d.depthScale != 1.0f && v22 != 0.0;
+            const double s = scaled ? double(d.depthScale) : 1.0;
+            clipAndDepth(d.model, zMap, identity, du.clip, du.depthRow, s,
+                         scaled ? (1.0 - s) * (1.0 + v32 / v22) * 0.5 : 0.0);
+            if (v22 != 0.0 && d.depthMax < 3.0e38f)
+            {
+                du.depthLimit[0] = float((1.0 - (double(d.depthMax) - v32) / v22) * 0.5);
+                du.depthLimit[1] = 1.0f;
+            }
+            for (int i = 0; i < 4; ++i)
+                du.viewport[i * 5] = 1.0f;
+            ++m_meshCounts.window;
+        }
+        else if (d.hasModel)
         {
             // The program's depthScale and depthMax (see clipAndDepth). The
             // cap is per vertex, before interpolation, as the program's.
@@ -579,6 +607,7 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         du.target[1] = targetH;
         du.target[2] = d.hasModel ? 0.0f : 1.0f; // fog per vertex
         std::memcpy(du.fog, d.fog, sizeof(du.fog));
+        du.depthLimit[2] = d.clips ? 1.0f : 0.0f;
 
         if (m.blending && (m.srcFactor == BlendFactor::Fixed || m.srcFactor == BlendFactor::InvFixed ||
                            m.dstFactor == BlendFactor::Fixed || m.dstFactor == BlendFactor::InvFixed))

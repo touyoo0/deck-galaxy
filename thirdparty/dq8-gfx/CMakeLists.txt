@@ -191,6 +191,7 @@ add_library(dq8_ui STATIC
     src/ui/ui_glyphs.cpp
     src/ui/ui_overlay.cpp
     src/ui/ui_pages.cpp
+    src/ui/ui_sound.cpp
     src/ui/ui_script.cpp
     src/ui/ui_settings.cpp
     src/ui/ui_style.cpp

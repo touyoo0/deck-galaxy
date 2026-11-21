@@ -2,6 +2,7 @@
 
 #include "gfx/backends/sdlgpu/sdlgpu_input.h"
 #include "ui/ui_art.h"
+#include "ui/ui_sound.h"
 #include "ui/ui_style.h"
 #include "ui/ui_text.h"
 #include "ui/ui_widgets.h"
@@ -28,7 +29,7 @@ constexpr double kCaptureSeconds = 6.0;
 // gameShortcuts: Rogue Galaxy's F6, the free camera), never bound: binding
 // one would fight the shortcut.
 constexpr SDL_Scancode kMenuKeys[] = {SDL_SCANCODE_F1, SDL_SCANCODE_F4, SDL_SCANCODE_F5,
-                                      SDL_SCANCODE_F11, SDL_SCANCODE_F12};
+                                      SDL_SCANCODE_F12};
 
 bool reservedKey(SDL_Scancode scancode, const std::vector<HostServices::Shortcut> &game) {
     return std::find(std::begin(kMenuKeys), std::end(kMenuKeys), scancode) != std::end(kMenuKeys) ||
@@ -37,7 +38,7 @@ bool reservedKey(SDL_Scancode scancode, const std::vector<HostServices::Shortcut
 }
 
 // The reserved keys as the binding prompt names them, runs of function keys
-// shortened: "F1 to F4, F6, F11 and F12".
+// shortened: "F1 to F4, F6 and F12".
 std::string reservedKeysText(const std::vector<HostServices::Shortcut> &game) {
     std::vector<int> functions;
     std::vector<std::string> others;
@@ -91,6 +92,7 @@ Overlay::~Overlay() {
     for (auto &saver : m_savers)
         saver.thread.join();
     saveIfDirty(true);
+    sound::shutdown();
     if (!m_context)
         return;
     ImGui::SetCurrentContext(m_context);
@@ -291,6 +293,7 @@ void Overlay::startLaunch(bool resume) {
         return;
     m_resumeOnLaunch = resume && m_autoState && m_host.continueGame;
     m_launchAt = ImGui::GetTime();
+    sound::play(sound::Cue::Launch);
 }
 
 void Overlay::openSaveSlots(bool save) {
@@ -484,9 +487,6 @@ bool Overlay::hotkey(const SDL_KeyboardEvent &key) {
         if (!canChangeSpeed())
             return false;
         setFastForward(!m_fastForward);
-        return true;
-    case SDL_SCANCODE_F11:
-        setFullscreen(!m_settings.fullscreen);
         return true;
     case SDL_SCANCODE_F12:
         takeScreenshot(false);
@@ -952,6 +952,9 @@ void spinner(ImDrawList *list, ImVec2 centre, float radius, ImU32 color) {
 // the buttons show no selection; the update button, when there is one, shows
 // it instead.
 bool gHomeReading = false;
+// The home screen's sounds play once its first moments are over: the focus the
+// window opens with is not a move.
+bool gHomeSounds = false;
 // Which button the mouse is over, this frame and the last: with the mouse at
 // rest over one and the focus on another, only one may light up.
 bool gHoverNow = false, gHoverPrev = false;
@@ -981,6 +984,16 @@ bool homeButton(const char *id, const char *label, ImVec2 size, bool enabled, fl
                                                                         : (hovered || (ImGui::IsItemFocused() && !gHoverPrev)))));
     const bool held = enabled && ImGui::IsItemActive();
     const ImVec2 max(min.x + size.x, min.y + size.y);
+    // A soft tick when the selection reaches this button, a tap when it is
+    // pressed (Play has its own chime).
+    bool &wasLit = *ImGui::GetStateStorage()->GetBoolRef(ImGui::GetID(id) + 1u, false);
+    if (gHomeSounds) {
+        if (lit && !wasLit)
+            sound::play(sound::Cue::Move);
+        if (pressed && enabled && std::strcmp(id, "##play") != 0 && std::strcmp(id, "##continue") != 0)
+            sound::play(sound::Cue::Select);
+    }
+    wasLit = lit;
 
     float &glow = *ImGui::GetStateStorage()->GetFloatRef(ImGui::GetID(id), 0.0f);
     glow += ((lit ? 1.0f : 0.0f) - glow) * std::min(1.0f, ImGui::GetIO().DeltaTime * 16.0f);
@@ -1222,6 +1235,7 @@ void Overlay::drawHome() {
     // Play pressed: the interface leaves at once, the picture dives into the
     // warp (p goes 0 to 1 over kLaunchSeconds).
     const bool launching = m_launchAt >= 0.0;
+    gHomeSounds = intro >= 1.0f && !launching;
     const float p = launching ? smooth(static_cast<float>((time - m_launchAt) / kLaunchSeconds)) : 0.0f;
     const float fade =
         intro * (launching ? 1.0f - smooth(static_cast<float>((time - m_launchAt) / 0.45)) : 1.0f);
@@ -2092,6 +2106,7 @@ void Overlay::applyVolume() {
         return;
     const bool silent = m_settings.muted;
     m_host.setVolume(silent ? 0.0f : static_cast<float>(m_settings.volume) / 100.0f);
+    sound::setVolume(silent ? 0.0f : static_cast<float>(m_settings.volume) / 100.0f);
 }
 
 bool Overlay::pausing() const {
@@ -2105,13 +2120,6 @@ void Overlay::applyPause() {
         return;
     m_hostPaused = paused;
     m_host.setPaused(paused);
-}
-
-void Overlay::setFullscreen(bool fullscreen) {
-    if (m_window && m_window == m_backend.window())
-        SDL_SetWindowFullscreen(m_window, fullscreen);
-    m_settings.fullscreen = fullscreen;
-    markDirty();
 }
 
 void Overlay::setPadConfig(const gfx::PadConfig &config) {

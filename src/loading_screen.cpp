@@ -28,6 +28,12 @@ constexpr uint32_t kLinesShown = 0x004E8990u;
 constexpr uint32_t kLineCount = 0x004E8D84u;
 constexpr uint32_t kLineAlpha = 0x004E8D14u;
 constexpr int32_t kMaxLines = 14;
+// The screen's state (0x482d78): 3 and 4 while the story's lines fade in and
+// the game loads; LoadingScreenRequestEnd (the loaded game) makes it 5, where
+// "Press X" is drawn once every line is shown (0x344318) and a press ends the
+// screen (LoadingScreenTryFinish).
+constexpr uint32_t kScreenState = 0x00482D78u;
+constexpr int32_t kStateLoaded = 5;
 
 PS2Runtime::RecompiledFunction g_start = nullptr;
 PS2Runtime::RecompiledFunction g_stop = nullptr;
@@ -76,8 +82,12 @@ void stop(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
 
 void frame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
 {
+    // The game is loaded: show what is left of the recap at once, so that
+    // "Press X" does not wait for the lines' slow fade-in.
+    int32_t state = 0;
+    const bool loaded = readGuest(rdram, kScreenState, state) && state == kStateLoaded;
     int32_t lines = 0;
-    if (g_instantRecap.load(std::memory_order_relaxed) && readGuest(rdram, kLineCount, lines) && lines > 0)
+    if ((loaded || g_instantRecap.load(std::memory_order_relaxed)) && readGuest(rdram, kLineCount, lines) && lines > 0)
     {
         lines = std::min(lines, kMaxLines);
         for (int32_t line = 0; line < lines; ++line)
