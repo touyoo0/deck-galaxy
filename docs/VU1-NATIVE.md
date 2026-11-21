@@ -212,7 +212,10 @@ driver cuts at the eye on its own. With the native renderer and
 on the VU1 (review of 2026-11-05), except under the native pipeline
 (`RG_NATIVE_PIPELINE=1`), which has no GS to draw the VU1's packets: there
 they would be 2D pieces whose textures twist near the camera, so they go
-to the GPU unless `RG_VU1_CLIP_ON_GPU=0`. The October 29 field walk is 30% off
+to the GPU unless `RG_VU1_CLIP_ON_GPU=0`. Under the native pipeline the mesh is drawn by `native_mesh.vert`, which cuts
+such a chunk at E's planes itself (`MeshDraw::clips`,
+[NATIVE-PIPELINE.md](NATIVE-PIPELINE.md)); what follows is the GS path's
+`gs_native.vert`. The October 29 field walk is 30% off
 with them on the GPU (no texture on the near left wall, part of the ledge
 in front of the camera missing), exact with them on the VU1. One cause
 found by reading, not yet fixed: `gs_native.vert` writes `depth * w` from

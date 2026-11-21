@@ -196,6 +196,24 @@ void readBack(const GS &gs)
     g_mirror.prim = prim;
 }
 
+void saveState(ps2_savestate::Writer &out)
+{
+    out.tag(ps2_savestate::makeTag('D', 'S', 'M', '1'));
+    std::lock_guard lock(g_mirror.mutex);
+    out.put(g_mirror.r);
+    out.put(g_mirror.prim);
+}
+
+void loadState(ps2_savestate::Reader &in)
+{
+    in.expectTag(ps2_savestate::makeTag('D', 'S', 'M', '1'));
+    const GS::DrawRegisters r = in.get<GS::DrawRegisters>();
+    const GSPrimReg prim = in.get<GSPrimReg>();
+    std::lock_guard lock(g_mirror.mutex);
+    g_mirror.r = r;
+    g_mirror.prim = prim;
+}
+
 GSDrawState current()
 {
     std::lock_guard lock(g_mirror.mutex);

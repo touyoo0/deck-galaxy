@@ -1121,6 +1121,15 @@ street walk at 60. What limits the gate now is VU1 itself: three quarters
 of the VIF1 thread are the compiled programs, `r_a786efabfa469ada_44` a
 sixth of it, `commitFlags` and `stall` 6%.
 
+**Skip button as soon as loaded (2026-11-21).** "Press X" is drawn only
+once every recap line is shown (LoadingScreenFrame 0x344318: lines shown
+0x4E8990 equal the count 0x4E8D84, state 0x482D78 at 5 or 6), and a press
+is taken only then (LoadingScreenTryFinish), but the game loads in a few
+seconds and the lines fade in at the console's pace, so the button came at
+the end of the text. LoadingScreenRequestEnd (the loaded game) moves the
+state from 3 or 4 to 5: the frame hook now shows every line at once from
+then on, as the instant recap does for the whole screen. Not run on the
+Deck yet.
 **The logos skipped by a button at the first boot (2026-11-21).**
 TitleOpeningMovieTick (0x4EBAF0) checks five buttons (Triangle 0x10, Cross
 0x40, Circle 0x80, Square 0x20, Start 0x800) but takes a press only once the

@@ -451,13 +451,12 @@ void Overlay::drawSavesPage() {
         mutedText("What is in it is lost.");
         ImGui::Dummy(ImVec2(0.0f, em(0.6f)));
         const ImVec2 buttonSize(em(7.0f), 0.0f);
-        // Cancel first: it is where the cursor starts. Back reaches it as the
-        // Quit question's.
+        // Cancel first, but the cursor starts on Overwrite. Back reaches Cancel
+        // as the Quit question's.
         if (ImGui::Button(L("Cancel"), buttonSize) || m_cancelQuit) {
             ImGui::CloseCurrentPopup();
             m_slotConfirm = 0;
         }
-        ImGui::SetItemDefaultFocus();
         ImGui::SameLine();
         if (ImGui::Button(L("Overwrite"), buttonSize)) {
             const int slot = m_slotConfirm;
@@ -467,6 +466,7 @@ void Overlay::drawSavesPage() {
             if (m_host.saveSlotSave)
                 m_host.saveSlotSave(slot);
         }
+        ImGui::SetItemDefaultFocus();
         ImGui::EndPopup();
     } else {
         m_slotConfirm = 0;
@@ -531,10 +531,6 @@ void Overlay::drawActionsPage() {
     }
     sectionHeader("View");
     if (beginSettings("view")) {
-        settingRow("Fullscreen", "F11");
-        bool fullscreen = m_settings.fullscreen;
-        if (toggle("fullscreen", &fullscreen))
-            setFullscreen(fullscreen);
         settingRow("Renderer statistics");
         bool stats = m_statsOpen;
         if (toggle("stats", &stats))
@@ -1037,7 +1033,7 @@ void Overlay::drawShortcuts() {
             ImGui::TableSetupColumn("keys", ImGuiTableColumnFlags_WidthFixed, em(7.5f));
             ImGui::TableSetupColumn("what", ImGuiTableColumnFlags_WidthFixed, em(15.0f));
             static constexpr const char *kF1[] = {"F1"}, *kF4[] = {"F4"}, *kF5[] = {"F5"},
-                                        *kF11[] = {"F11"}, *kF12[] = {"F12"}, *kEsc[] = {"Esc"};
+                                        *kF12[] = {"F12"}, *kEsc[] = {"Esc"};
             shortcutRow(kF1, 1, "Open or close this menu");
             if (canPause())
                 shortcutRow(kF5, 1, "Pause or resume");
@@ -1050,7 +1046,6 @@ void Overlay::drawShortcuts() {
                 const char *const keys[] = {SDL_GetScancodeName(shortcut.key)};
                 shortcutRow(keys, 1, shortcut.what.c_str());
             }
-            shortcutRow(kF11, 1, "Fullscreen");
             shortcutRow(kF12, 1, "Take screenshot");
             shortcutRow(kEsc, 1, "Back, in the menu");
             ImGui::EndTable();
@@ -1166,12 +1161,11 @@ void Overlay::drawSaveSlots() {
             mutedText("What is in it is lost.");
             ImGui::Dummy(ImVec2(0.0f, em(0.6f)));
             const ImVec2 buttonSize(em(7.0f), 0.0f);
-            // Cancel first: it is where the cursor starts.
+            // Cancel first, but the cursor starts on Overwrite.
             if (ImGui::Button(L("Cancel"), buttonSize) || m_slotCancel) {
                 ImGui::CloseCurrentPopup();
                 m_slotConfirm = 0;
             }
-            ImGui::SetItemDefaultFocus();
             ImGui::SameLine();
             if (ImGui::Button(L("Overwrite"), buttonSize)) {
                 const int slot = m_slotConfirm;
@@ -1180,6 +1174,7 @@ void Overlay::drawSaveSlots() {
                 if (m_host.saveSlotSave)
                     m_host.saveSlotSave(slot);
             }
+            ImGui::SetItemDefaultFocus();
             ImGui::EndPopup();
         } else if (m_slotConfirm != 0 && m_slotCancel) {
             m_slotConfirm = 0;
