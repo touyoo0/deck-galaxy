@@ -10,6 +10,8 @@
   option is removed. The developers' tools left in the game (the "Developer
   tools" option, `RG_DEV_TOOLS`) are gone too, with their button combinations. The "Connected: controller"
   notice no longer shows, nor the button hints under the home screen's news.
+- Overwriting a save state: the question now starts on Overwrite instead of
+  Cancel.
 
 ## 0.11.0 - 2026-11-19
 

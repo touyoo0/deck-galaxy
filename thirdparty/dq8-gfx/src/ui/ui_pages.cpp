@@ -451,13 +451,12 @@ void Overlay::drawSavesPage() {
         mutedText("What is in it is lost.");
         ImGui::Dummy(ImVec2(0.0f, em(0.6f)));
         const ImVec2 buttonSize(em(7.0f), 0.0f);
-        // Cancel first: it is where the cursor starts. Back reaches it as the
-        // Quit question's.
+        // Cancel first, but the cursor starts on Overwrite. Back reaches Cancel
+        // as the Quit question's.
         if (ImGui::Button(L("Cancel"), buttonSize) || m_cancelQuit) {
             ImGui::CloseCurrentPopup();
             m_slotConfirm = 0;
         }
-        ImGui::SetItemDefaultFocus();
         ImGui::SameLine();
         if (ImGui::Button(L("Overwrite"), buttonSize)) {
             const int slot = m_slotConfirm;
@@ -467,6 +466,7 @@ void Overlay::drawSavesPage() {
             if (m_host.saveSlotSave)
                 m_host.saveSlotSave(slot);
         }
+        ImGui::SetItemDefaultFocus();
         ImGui::EndPopup();
     } else {
         m_slotConfirm = 0;
@@ -1166,12 +1166,11 @@ void Overlay::drawSaveSlots() {
             mutedText("What is in it is lost.");
             ImGui::Dummy(ImVec2(0.0f, em(0.6f)));
             const ImVec2 buttonSize(em(7.0f), 0.0f);
-            // Cancel first: it is where the cursor starts.
+            // Cancel first, but the cursor starts on Overwrite.
             if (ImGui::Button(L("Cancel"), buttonSize) || m_slotCancel) {
                 ImGui::CloseCurrentPopup();
                 m_slotConfirm = 0;
             }
-            ImGui::SetItemDefaultFocus();
             ImGui::SameLine();
             if (ImGui::Button(L("Overwrite"), buttonSize)) {
                 const int slot = m_slotConfirm;
@@ -1180,6 +1179,7 @@ void Overlay::drawSaveSlots() {
                 if (m_host.saveSlotSave)
                     m_host.saveSlotSave(slot);
             }
+            ImGui::SetItemDefaultFocus();
             ImGui::EndPopup();
         } else if (m_slotConfirm != 0 && m_slotCancel) {
             m_slotConfirm = 0;
