@@ -107,6 +107,15 @@ git pull --recurse-submodules
 
 ## Saves from PCSX2
 
+The installer does this for you: on its Options page, "Import my PCSX2 save"
+looks for your memory card in PCSX2's usual places (Flatpak, AppImage,
+EmuDeck, RetroDECK, the SD card) and ticks itself when it finds one. When it
+finds none, tick the option and choose your card, a `.ps2` file or a folder card.
+Both kinds work, with no conversion. A save already in `disc/mc0` is never
+replaced. (`--saves CARD` does the same from the command line.)
+
+By hand, for a game already installed:
+
 The memory card, `disc/mc0`, has the same layout as a PCSX2 folder memory
 card, so saves copy over as they are.
 

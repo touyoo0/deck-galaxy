@@ -13,6 +13,10 @@ The window speaks English, French, German, Spanish or Italian: Steam's language 
 (else the locale), and a list in the top right corner changes it. --lang CODE
 or RG_LANG=CODE forces one.
 
+Saves: a PCSX2 memory card with Rogue Galaxy saves (USA) is looked for in PCSX2's
+usual folders (Flatpak, AppImage, EmuDeck, RetroDECK, the SD card) and offered; --saves
+CARD (a .ps2 file or a folder card) names one. They are copied into disc/mc0, never over a save already there.
+
 For tests: --iso FILE, --dir FOLDER, --zip ARCHIVE (a release's source
 archive instead of the download), --no-steam, --start (skip the pages),
 --demo (the install page with a made-up build, nothing installed),
@@ -75,6 +79,8 @@ window { background: #04061a; color: #f2f3fc; }
 .good { color: #70de8e; }
 .warn { color: #f6b640; }
 .bad { color: #ff7b72; }
+.card.invalid { border-color: #ff5a4f; border-width: 2px; }
+.invalid-text, .invalid-text label { color: #ff7b72; }
 .card { background: rgba(8,12,42,0.74); border: 1px solid rgba(244,203,82,0.30); border-radius: 14px;
         padding: 6px 12px; box-shadow: 0 10px 34px rgba(0,0,0,0.5); }
 .tip-title { font-size: 12px; font-weight: 700; letter-spacing: 3px; color: #f4cb52; }
@@ -134,11 +140,9 @@ STRINGS = {
     # 1. the disc image
     "sec_disc": ("Your disc image", "Votre image disque", "Dein Disc-Image", "Tu imagen de disco",
                  "La tua immagine del disco"),
-    "disc_hint": ("USA release, serial SCUS-97490, an uncompressed .iso (about 7 GB).",
-                  "Version USA, numéro de série SCUS-97490, un .iso non compressé (environ 7 Go).",
-                  "US-Version, Seriennummer SCUS-97490, eine unkomprimierte .iso (etwa 7 GB).",
-                  "Versión USA, número de serie SCUS-97490, un .iso sin comprimir (unos 7 GB).",
-                  "Versione USA, seriale SCUS-97490, un .iso non compresso (circa 7 GB)."),
+    "disc_hint": ("USA, SCUS-97490, uncompressed .iso", "USA, SCUS-97490, .iso non compressé",
+                  "USA, SCUS-97490, unkomprimierte .iso", "USA, SCUS-97490, .iso sin comprimir",
+                  "USA, SCUS-97490, .iso non compresso"),
     "choose_iso": ("Choose the .iso...", "Choisir le .iso...", "Die .iso wählen...", "Elegir el .iso...",
                    "Scegli il .iso..."),
     "iso_dialog": ("Your Rogue Galaxy (USA) disc image", "Votre image disque de Rogue Galaxy (USA)",
@@ -216,6 +220,39 @@ STRINGS = {
                         "Disco europeo di Rogue Galaxy"),
     "european_none": ("No image chosen", "Aucune image choisie", "Kein Image gewählt", "Ninguna imagen elegida",
                       "Nessuna immagine scelta"),
+    "saves_check": ("Import my PCSX2 save of Rogue Galaxy",
+                    "Importer ma sauvegarde PCSX2 de Rogue Galaxy",
+                    "Meinen PCSX2-Spielstand von Rogue Galaxy importieren",
+                    "Importar mi partida guardada de PCSX2 de Rogue Galaxy",
+                    "Importa il mio salvataggio PCSX2 di Rogue Galaxy"),
+    "saves_found": ("Found: {name} ({n} saves), in {where}",
+                    "Trouvé : {name} ({n} sauvegardes), dans {where}",
+                    "Gefunden: {name} ({n} Spielstände), in {where}",
+                    "Encontrado: {name} ({n} partidas), en {where}",
+                    "Trovato: {name} ({n} salvataggi), in {where}"),
+    "saves_found_one": ("Found: {name} (1 save), in {where}", "Trouvé : {name} (1 sauvegarde), dans {where}",
+                        "Gefunden: {name} (1 Spielstand), in {where}", "Encontrado: {name} (1 partida), en {where}",
+                        "Trovato: {name} (1 salvataggio), in {where}"),
+    "saves_none": ("No save found on this Deck: choose your memory card yourself.",
+                   "Aucune sauvegarde trouvée sur ce Steam Deck : choisissez vous-même votre carte mémoire.",
+                   "Auf diesem Steam Deck wurde kein Spielstand gefunden: Wähle deine Memory Card selbst.",
+                   "No se encontró ninguna partida en esta Deck: elige tú mismo tu tarjeta de memoria.",
+                   "Nessun salvataggio trovato su questo Deck: scegli tu la memory card."),
+    "saves_bad": ("There is no Rogue Galaxy save (USA, SCUS-97490) in that.",
+                  "Il n'y a aucune sauvegarde de Rogue Galaxy (USA, SCUS-97490) là-dedans.",
+                  "Darin ist kein Rogue-Galaxy-Spielstand (USA, SCUS-97490).",
+                  "No hay ninguna partida de Rogue Galaxy (USA, SCUS-97490) ahí.",
+                  "Lì dentro non c'è nessun salvataggio di Rogue Galaxy (USA, SCUS-97490)."),
+    "saves_file": ("Choose a card file (.ps2)...", "Choisir un fichier de carte (.ps2)...",
+                   "Kartendatei wählen (.ps2)...", "Elegir un archivo de tarjeta (.ps2)...",
+                   "Scegli un file di card (.ps2)..."),
+    "saves_folder": ("Choose a card folder...", "Choisir un dossier de carte...", "Kartenordner wählen...",
+                     "Elegir una carpeta de tarjeta...", "Scegli una cartella di card..."),
+    "saves_file_dialog": ("PCSX2 memory card (.ps2)", "Carte mémoire PCSX2 (.ps2)", "PCSX2-Memory-Card (.ps2)",
+                          "Tarjeta de memoria de PCSX2 (.ps2)", "Memory card PCSX2 (.ps2)"),
+    "saves_folder_dialog": ("PCSX2 memory card folder", "Dossier de carte mémoire PCSX2",
+                            "PCSX2-Memory-Card-Ordner", "Carpeta de tarjeta de memoria de PCSX2",
+                            "Cartella della memory card PCSX2"),
     "ra_check": ("Earn the game's 130 achievements (RetroAchievements account)",
                  "Obtenir les 130 succès du jeu (compte RetroAchievements)",
                  "Die 130 Erfolge des Spiels freischalten (RetroAchievements-Konto)",
@@ -249,25 +286,6 @@ STRINGS = {
     "ra_auto": ("The game turns RetroAchievements on by itself.", "Le jeu active RetroAchievements tout seul.",
                 "Das Spiel aktiviert RetroAchievements automatisch.",
                 "El juego activa RetroAchievements por sí solo.", "Il gioco attiva RetroAchievements da solo."),
-    # the line under the cards
-    "miss_iso": ("a disc image (SCUS-97490)", "une image disque (SCUS-97490)", "ein Disc-Image (SCUS-97490)",
-                 "una imagen de disco (SCUS-97490)", "un'immagine del disco (SCUS-97490)"),
-    "miss_folder": ("a folder", "un dossier", "ein Ordner", "una carpeta", "una cartella"),
-    "miss_eu": ("the European disc (SCES-54552), or untick it", "le disque européen (SCES-54552), ou décochez-le",
-                "die europäische Disc (SCES-54552) oder das Häkchen entfernen",
-                "el disco europeo (SCES-54552), o desmárcalo",
-                "il disco europeo (SCES-54552), oppure deseleziona l'opzione"),
-    "miss_ra": ("the RetroAchievements sign-in, or untick it", "la connexion RetroAchievements, ou décochez-la",
-                "die RetroAchievements-Anmeldung oder das Häkchen entfernen",
-                "el inicio de sesión de RetroAchievements, o desmárcalo",
-                "l'accesso a RetroAchievements, oppure deseleziona l'opzione"),
-    "todo": ("Still to do: {items}.", "Reste à faire : {items}.", "Noch zu tun: {items}.", "Pendiente: {items}.",
-             "Ancora da fare: {items}."),
-    "ready": ("Ready: about {gb} GB and 10 to 30 minutes. Keep the Deck plugged in.",
-              "Prêt : environ {gb} Go et 10 à 30 minutes. Gardez le Steam Deck branché.",
-              "Bereit: etwa {gb} GB und 10 bis 30 Minuten. Lass das Steam Deck angeschlossen.",
-              "Listo: unos {gb} GB y de 10 a 30 minutos. Mantén la Steam Deck enchufada.",
-              "Pronto: circa {gb} GB e da 10 a 30 minuti. Tieni lo Steam Deck collegato all'alimentazione."),
     # the install page
     "install": ("Install", "Installer", "Installieren", "Instalar", "Installa"),
     "installing": ("Installing", "Installation en cours", "Installation läuft", "Instalando",
@@ -366,6 +384,9 @@ STRINGS = {
                      "La compilazione non è riuscita: {why}\nRieseguendo questo installatore si riprende da dove si era interrotto. Il registro completo è in build/setup.log."),
     "adding_extra": ("Adding the {label}", "Ajout : {label}", "{label} werden hinzugefügt",
                      "Añadiendo: {label}", "Aggiunta: {label}"),
+    "adding_saves": ("Importing your PCSX2 saves", "Import de vos sauvegardes PCSX2",
+                     "Deine PCSX2-Spielstände werden importiert", "Importando tus partidas de PCSX2",
+                     "Importazione dei tuoi salvataggi PCSX2"),
     "extra_japanese": ("Japanese voices and movies", "voix et films japonais", "Japanische Stimmen und Videos",
                        "voces y películas japonesas", "voci e filmati giapponesi"),
     "extra_european": ("European texts", "textes européens", "Europäische Texte", "textos europeos",
@@ -697,6 +718,150 @@ def ra_sign_in(user: str, password: str):
     return True, lambda: tr("ra_signed_as", user=name)
 
 
+# ---------------------------------------------------------------- PCSX2 saves
+
+SAVE_PREFIX = "BASCUS-97490"  # the USA release's save folders: BASCUS-97490LV5RG_00, _01...
+
+
+def card_roots() -> list[Path]:
+    """Where PCSX2 (Flatpak, AppImage, EmuDeck, RetroDECK) keeps its memory cards on a Deck."""
+    home = Path.home()
+    roots = [home / ".var/app/net.pcsx2.PCSX2/config/PCSX2/memcards", home / ".config/PCSX2/memcards",
+             home / "Documents/PCSX2/memcards", home / ".local/share/PCSX2/memcards",
+             home / "Emulation/saves/pcsx2/saves", home / "Emulation/saves/pcsx2/memcards",
+             home / "retrodeck/saves/PS2/pcsx2/memcards", home / "retrodeck/saves/ps2/memcards"]
+    for card in Path("/run/media").glob("*/*"):  # the SD card
+        roots += [card / "Emulation/saves/pcsx2/saves", card / "Emulation/saves/pcsx2/memcards",
+                  card / "retrodeck/saves/PS2/pcsx2/memcards"]
+    return roots
+
+
+def ps2_card_saves(path: Path) -> dict[str, dict[str, bytes]]:
+    """The Rogue Galaxy saves of a raw PCSX2 memory card (a .ps2 file): folder name -> {file name: bytes}.
+    Reads the card's own file system: superblock, FAT, directory entries."""
+    data = path.read_bytes()
+    if data[:28] != b"Sony PS2 Memory Card Format ":
+        raise ValueError("not a PS2 memory card")
+    page, per_cluster, _blk, _ = struct.unpack_from("<4H", data, 0x28)
+    clusters, alloc_offset, _alloc_end, root = struct.unpack_from("<4I", data, 0x30)
+    stride = page + 16 if len(data) >= clusters * per_cluster * (page + 16) else page  # with or without ECC
+    size = page * per_cluster
+
+    def cluster(n: int) -> bytes:
+        return b"".join(data[(n * per_cluster + i) * stride:(n * per_cluster + i) * stride + page]
+                        for i in range(per_cluster))
+
+    per = size // 4
+    fat_clusters: list[int] = []
+    for indirect in struct.unpack_from("<32I", data, 0x50):
+        if indirect != 0xFFFFFFFF and indirect < clusters:
+            fat_clusters += [c for c in struct.unpack(f"<{per}I", cluster(indirect)) if c < clusters]
+    fat: list[int] = []
+    for fc in fat_clusters:
+        fat += struct.unpack(f"<{per}I", cluster(fc))
+
+    def chain(first: int) -> bytes:
+        out, seen, c = [], set(), first
+        while c not in seen and c < len(fat):
+            seen.add(c)
+            out.append(cluster(alloc_offset + c))
+            nxt = fat[c]
+            if nxt == 0xFFFFFFFF or not nxt & 0x80000000:
+                break
+            c = nxt & 0x7FFFFFFF
+        return b"".join(out)
+
+    def entries(first: int) -> list[tuple[int, int, int, str]]:
+        raw = chain(first)
+        count = struct.unpack_from("<I", raw, 4)[0]
+        found = []
+        for i in range(min(count, len(raw) // 512)):
+            mode, length, start = struct.unpack_from("<HxxI8xI", raw, i * 512)
+            name = raw[i * 512 + 0x40:i * 512 + 0x60].split(b"\0")[0].decode("ascii", "replace")
+            if mode & 0x8000:
+                found.append((mode, length, start, name))
+        return found
+
+    saves: dict[str, dict[str, bytes]] = {}
+    for mode, _length, start, name in entries(root):
+        if not (mode & 0x20 and name.startswith(SAVE_PREFIX)):  # 0x20 a directory, 0x10 a file
+            continue
+        files = {}
+        for fmode, flen, fstart, fname in entries(start):
+            if fmode & 0x10 and fname not in (".", ".."):
+                files[fname] = chain(fstart)[:flen]
+        saves[name] = files
+    return saves
+
+
+def folder_card_saves(path: Path) -> list[Path]:
+    """The Rogue Galaxy save folders of a PCSX2 folder memory card (or of a plain folder holding them)."""
+    try:
+        return sorted(d for d in path.iterdir() if d.is_dir() and d.name.startswith(SAVE_PREFIX))
+    except OSError:
+        return []
+
+
+def list_saves(path: Path) -> list[str]:
+    """The names of the saves in a card (file or folder); an empty list when there is none (or it is no card)."""
+    try:
+        if path.is_dir():
+            return [d.name for d in folder_card_saves(path)]
+        return sorted(ps2_card_saves(path))
+    except (OSError, ValueError, struct.error):
+        return []
+
+
+def find_cards() -> list[Path]:
+    """The cards PCSX2 left on this Deck that hold a Rogue Galaxy save, the most recently saved first."""
+    found: list[tuple[float, Path]] = []
+    for root in card_roots():
+        try:
+            children = sorted(root.iterdir())
+        except OSError:
+            continue
+        for card in children:
+            if card.is_file() and card.suffix.lower() != ".ps2":
+                continue
+            if not list_saves(card):
+                continue
+            try:
+                if card.is_dir():
+                    when = max(d.stat().st_mtime for d in folder_card_saves(card))
+                else:
+                    when = card.stat().st_mtime
+            except OSError:
+                when = 0.0
+            found.append((when, card))
+    found.sort(key=lambda item: item[0], reverse=True)
+    return [card for _, card in found]
+
+
+def import_saves(source: Path, mc0: Path) -> tuple[list[str], list[str]]:
+    """Copy the card's Rogue Galaxy saves into the game's memory card folder. A save already there is never
+    replaced. Returns (copied, kept) names."""
+    copied, kept = [], []
+    mc0.mkdir(parents=True, exist_ok=True)
+    if source.is_dir():
+        wanted = {d.name: d for d in folder_card_saves(source)}
+        for name, folder in wanted.items():
+            if (mc0 / name).exists():
+                kept.append(name)
+            else:
+                shutil.copytree(folder, mc0 / name)
+                copied.append(name)
+    else:
+        for name, files in ps2_card_saves(source).items():
+            if (mc0 / name).exists():
+                kept.append(name)
+                continue
+            (mc0 / name).mkdir()
+            for fname, blob in files.items():
+                (mc0 / name / fname).write_bytes(blob)
+            copied.append(name)
+    return copied, kept
+
+
 class KeepAwake:
     """No sleep and no dimming while it is held (an install takes 10 to 30 minutes). Three inhibitors:
     systemd's (a systemd-inhibit that lasts as long as its stdin stays open, so it also ends if this
@@ -819,6 +984,7 @@ class Job(threading.Thread):
             self.fetch()
             self.build()
             self.extras()
+            self.saves()
             self.steam()
         except Cancelled:
             self.killed.wait(90)
@@ -1063,6 +1229,19 @@ class Job(threading.Thread):
                 self.log(f"The {label} could not be added; the game works without them.")
 
     # -- 4. Steam
+    # -- 3b. the player's PCSX2 saves
+    def saves(self) -> None:
+        if not self.cfg.saves:
+            return
+        self.say(tr("adding_saves"), 0.97)
+        try:
+            copied, kept = import_saves(Path(self.cfg.saves), Path(self.cfg.dir) / "disc" / "mc0")
+        except Exception as error:  # the game works without them
+            self.log(f"The saves could not be imported: {error}")
+            return
+        self.log(f"Imported {len(copied)} save(s): {', '.join(copied) or 'none'}."
+                 + (f" Kept the ones already there: {', '.join(kept)}." if kept else ""))
+
     def in_steam(self, script: Path) -> bool:
         """Whether some Steam account already has this script as a non-Steam game."""
         for vdf in (Path.home() / ".local/share/Steam/userdata").glob("*/config/shortcuts.vdf"):
@@ -1588,7 +1767,8 @@ class Window(Gtk.ApplicationWindow):
             GLib.timeout_add(700, self.shoot, "setup")
             if cfg.tour:
                 GLib.timeout_add(1500, self.tour_european)
-                GLib.timeout_add(3000, self.tour_install)
+                GLib.timeout_add(2400, self.tour_missing)
+                GLib.timeout_add(4000, self.tour_install)
         if cfg.start or cfg.demo:
             GLib.idle_add(self.begin)
         if cfg.test_cancel:  # a test: cancel as the dialog's second button would
@@ -1700,16 +1880,18 @@ class Window(Gtk.ApplicationWindow):
         page.append(Gtk.Box(hexpand=True))
         return page
 
+    tried = False  # Install was pressed with something missing
+
     def build_setup(self) -> Gtk.Widget:
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6,
-                          margin_top=6, margin_bottom=2, margin_start=56, margin_end=24)
-        content.append(self.header("header_sub"))
+                          margin_top=44, margin_bottom=2, margin_start=56, margin_end=24)
 
         # 1. the disc image: the button in the heading, the hint says what was chosen
         choose = Gtk.Button()
         self.live(choose, lambda: tr("choose_iso"))
         choose.connect("clicked", lambda *_: self.pick_file(self.set_iso, tr("iso_dialog")))
         card = self.section(1, "sec_disc", "disc_hint", choose)
+        self.disc_card = card
         self.iso_label = card.note
         self.iso_state = Gtk.Label(label="", xalign=0, wrap=True, max_width_chars=58, visible=False)
         card.append(self.iso_state)
@@ -1722,6 +1904,7 @@ class Window(Gtk.ApplicationWindow):
         self.live(other, lambda: tr("other_folder"))
         other.connect("clicked", lambda *_: self.pick_folder(self.set_folder))
         card = self.section(2, "sec_where", "where_hint", other)
+        self.where_card = card
         self.where_buttons: list[tuple[Gtk.CheckButton, Path]] = []
         group = None
         for code, path in storage_choices():
@@ -1768,6 +1951,30 @@ class Window(Gtk.ApplicationWindow):
         row.append(self.european_label)
         self.european_reveal = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
                                             child=row, reveal_child=self.european_check.get_active())
+        # The PCSX2 save: found by itself, else chosen by hand (a .ps2 card file or a folder card)
+        self.saves_check = Gtk.CheckButton()
+        self.live(self.saves_check, lambda: tr("saves_check"))
+        self.saves_check.set_active(bool(self.cfg.saves))
+        self.saves_check.connect("toggled", lambda *_: self.on_saves_toggled())
+        self.saves_problem = None if self.cfg.saves else "saves_none"
+        self.saves_names = list_saves(self.cfg.saves) if self.cfg.saves else []
+        pick_file = Gtk.Button()
+        self.live(pick_file, lambda: tr("saves_file"))
+        pick_file.connect("clicked", lambda *_: self.pick_file(self.set_saves, tr("saves_file_dialog")))
+        pick_dir = Gtk.Button()
+        self.live(pick_dir, lambda: tr("saves_folder"))
+        pick_dir.connect("clicked", lambda *_: self.pick_folder(self.set_saves, tr("saves_folder_dialog")))
+        buttons = Gtk.Box(spacing=12)
+        buttons.append(pick_file)
+        buttons.append(pick_dir)
+        self.saves_label = Gtk.Label(label="", xalign=0, wrap=True, max_width_chars=58)
+        self.live(self.saves_label, self.saves_text)
+        self.saves_label.add_css_class("muted")
+        saves_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, margin_start=28)
+        saves_box.append(self.saves_label)
+        saves_box.append(buttons)
+        self.saves_reveal = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
+                                         child=saves_box, reveal_child=self.saves_check.get_active())
         # The achievements: ticking it shows the sign-in fields (RetroAchievements account).
         self.ra_done = RA_LOGIN.exists()
         self.ra_check = Gtk.CheckButton()
@@ -1797,21 +2004,18 @@ class Window(Gtk.ApplicationWindow):
         card.append(self.steam_check)
         card.append(self.european_check)
         card.append(self.european_reveal)
+        card.append(self.saves_check)
+        card.append(self.saves_reveal)
         card.append(self.ra_check)
         card.append(self.ra_reveal)
         content.append(card)
-
-        # What is still to do, a line under the cards (the button stays alone, centred, below)
-        self.summary = Gtk.Label(label="", xalign=0, wrap=True, max_width_chars=70, halign=Gtk.Align.START)
-        self.summary.add_css_class("pill")
-        content.append(self.summary)
 
         scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True, child=content)
         bar = Gtk.Box(margin_top=4, margin_bottom=12, halign=Gtk.Align.CENTER)  # the button, centred in the window
         self.install_button = Gtk.Button(halign=Gtk.Align.CENTER)
         self.live(self.install_button, lambda: tr("install"))
         self.install_button.add_css_class("suggested-action")
-        self.install_button.connect("clicked", lambda *_: self.begin())
+        self.install_button.connect("clicked", lambda *_: self.on_install())
         bar.append(self.install_button)
         left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=False, width_request=720)
         left.append(scroll)
@@ -1949,8 +2153,8 @@ class Window(Gtk.ApplicationWindow):
         dialog = Gtk.FileDialog(title=title)
         dialog.open(self, None, lambda d, r: self.picked(d, r, callback, False))
 
-    def pick_folder(self, callback) -> None:
-        dialog = Gtk.FileDialog(title=tr("folder_dialog"))
+    def pick_folder(self, callback, title: str | None = None) -> None:
+        dialog = Gtk.FileDialog(title=title or tr("folder_dialog"))
         dialog.select_folder(self, None, lambda d, r: self.picked(d, r, callback, True))
 
     def picked(self, dialog, result, callback, folder: bool) -> None:
@@ -1996,6 +2200,28 @@ class Window(Gtk.ApplicationWindow):
         self.european_reveal.set_reveal_child(self.european_check.get_active())
         self.update_buttons()
 
+    def saves_text(self) -> str:
+        if self.cfg.saves:
+            where = self.cfg.saves.parent
+            return tr("saves_found" if len(self.saves_names) != 1 else "saves_found_one", name=self.cfg.saves.name, n=len(self.saves_names), where=where)
+        return tr(self.saves_problem or "saves_none")
+
+    def set_saves(self, path: Path) -> None:
+        names = list_saves(path)
+        self.cfg.saves = path if names else None
+        self.saves_names = names
+        self.saves_problem = None if names else "saves_bad"
+        self.live(self.saves_label, self.saves_text)
+        for name in ("good", "bad", "muted"):
+            self.saves_label.remove_css_class(name)
+        self.saves_label.add_css_class("good" if names else "bad")
+        self.saves_check.set_active(True)  # a bad pick keeps the line, and its reason, in view
+        self.update_buttons()
+
+    def on_saves_toggled(self) -> None:
+        self.saves_reveal.set_reveal_child(self.saves_check.get_active())
+        self.update_buttons()
+
     # -- what is chosen
     def chosen_dir(self) -> Path | None:
         if self.custom_dir and not any(b.get_active() for b, _ in self.where_buttons):
@@ -2005,18 +2231,39 @@ class Window(Gtk.ApplicationWindow):
                 return path
         return None
 
-    def update_buttons(self) -> None:
-        missing = []
+    def problems(self) -> list[Gtk.Widget]:
+        """What is not filled in yet: the cards and options to show in red."""
+        found = []
         if self.cfg.iso is None and not self.cfg.dir_ready:
-            missing.append(tr("miss_iso"))
+            found.append(self.disc_card)
         if self.chosen_dir() is None and not self.cfg.dir:
-            missing.append(tr("miss_folder"))
+            found.append(self.where_card)
         if self.european_check.get_active() and self.cfg.european is None:
-            missing.append(tr("miss_eu"))
+            found += [self.european_check, self.european_label]
+        if self.saves_check.get_active() and not self.cfg.saves:
+            found += [self.saves_check, self.saves_label]
         if self.ra_check.get_active() and not self.ra_done:
-            missing.append(tr("miss_ra"))
-        self.install_button.set_sensitive(not missing)
-        self.summary.set_text(tr("todo", items=", ".join(missing)) if missing else tr("ready", gb=NEED_GB))
+            found += [self.ra_check, self.ra_state]
+        return found
+
+    def update_buttons(self) -> None:
+        """After Install was pressed once with something missing, the red marks follow what is filled in."""
+        if self.tried:
+            self.mark(self.problems())
+
+    def mark(self, found: list[Gtk.Widget]) -> None:
+        for widget in (self.disc_card, self.where_card, self.european_check, self.european_label,
+                       self.saves_check, self.saves_label, self.ra_check, self.ra_state):
+            on = widget in found
+            for name in (("invalid",) if widget in (self.disc_card, self.where_card) else ("invalid-text",)):
+                (widget.add_css_class if on else widget.remove_css_class)(name)
+
+    def on_install(self) -> None:
+        found = self.problems()
+        self.tried = True
+        self.mark(found)
+        if not found:
+            self.begin()
 
     def begin(self) -> None:
         self.cfg.dir = self.cfg.dir or self.chosen_dir()
@@ -2024,6 +2271,8 @@ class Window(Gtk.ApplicationWindow):
             self.cfg.steam = self.steam_check.get_active()
         if not self.european_check.get_active():
             self.cfg.european = None
+        if not self.saves_check.get_active():
+            self.cfg.saves = None
         self.stack.set_visible_child_name("install")
         self.language_box.set_visible(False)  # the progress lines are written in the language chosen now
         self.pulse_id = GLib.timeout_add(120, self.pulse)
@@ -2139,6 +2388,11 @@ class Window(Gtk.ApplicationWindow):
         GLib.timeout_add(700, self.shoot, "setup-european")
         return False
 
+    def tour_missing(self) -> bool:
+        self.on_install()  # nothing is filled in: the red marks
+        GLib.timeout_add(500, self.shoot, "setup-missing")
+        return False
+
     def tour_install(self) -> bool:
         self.stack.set_visible_child_name("install")
         GLib.timeout_add(500, self.shoot, "install")
@@ -2176,6 +2430,8 @@ def main() -> int:
     ap.add_argument("--zip", type=Path)
     ap.add_argument("--japanese", type=Path)
     ap.add_argument("--european", type=Path)
+    ap.add_argument("--saves", type=Path, help="a PCSX2 memory card (.ps2 file or folder) to import; "
+                    "else the Deck is searched for one")
     ap.add_argument("--no-steam", dest="steam", action="store_false")
     ap.add_argument("--demo", action="store_true", help="show the install page with a made-up build (nothing is installed)")
     ap.add_argument("--start", action="store_true", help="skip the pages and install now (needs --dir)")
@@ -2188,6 +2444,11 @@ def main() -> int:
     if cfg.start and not cfg.dir:
         ap.error("--start needs --dir")
     set_language(cfg.lang or detect_language())
+    if cfg.saves and not list_saves(cfg.saves):
+        ap.error(f"no Rogue Galaxy save in {cfg.saves}")
+    if cfg.saves is None and not cfg.start:
+        cards = find_cards()  # PCSX2's own folders: the most recent card with a save
+        cfg.saves = cards[0] if cards else None
     # An already extracted disc in the folder needs no image.
     cfg.dir_ready = bool(cfg.dir and (cfg.dir / "disc" / "manifest.json").exists())
     return App(cfg).run([sys.argv[0]])

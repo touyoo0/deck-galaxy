@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The installer can import your PCSX2 save of the game: it looks for your memory card by itself (PCSX2, EmuDeck, RetroDECK, SD card), and you can choose a card file or folder by hand when it finds none.
+
 ### Changed
 
 - No button or key combination is left: View + Menu (Back + Start) no longer
