@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The home screen makes soft sounds: a light tick when the selection moves, a tap when a button is pressed, and a warm chord when Play starts the game. They follow the volume setting.
+
 ### Changed
 
 - No button or key combination is left: View + Menu (Back + Start) no longer
