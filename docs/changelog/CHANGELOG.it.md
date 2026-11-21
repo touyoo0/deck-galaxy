@@ -5,6 +5,21 @@ mostra in questa lingua. I titoli (`## versione - data`) restano come in
 `CHANGELOG.md`: sono loro a collegare una versione alla sua traduzione. Una
 versione che manca in questo file viene mostrata in inglese.
 
+## 0.12.0 - 2026-11-22
+
+- L'installer può importare il tuo salvataggio PCSX2 del gioco: cerca da solo la tua memory card (PCSX2, EmuDeck, RetroDECK, scheda SD), e puoi scegliere un file o una cartella a mano se non ne trova.
+- I loghi all'avvio si saltano con un pulsante (A, B, X, Y o Start), anche al primo avvio.
+- Il «Premi A» della schermata di caricamento compare appena il gioco è caricato, non dopo tutto il testo della storia.
+- La schermata iniziale fa suoni lievi: un leggero tic quando si muove la selezione, un tocco quando si preme un pulsante e un accordo caldo quando Gioca avvia il gioco.
+- Una nuova partita inizia con la rotazione della camera su «Invertita»; i salvataggi esistenti mantengono la loro scelta.
+- Niente più combinazioni di pulsanti: L4 (F1) apre il menu. Strumenti per sviluppatori rimossi.
+- Renderer nativo, più leggero sul Deck: 60 fps stabili, circa 4 W in meno. Parte a 2x. I pacchetti di texture per ora non vengono disegnati.
+- Niente opzione «Schermo intero» né F11: il gioco è sempre a schermo intero sul Deck.
+- I caricamenti rapidi mantengono la musica, le battaglie e le texture, anche dopo aver riavviato il gioco.
+- I caricamenti rapidi fatti mentre si vedono le ricompense della battaglia non perdono più le texture dello scenario (fai un nuovo salvataggio rapido: i vecchi mantengono il problema).
+- Continua carica il tuo ultimo salvataggio rapido, non il punto in cui hai lasciato il gioco.
+- Sovrascrivere un salvataggio rapido: la domanda parte da Sovrascrivi, non da Annulla.
+
 ## 0.11.0 - 2026-11-19
 
 - Continua: la schermata iniziale riprende da dove hai lasciato il gioco.
@@ -20,8 +35,3 @@ versione che manca in questo file viene mostrata in inglese.
 ## 0.10.0 - 2026-11-18
 
 - Installer, schermata iniziale e impostazioni in inglese, francese, tedesco, spagnolo e italiano.
-
-## 0.9.0 - 2026-11-18
-
-- Pulsante Opzioni nella schermata iniziale.
-- Opzioni senza senso sul Deck rimosse.
