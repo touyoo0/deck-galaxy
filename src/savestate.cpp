@@ -534,6 +534,13 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
     done = true;
 }
 
+// Continue's load waits for the boot (requestAutoLoad) up to this long, and
+// the vblanks the guest runs first (1.5 s).
+constexpr auto kBootWait = std::chrono::seconds(20);
+constexpr uint64_t kBootTicks = 90;
+// Until when Continue's load may be asked again.
+std::chrono::steady_clock::time_point g_autoLoadDeadline{};
+
 void doLoad(PS2Runtime &runtime, int slot, bool &done)
 {
     done = true;
@@ -613,6 +620,15 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
     {
         // The scheduler's part is read before anything changes, the memory's
         // is not: a failure here may have left the machine half loaded.
+        // Continue loads while the game boots, which plays its logos as movies:
+        // the load asks again until the movie ends (it refused before it
+        // touched anything).
+        if (slot == kAutoSlot && std::strstr(error.what(), "movie") &&
+            std::chrono::steady_clock::now() < g_autoLoadDeadline)
+        {
+            done = false;
+            return;
+        }
         say(std::string("Load failed: ") + error.what());
         return;
     }
@@ -698,9 +714,28 @@ bool autoSaveBlocking(PS2Runtime &runtime, int timeoutMs)
 
 void requestAutoLoad(PS2Runtime &runtime)
 {
+    // Continue is pressed on the home screen, with the guest not yet run: the
+    // host's side of the boot (the sound driver on the IOP and its audio
+    // stream, the RPC tables, the game's pad ports) does not exist, and a
+    // state cannot bring it (it is not in it). The game boots first, as for
+    // Play, and the state loads once it has opened its pad: no sound and
+    // broken textures otherwise.
+    const auto started = std::chrono::steady_clock::now();
+    g_autoLoadDeadline = started + kBootWait;
+    const uint64_t firstTick = runtime.eeScheduler().currentVSyncTick();
+    auto lastTry = std::make_shared<std::chrono::steady_clock::time_point>();
     runtime.eeScheduler().requestExecutorTask(
-        [&runtime]
+        [&runtime, started, firstTick, lastTry]
         {
+            const auto now = std::chrono::steady_clock::now();
+            const bool booted = runtime.eeScheduler().currentVSyncTick() >= firstTick + kBootTicks &&
+                                ps2_stubs::getPadDebugSnapshot().ports[0][0].open;
+            if (!booted && now - started < kBootWait)
+                return false;
+            // A refused load asks again; not every pass.
+            if (*lastTry != std::chrono::steady_clock::time_point{} && now - *lastTry < std::chrono::milliseconds(200))
+                return false;
+            *lastTry = now;
             bool done = true;
             doLoad(runtime, kAutoSlot, done);
             return done;
@@ -841,6 +876,8 @@ void install(PS2Runtime &runtime)
                 std::fprintf(stderr, "[savestate] script: %s slot %d\n", step.save ? "save" : "load", step.slot);
                 if (step.save)
                     requestSave(runtime, step.slot);
+                else if (step.slot == kAutoSlot)
+                    requestAutoLoad(runtime); // Continue's state, as the home screen loads it
                 else
                     requestLoad(runtime, step.slot);
             }
