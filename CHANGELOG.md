@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A new game starts with the camera rotation on "Reversed"; existing saves keep their own choice.
 - No more button combinations: L4 (F1) opens the menu. Developer tools removed.
 - Native renderer, lighter on the Deck: steady 60 fps, about 4 W less. Starts at 2x. Texture packs are not drawn for now.
 - No "Fullscreen" option or F11: the game is always fullscreen on the Deck.
