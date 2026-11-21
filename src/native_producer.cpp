@@ -2760,9 +2760,14 @@ void saveState(ps2_savestate::Writer &out)
 
     // Textures: the ones GS memory still holds (the others are made again
     // when uploaded), with their contents.
+    // Also the ones an upload still waiting to be taken names (saveProduced).
+    std::set<native::Id> pending;
+    for (const State::Produced &p : s.produced)
+        if (!p.palette)
+            pending.insert(p.id);
     std::vector<native::Id> textures;
     for (const auto &[id, kept] : s.texels)
-        if (kept.data && s.textureKeys.count(id) && textureNamed(s, id))
+        if (kept.data && s.textureKeys.count(id) && (textureNamed(s, id) || pending.count(id)))
             textures.push_back(id);
     std::sort(textures.begin(), textures.end());
     out.put<uint32_t>(static_cast<uint32_t>(textures.size()));
@@ -3142,6 +3147,76 @@ void saveFills(ps2_savestate::Writer &out)
     }
 }
 
+// The uploads the game thread has made that the VIF1 thread has not taken
+// yet (takeProduced): the game thread's tables run ahead of the stream, and a
+// texture it uploaded a moment before the save is taken only when the stream
+// reaches its transfer, after the load. Without them the stream's tables keep
+// the texture that was there before (another format, often), and the draws
+// that sample the new one find nothing (a grey floor under the battle's
+// rewards).
+void saveProduced(ps2_savestate::Writer &out)
+{
+    out.tag(ps2_savestate::makeTag('P', 'R', 'D', '1'));
+    if (!native::enabled())
+    {
+        out.put<uint32_t>(0u);
+        return;
+    }
+    State &s = state();
+    std::lock_guard lock(s.mutex);
+    std::vector<const State::Produced *> kept;
+    for (const State::Produced &p : s.produced)
+    {
+        const bool held = p.palette ? s.paletteColors.count(p.id) != 0u
+                                    : (s.textureKeys.count(p.id) != 0u && s.texels.count(p.id) != 0u &&
+                                       s.texels[p.id].data != nullptr);
+        if (held)
+            kept.push_back(&p);
+    }
+    out.put<uint32_t>(static_cast<uint32_t>(kept.size()));
+    for (const State::Produced *p : kept)
+    {
+        out.put<uint32_t>(p->dbp);
+        out.put<uint32_t>(p->dbw);
+        out.put<uint32_t>(p->dpsm);
+        out.put<uint32_t>(p->width);
+        out.put<uint32_t>(p->height);
+        out.put<uint8_t>(p->palette ? 1u : 0u);
+        out.put<uint32_t>(p->key);
+        out.put<uint32_t>(p->psm);
+        out.put<uint32_t>(p->id);
+        out.put<uint64_t>(p->hash);
+        out.put<uint32_t>(p->bytes);
+    }
+}
+
+void loadProduced(ps2_savestate::Reader &in)
+{
+    in.expectTag(ps2_savestate::makeTag('P', 'R', 'D', '1'));
+    std::deque<State::Produced> produced;
+    for (uint32_t i = 0, n = getCount(in, 8192u); i < n; ++i)
+    {
+        State::Produced p;
+        p.dbp = in.get<uint32_t>();
+        p.dbw = in.get<uint32_t>();
+        p.dpsm = in.get<uint32_t>();
+        p.width = in.get<uint32_t>();
+        p.height = in.get<uint32_t>();
+        p.palette = in.get<uint8_t>() != 0u;
+        p.key = in.get<uint32_t>();
+        p.psm = in.get<uint32_t>();
+        p.id = in.get<uint32_t>();
+        p.hash = in.get<uint64_t>();
+        p.bytes = in.get<uint32_t>();
+        produced.push_back(p);
+    }
+    if (!native::enabled())
+        return;
+    State &s = state();
+    std::lock_guard lock(s.mutex);
+    s.produced = std::move(produced);
+}
+
 void loadFills(ps2_savestate::Reader &in)
 {
     in.expectTag(ps2_savestate::makeTag('T', 'G', 'F', '1'));
@@ -3209,6 +3284,12 @@ void saveFills(ps2_savestate::Writer &out) { out.tag(ps2_savestate::makeTag('T',
 void loadFills(ps2_savestate::Reader &in)
 {
     in.expectTag(ps2_savestate::makeTag('T', 'G', 'F', '1'));
+    in.get<uint32_t>();
+}
+void saveProduced(ps2_savestate::Writer &out) { out.tag(ps2_savestate::makeTag('P', 'R', 'D', '1')); out.put<uint32_t>(0u); }
+void loadProduced(ps2_savestate::Reader &in)
+{
+    in.expectTag(ps2_savestate::makeTag('P', 'R', 'D', '1'));
     in.get<uint32_t>();
 }
 } // namespace rg::nativeproducer

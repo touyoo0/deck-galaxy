@@ -2689,3 +2689,15 @@ it; the user's play profile is the better read.
 - PCSX2 [GameIndex.yaml](https://github.com/PCSX2/pcsx2/blob/master/bin/resources/GameIndex.yaml)
   and [pcsx2_patches](https://github.com/PCSX2/pcsx2_patches)
   (`SCUS-97490_0643F90C.pnach`).
+
+## Quick load at the battle rewards: grey scenery (2026-11-22)
+
+A state saved with the rewards window open loaded with a grey, flat floor.
+Loaded, 7920 draws a period missed their texture ("another format there":
+the stream's `residentTexture` held a 4-bit texture at 0x2c80, 0x2d40, 0x2ba0
+and 0x2bc0 where the draws read 8 bits); the live run before the save missed
+none. The state held 435 entries of `produced` (uploads the game thread had
+made, not yet taken by the VIF1 thread), which a load cleared: the transfers
+that would have taken them were already in RAM's packets. Fix: they go in the
+state (trailer `PRD1`, with the textures they name). Checked on the Deck by
+a save and a load at the rewards, in the same run and after a restart.

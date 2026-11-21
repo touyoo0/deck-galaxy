@@ -469,6 +469,7 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
         rg::drawstate::saveState(out);
         rg::timing::saveState(out);
         rg::nativeproducer::saveFills(out);
+        rg::nativeproducer::saveProduced(out);
     }
     if (!taken)
     {
@@ -604,7 +605,12 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
                     {
                         rg::timing::loadState(in);
                         if (in.remaining() >= sizeof(uint32_t))
+                        {
                             rg::nativeproducer::loadFills(in);
+                            // The uploads not yet taken (a state from before has none).
+                            if (in.remaining() >= sizeof(uint32_t))
+                                rg::nativeproducer::loadProduced(in);
+                        }
                     }
                 }
             }
