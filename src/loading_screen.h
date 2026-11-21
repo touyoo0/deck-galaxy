@@ -12,9 +12,13 @@ class PS2Runtime;
 // flip waits one vblank, it ran at twice its speed; while it is up the flip
 // waits two again (rg::timing::beforeFlip), as for the movies.
 //
+// "Press X" is drawn once every line is shown, and the game loads in a few
+// seconds, well before the lines' slow fade-in is done: as soon as the game
+// has loaded (the screen's state 5), the lines left are shown at once, so
+// the button comes up with the loaded game.
+//
 // The instant recap (the menu's game option `instant_loading_recap`, or
-// RG_INSTANT_RECAP=1) shows every line at once: "Press X" comes as soon as
-// the game has loaded.
+// RG_INSTANT_RECAP=1) shows every line at once from the start.
 namespace rg::loading
 {
 
