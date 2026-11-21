@@ -8,7 +8,9 @@ class PS2Runtime;
 // The title overlay's TitleOpeningMovieTick (0x4EBAF0) lets a button
 // (Triangle, Cross, Square, Circle or Start) fade it out once it has run six
 // frames, but only after it has been seen once (0x481B90, set when it ends):
-// at boot it always plays whole. The skip (the menu's game option
+// at boot it always plays whole. A press of one of those buttons marks it
+// seen, so the game's own fade takes it to the title screen at the first
+// boot too (after its first six frames). The automatic skip (the menu's game option
 // `skip_opening`, or RG_SKIP_OPENING=1) marks it seen and answers the tick's
 // first button check with a press, so the game's own fade takes it to the
 // title screen.

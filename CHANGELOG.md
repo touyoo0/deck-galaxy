@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The logos at boot can be skipped with a button (A, B, X, Y or Start), also at the first launch.
 - The loading screen's "Press A" comes up as soon as the game has loaded, not after the whole story text.
 - The home screen makes soft sounds: a light tick when the selection moves, a tap when a button is pressed, and a warm chord when Play starts the game.
 - A new game starts with the camera rotation on "Reversed"; existing saves keep their own choice.
