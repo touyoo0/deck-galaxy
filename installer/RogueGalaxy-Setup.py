@@ -76,6 +76,10 @@ window { background: #04061a; color: #f2f3fc; }
 .badge { background-image: linear-gradient(#ffdf7a, #f0a82a); color: #1a1500; font-weight: 800;
          border-radius: 15px; min-width: 30px; min-height: 30px;
          box-shadow: 0 0 14px rgba(244,203,82,0.6); }
+.step { font-size: 12px; font-weight: 700; color: #6f7aa8; padding: 2px 10px; border-radius: 10px; }
+.step-on { color: #1a1500; background-image: linear-gradient(#ffdf7a, #f0a82a); }
+.step-done { color: #f4cb52; }
+.recap { font-size: 15px; color: #e6e9fa; }
 .good { color: #70de8e; }
 .warn { color: #f6b640; }
 .bad { color: #ff7b72; }
@@ -461,6 +465,11 @@ STRINGS = {
                     "Mach das Spiel zu deinem: Begegnungsrate, Erfahrung, Geld, Beute, Ladenpreise, Kameraabstand, Sichtfeld...",
                     "Un juego a tu medida: frecuencia de combates, experiencia, dinero, botín, precios, distancia de cámara, campo de visión...",
                     "Un gioco su misura: frequenza degli scontri, esperienza, denaro, bottino, prezzi, distanza della camera, campo visivo..."),
+    "tip_achievements_on": ("Your RetroAchievements account is connected: the 130 achievements are on from the first launch.",
+                            "Votre compte RetroAchievements est connecté : les 130 succès sont actifs dès le premier lancement.",
+                            "Dein RetroAchievements-Konto ist verbunden: Die 130 Erfolge sind ab dem ersten Start aktiv.",
+                            "Tu cuenta de RetroAchievements está conectada: los 130 logros estarán activos desde el primer inicio.",
+                            "Il tuo account RetroAchievements è collegato: i 130 obiettivi sono attivi fin dal primo avvio."),
     "tip_achievements": ("The game's 130 RetroAchievements can be turned on later, from the menu's Achievements page.",
                          "Les 130 succès RetroAchievements du jeu peuvent être activés plus tard, depuis la page Succès du menu.",
                          "Die 130 RetroAchievements des Spiels lassen sich später auf der Erfolge-Seite des Menüs aktivieren.",
@@ -1726,10 +1735,10 @@ class TipPage(Gtk.Box):
         self.append(self.art)
         self.append(column)
 
-    def show(self, key: str) -> None:
+    def show(self, key: str, body_key: str | None = None) -> None:
         self.art.set_kind(key.split("_", 1)[1])
         self.head.set_text(tr("tipt_" + key.split("_", 1)[1]))
-        self.body.set_text(tr(key))
+        self.body.set_text(tr(body_key or key))
 
 
 # ---------------------------------------------------------------- the window
@@ -1767,8 +1776,8 @@ class Window(Gtk.ApplicationWindow):
             GLib.timeout_add(700, self.shoot, "setup")
             if cfg.tour:
                 GLib.timeout_add(1500, self.tour_european)
-                GLib.timeout_add(2400, self.tour_missing)
-                GLib.timeout_add(4000, self.tour_install)
+                GLib.timeout_add(3400, self.tour_missing)
+                GLib.timeout_add(5000, self.tour_install)
         if cfg.start or cfg.demo:
             GLib.idle_add(self.begin)
         if cfg.test_cancel:  # a test: cancel as the dialog's second button would
@@ -1882,11 +1891,55 @@ class Window(Gtk.ApplicationWindow):
 
     tried = False  # Install was pressed with something missing
 
-    def build_setup(self) -> Gtk.Widget:
-        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6,
-                          margin_top=44, margin_bottom=2, margin_start=56, margin_end=24)
+    PAGES = (("sec_disc", "disc_hint"), ("sec_where", "where_hint"), ("sec_extras", "extras_hint"),
+             ("sec_ra", "ra_page_hint"), ("sec_recap", "recap_hint"))
 
-        # 1. the disc image: the button in the heading, the hint says what was chosen
+    def build_setup(self) -> Gtk.Widget:
+        """A wizard: one card at a time (disc, place, extras, achievements, recap), Back and Next below."""
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10,
+                          margin_top=44, margin_bottom=2, margin_start=56, margin_end=24)
+        steps = Gtk.Box(spacing=4)  # done, now, to come
+        self.step_labels: list[Gtk.Label] = []
+        for i, (title, _) in enumerate(self.PAGES):
+            label = Gtk.Label(label="")
+            self.live(label, lambda i=i, title=title: f"{i + 1}  {tr(title)}")
+            label.add_css_class("step")
+            steps.append(label)
+            self.step_labels.append(label)
+        content.append(steps)
+        self.pages = Gtk.Stack(transition_type=Gtk.StackTransitionType.SLIDE_LEFT_RIGHT, vexpand=True,
+                               vhomogeneous=False, interpolate_size=True)
+        for i, build in enumerate((self.page_disc, self.page_where, self.page_extras, self.page_ra,
+                                   self.page_recap)):
+            holder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.START)
+            holder.append(build())
+            self.pages.add_named(holder, str(i))
+        content.append(self.pages)
+        self.page_index = 0
+
+        bar = Gtk.Box(spacing=14, margin_top=4, margin_bottom=12, halign=Gtk.Align.CENTER)
+        self.back_button = Gtk.Button()
+        self.live(self.back_button, lambda: tr("back"))
+        self.back_button.connect("clicked", lambda *_: self.show_page(self.page_index - 1))
+        self.next_button = Gtk.Button()
+        self.live(self.next_button, lambda: tr("next"))
+        self.next_button.add_css_class("suggested-action")
+        self.next_button.connect("clicked", lambda *_: self.on_next())
+        self.install_button = Gtk.Button()
+        self.live(self.install_button, lambda: tr("install"))
+        self.install_button.add_css_class("suggested-action")
+        self.install_button.connect("clicked", lambda *_: self.on_install())
+        for button in (self.back_button, self.next_button, self.install_button):
+            bar.append(button)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=False, width_request=720)
+        left.append(content)
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        page.append(self.beside_art(left))
+        page.append(bar)
+        self.show_page(0)
+        return page
+
+    def page_disc(self) -> Gtk.Widget:
         choose = Gtk.Button()
         self.live(choose, lambda: tr("choose_iso"))
         choose.connect("clicked", lambda *_: self.pick_file(self.set_iso, tr("iso_dialog")))
@@ -1897,8 +1950,9 @@ class Window(Gtk.ApplicationWindow):
         card.append(self.iso_state)
         if self.cfg.dir_ready:
             self.live(self.iso_label, lambda: tr("iso_extracted"))
-        content.append(card)
+        return card
 
+    def page_where(self) -> Gtk.Widget:
         # 2. where
         other = Gtk.Button()
         self.live(other, lambda: tr("other_folder"))
@@ -1929,10 +1983,10 @@ class Window(Gtk.ApplicationWindow):
             row.connect("toggled", lambda *_: self.update_buttons())
         self.where_note = Gtk.Label(label="", xalign=0, wrap=True, max_width_chars=58, visible=False)
         card.append(self.where_note)
-        content.append(card)
+        return card
 
-        # 3. options
-        card = self.section(3, "sec_options", "options_hint")
+    def page_extras(self) -> Gtk.Widget:
+        card = self.section(3, "sec_extras", "extras_hint")
         self.steam_check = Gtk.CheckButton()
         self.live(self.steam_check, lambda: tr("steam_check"))
         self.steam_check.set_active(self.cfg.steam)
@@ -1975,6 +2029,15 @@ class Window(Gtk.ApplicationWindow):
         saves_box.append(buttons)
         self.saves_reveal = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
                                          child=saves_box, reveal_child=self.saves_check.get_active())
+        card.append(self.steam_check)
+        card.append(self.european_check)
+        card.append(self.european_reveal)
+        card.append(self.saves_check)
+        card.append(self.saves_reveal)
+        return card
+
+    def page_ra(self) -> Gtk.Widget:
+        card = self.section(4, "sec_ra", "ra_page_hint")
         # The achievements: ticking it shows the sign-in fields (RetroAchievements account).
         self.ra_done = RA_LOGIN.exists()
         self.ra_check = Gtk.CheckButton()
@@ -2001,28 +2064,65 @@ class Window(Gtk.ApplicationWindow):
         ra_box.append(self.ra_state)
         self.ra_reveal = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
                                       child=ra_box, reveal_child=self.ra_check.get_active())
-        card.append(self.steam_check)
-        card.append(self.european_check)
-        card.append(self.european_reveal)
-        card.append(self.saves_check)
-        card.append(self.saves_reveal)
         card.append(self.ra_check)
         card.append(self.ra_reveal)
-        content.append(card)
+        return card
 
-        scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True, child=content)
-        bar = Gtk.Box(margin_top=4, margin_bottom=12, halign=Gtk.Align.CENTER)  # the button, centred in the window
-        self.install_button = Gtk.Button(halign=Gtk.Align.CENTER)
-        self.live(self.install_button, lambda: tr("install"))
-        self.install_button.add_css_class("suggested-action")
-        self.install_button.connect("clicked", lambda *_: self.on_install())
-        bar.append(self.install_button)
-        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=False, width_request=720)
-        left.append(scroll)
-        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        page.append(self.beside_art(left))
-        page.append(bar)
-        return page
+    def page_recap(self) -> Gtk.Widget:
+        card = self.section(5, "sec_recap", "recap_hint")
+        self.recap = Gtk.Label(label="", xalign=0, wrap=True, max_width_chars=64)
+        self.recap.add_css_class("recap")
+        card.append(self.recap)
+        return card
+
+    # -- the pages
+    def page_of(self, widget: Gtk.Widget) -> int:
+        """The page a problem is on."""
+        if widget is self.disc_card:
+            return 0
+        if widget is self.where_card:
+            return 1
+        if widget in (self.european_check, self.european_label, self.saves_check, self.saves_label):
+            return 2
+        return 3
+
+    def show_page(self, index: int) -> None:
+        self.page_index = max(0, min(len(self.PAGES) - 1, index))
+        self.pages.set_visible_child_name(str(self.page_index))
+        last = self.page_index == len(self.PAGES) - 1
+        self.back_button.set_visible(self.page_index > 0)
+        self.next_button.set_visible(not last)
+        self.install_button.set_visible(last)
+        for i, label in enumerate(self.step_labels):
+            for name in ("step-on", "step-done"):
+                label.remove_css_class(name)
+            if i == self.page_index:
+                label.add_css_class("step-on")
+            elif i < self.page_index:
+                label.add_css_class("step-done")
+        self.update_recap()
+
+    def on_next(self) -> None:
+        """On to the next page, unless what this page asks is not filled in: it shows in red and stays."""
+        found = [w for w in self.problems() if self.page_of(w) == self.page_index]
+        self.tried = True
+        self.mark(self.problems())
+        if not found:
+            self.show_page(self.page_index + 1)
+
+    def update_recap(self) -> None:
+        yes, no = tr("recap_yes"), tr("recap_no")
+        folder = self.chosen_dir() or self.cfg.dir
+        disc = tr("recap_extracted") if self.cfg.dir_ready and self.cfg.iso is None else (
+            self.cfg.iso.name if self.cfg.iso else "-")
+        european = self.cfg.european.name if self.european_check.get_active() and self.cfg.european else no
+        self.recap.set_text("\n".join((
+            tr("recap_disc", value=disc),
+            tr("recap_where", value=folder if folder else "-"),
+            tr("recap_steam", value=yes if self.steam_check.get_active() else no),
+            tr("recap_european", value=european),
+            tr("recap_saves", value=yes if self.saves_check.get_active() and self.cfg.saves else no),
+            tr("recap_ra", value=yes if self.ra_check.get_active() and self.ra_done else no))))
 
     def build_install(self) -> Gtk.Widget:
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, width_request=720, vexpand=True,
@@ -2093,13 +2193,17 @@ class Window(Gtk.ApplicationWindow):
 
     def show_tip(self) -> None:
         """The tip now on show, again (a new language)."""
-        self.tip_pages[self.tip_page].show(TIPS[self.tip_index])
+        self.tip_pages[self.tip_page].show(TIPS[self.tip_index], self.tip_body(TIPS[self.tip_index]))
         self.tip_count.set_text(f"{self.tip_index + 1} / {len(TIPS)}")
+
+    def tip_body(self, key: str) -> str:
+        """The text of a tip: the achievements' one says so when an account is connected (they start on)."""
+        return "tip_achievements_on" if key == "tip_achievements" and self.ra_done else key
 
     def next_tip(self) -> bool:
         self.tip_index = (self.tip_index + 1) % len(TIPS)
         self.tip_page = 1 - self.tip_page
-        self.tip_pages[self.tip_page].show(TIPS[self.tip_index])
+        self.tip_pages[self.tip_page].show(TIPS[self.tip_index], self.tip_body(TIPS[self.tip_index]))
         self.tip_stack.set_visible_child_name(str(self.tip_page))
         self.tip_count.set_text(f"{self.tip_index + 1} / {len(TIPS)}")
         return True
@@ -2250,6 +2354,8 @@ class Window(Gtk.ApplicationWindow):
         """After Install was pressed once with something missing, the red marks follow what is filled in."""
         if self.tried:
             self.mark(self.problems())
+        if hasattr(self, "recap"):
+            self.update_recap()
 
     def mark(self, found: list[Gtk.Widget]) -> None:
         for widget in (self.disc_card, self.where_card, self.european_check, self.european_label,
@@ -2262,7 +2368,9 @@ class Window(Gtk.ApplicationWindow):
         found = self.problems()
         self.tried = True
         self.mark(found)
-        if not found:
+        if found:
+            self.show_page(min(self.page_of(w) for w in found))
+        else:
             self.begin()
 
     def begin(self) -> None:
@@ -2383,9 +2491,11 @@ class Window(Gtk.ApplicationWindow):
 
     # -- a PNG of the window, for checking the look without a screen
     def tour_european(self) -> bool:
-        self.european_check.set_active(True)  # the page at its tallest: both options open
+        self.european_check.set_active(True)  # both options open
         self.ra_check.set_active(True)
-        GLib.timeout_add(700, self.shoot, "setup-european")
+        for i in range(len(self.PAGES)):
+            GLib.timeout_add(i * 350, lambda i=i: self.show_page(i) or False)
+            GLib.timeout_add(250 + i * 350, self.shoot, f"setup-page{i + 1}")
         return False
 
     def tour_missing(self) -> bool:
