@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "runtime/gs/gs_types.h"
+#include "runtime/ps2_savestate.h"
 
 class GS;
 
@@ -32,5 +33,11 @@ void readBack(const GS &gs);
 
 // The draw state of now: what a primitive drawn next would be drawn under.
 GSDrawState current();
+
+// Save states: the registers as the game left them. Under the pipeline the GS
+// front end is no longer written by the packets, so the mirror is the only
+// place they live; a state of the GS alone would load with the defaults.
+void saveState(ps2_savestate::Writer &out);
+void loadState(ps2_savestate::Reader &in);
 
 } // namespace rg::drawstate

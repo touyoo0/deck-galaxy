@@ -728,10 +728,8 @@ bool pump(void *userData)
                                      rg::mousecamera::inGameMenu(g_runtime->memory().getRDRAM()));
     if (!backend->pumpEvents())
     {
-        // Quitting: the state Continue will load, taken now and waited for, unless
-        // the game has not started (the home screen).
-        if (g_runtime && g_menu && !g_menu->homeOpen())
-            rg::savestate::autoSaveBlocking(*g_runtime, 3000);
+        // Quitting: a slot still being written is waited for.
+        rg::savestate::flush();
         return false;
     }
     {
@@ -741,15 +739,6 @@ bool pump(void *userData)
                               {pad.keyboardMouseAt(), pad.mouseMotionAt(), pad.controllerAt()});
     }
     updateButtonGlyphs(*backend);
-    // The menu has F11; without it, F11 still toggles.
-    static bool f11WasDown = false;
-    const bool f11Down = !g_hasMenu && SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_F11];
-    if (f11Down && !f11WasDown)
-    {
-        SDL_Window *window = backend->window();
-        SDL_SetWindowFullscreen(window, (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) == 0);
-    }
-    f11WasDown = f11Down;
     // F9 writes "[mark] N s" to the log: pressed when a drop is felt, it
     // puts the moment next to the [gfx] lines of that second.
     static const auto markStart = std::chrono::steady_clock::now();
@@ -960,7 +949,6 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
         const rg::savestate::SlotInfo info = rg::savestate::autoSlot();
         return dq8::ui::HostServices::SaveSlot{info.used, info.when, {}};
     };
-    host.autoSave = [&runtime] { rg::savestate::requestAutoSave(runtime); };
     host.continueGame = [&runtime] { rg::savestate::requestAutoLoad(runtime); };
     // RG_MUTE=1 keeps the game silent whatever the menu's volume says.
     const bool mute = env("RG_MUTE", "0") != "0";
@@ -1280,16 +1268,9 @@ Setup::Setup(PS2Runtime &runtime)
         }
         // A Steam Deck starts in fullscreen (its Game Mode shows a window
         // letterboxed), whatever an earlier run saved; RG_WINDOWED=1 keeps the
-        // saved window. Its first run also starts at the native scale: the
-        // 1280x800 screen shows nothing of a 2x one, and the APU is the
-        // limit in battle.
+        // saved window. Its first run starts at the settings' default scale, 2x.
         if (onSteamDeck())
         {
-            std::error_code none;
-            if (!std::filesystem::exists(settingsPath, none))
-            {
-                settings.resolutionScale = 1u;
-            }
             if (env("RG_WINDOWED", "0") != "1")
             {
                 settings.fullscreen = true;

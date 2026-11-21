@@ -1,0 +1,147 @@
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/CD.cpp b/ps2xRuntime/src/lib/Kernel/Stubs/CD.cpp
+index 56a978e..5ce9f55 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/CD.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/CD.cpp
+@@ -204,6 +204,116 @@ namespace ps2_stubs
+         return snapshot;
+     }
+ 
++    void cdSaveState(ps2_savestate::Writer &out, PS2Runtime *runtime)
++    {
++        out.tag(ps2_savestate::makeTag('C', 'D', 'V', '1'));
++        out.put<uint8_t>(g_cdInitialized ? 1u : 0u);
++        out.put<int32_t>(g_lastCdError);
++        out.put<uint32_t>(g_cdMode);
++        out.put<uint32_t>(g_cdStreamingLbn);
++        out.put<uint32_t>(g_cdStreamingEndLbn);
++        out.put<uint32_t>(g_nextPseudoLbn);
++
++        const CdStreamTimingState &t = g_cdStreamTiming;
++        out.put<uint8_t>(t.initialized ? 1u : 0u);
++        out.put<uint8_t>(t.active ? 1u : 0u);
++        out.put<uint8_t>(t.paused ? 1u : 0u);
++        out.put<uint32_t>(t.capacitySectors);
++        out.put<uint32_t>(t.bankCount);
++        out.put<uint32_t>(t.sectorsPerBank);
++        out.put<uint32_t>(t.sectorsPerSecond);
++        out.put<uint64_t>(t.producedSectors);
++        out.put<uint64_t>(t.consumedSectors);
++        out.put<uint64_t>(t.productionRemainder);
++        // The tick the stream was last brought up to is kept as an age: the
++        // scheduler's tick counter starts again in a new process.
++        const uint64_t now = currentCdStreamTick(runtime);
++        out.put<uint64_t>(now > t.lastVSyncTick ? now - t.lastVSyncTick : 0u);
++
++        out.put<uint32_t>(static_cast<uint32_t>(g_cdFilesByKey.size()));
++        for (const auto &[key, entry] : g_cdFilesByKey)
++        {
++            out.put<uint32_t>(static_cast<uint32_t>(key.size()));
++            out.bytes(key.data(), key.size());
++            out.put<uint32_t>(entry.baseLbn);
++            out.put<uint32_t>(entry.sectors);
++        }
++    }
++
++    void cdLoadState(ps2_savestate::Reader &in, PS2Runtime *runtime)
++    {
++        in.expectTag(ps2_savestate::makeTag('C', 'D', 'V', '1'));
++        const bool initialized = in.get<uint8_t>() != 0u;
++        const int32_t lastError = in.get<int32_t>();
++        const uint32_t mode = in.get<uint32_t>();
++        const uint32_t streamingLbn = in.get<uint32_t>();
++        const uint32_t streamingEndLbn = in.get<uint32_t>();
++        const uint32_t nextPseudoLbn = in.get<uint32_t>();
++
++        CdStreamTimingState t;
++        t.initialized = in.get<uint8_t>() != 0u;
++        t.active = in.get<uint8_t>() != 0u;
++        t.paused = in.get<uint8_t>() != 0u;
++        t.capacitySectors = in.get<uint32_t>();
++        t.bankCount = in.get<uint32_t>();
++        t.sectorsPerBank = in.get<uint32_t>();
++        t.sectorsPerSecond = in.get<uint32_t>();
++        t.producedSectors = in.get<uint64_t>();
++        t.consumedSectors = in.get<uint64_t>();
++        t.productionRemainder = in.get<uint64_t>();
++        const uint64_t age = in.get<uint64_t>();
++        const uint64_t now = currentCdStreamTick(runtime);
++        t.lastVSyncTick = now > age ? now - age : 0u;
++
++        struct Saved
++        {
++            std::string key;
++            uint32_t baseLbn;
++            uint32_t sectors;
++        };
++        std::vector<Saved> files;
++        const uint32_t count = in.get<uint32_t>();
++        if (count > 1000000u)
++            throw ps2_savestate::SaveStateError("save state disc section is implausibly large");
++        for (uint32_t i = 0; i < count; ++i)
++        {
++            Saved f;
++            const uint32_t length = in.get<uint32_t>();
++            if (length > 4096u)
++                throw ps2_savestate::SaveStateError("save state disc section is damaged");
++            f.key.resize(length);
++            in.bytes(f.key.data(), length);
++            f.baseLbn = in.get<uint32_t>();
++            f.sectors = in.get<uint32_t>();
++            files.push_back(std::move(f));
++        }
++
++        // Each file goes back to the sector number the game holds for it: the
++        // lookup numbers it from g_nextPseudoLbn, so that is set to the saved
++        // number before each. A file the folder no longer has is left out.
++        g_cdFilesByKey.clear();
++        for (const Saved &f : files)
++        {
++            g_nextPseudoLbn = f.baseLbn;
++            CdFileEntry entry;
++            if (!registerCdFile(f.key, entry))
++            {
++                std::cerr << "[savestate] disc file not found: " << f.key << std::endl;
++                continue;
++            }
++            auto it = g_cdFilesByKey.find(cdPathKey(f.key));
++            if (it != g_cdFilesByKey.end())
++                it->second.sectors = f.sectors;
++        }
++        g_nextPseudoLbn = nextPseudoLbn;
++        g_cdInitialized = initialized;
++        g_lastCdError = lastError;
++        g_cdMode = mode;
++        g_cdStreamingLbn = streamingLbn;
++        g_cdStreamingEndLbn = streamingEndLbn;
++        g_cdStreamTiming = t;
++    }
++
+     void sceCdRead(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+     {
+         const uint32_t a0 = getRegU32(ctx, 4); // usually lbn
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/CD.h b/ps2xRuntime/src/lib/Kernel/Stubs/CD.h
+index dd5bae9..c140171 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/CD.h
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/CD.h
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
+ #include "ps2_stubs.h"
++#include "runtime/ps2_savestate.h"
+ 
+ #include <cstdint>
+ #include <filesystem>
+@@ -40,6 +41,13 @@ namespace ps2_stubs
+     };
+ 
+     CdDebugSnapshot getCdDebugSnapshot();
++
++    // The disc's state for a save state: the files the game has looked up with
++    // their sector numbers (a file outside the disc image gets a made-up one in
++    // the order of the lookups, which a new process would number differently),
++    // the stream and its pace. Loading re-resolves each file on the disc folder.
++    void cdSaveState(ps2_savestate::Writer &out, PS2Runtime *runtime);
++    void cdLoadState(ps2_savestate::Reader &in, PS2Runtime *runtime);
+     void sceCdRead(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
+     void sceCdSync(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
+     void sceCdGetError(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
