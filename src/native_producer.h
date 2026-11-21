@@ -154,6 +154,11 @@ uint32_t captureTarget(uint32_t base);
 // the section is damaged.
 void saveState(ps2_savestate::Writer &out);
 void loadState(ps2_savestate::Reader &in);
+// The contents of the small render targets the game draws once and samples for
+// a while (read back from the renderer), and putting them back. A separate
+// trailer: a state without it loads with the targets empty.
+void saveFills(ps2_savestate::Writer &out);
+void loadFills(ps2_savestate::Reader &in);
 
 // The scene target's id (the frame's).
 constexpr uint32_t kSceneTarget = 1u;

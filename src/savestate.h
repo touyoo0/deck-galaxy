@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -41,7 +42,9 @@ void requestAutoSave(PS2Runtime &runtime);
 
 // At quit: queues the automatic state and waits up to `timeoutMs` for it to be
 // taken and written. False when it was not (it is then removed).
-bool autoSaveBlocking(PS2Runtime &runtime, int timeoutMs);
+// `whileWaiting` runs each time round the wait: the save reads the renderer's
+// targets, which the thread that called this would answer (the presenter's).
+bool autoSaveBlocking(PS2Runtime &runtime, int timeoutMs, const std::function<void()> &whileWaiting = {});
 
 // Loads the automatic state, from any area of the game.
 void requestAutoLoad(PS2Runtime &runtime);

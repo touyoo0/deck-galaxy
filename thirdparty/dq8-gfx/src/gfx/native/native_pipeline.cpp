@@ -46,7 +46,7 @@ constexpr uint32_t kViewColumns = 8u;
 constexpr uint32_t kViewRows = 6u;
 
 constexpr const char *kRecordNames[] = {"texture", "palette", "target",     "camera",   "mesh",      "sprite",
-                                        "effect",  "frame",   "present",    "readback", "depth-query"};
+                                        "effect",  "frame",   "present",    "readback", "depth-query", "fill"};
 static_assert(std::size(kRecordNames) == std::variant_size_v<Record>, "a name per record kind");
 
 // Step 7b's depth reads: what was asked since the renderer last took them,
@@ -101,6 +101,7 @@ struct ColorMailbox
         ColorRead read;
         bool finished = false, ok = false;
         std::vector<uint8_t> rgba;
+        uint32_t width = 0, height = 0; // of the answer, in game pixels
     };
     std::unordered_map<uint32_t, Entry> entries;
 };
@@ -134,6 +135,13 @@ bool colorReadsWaiting()
 
 bool waitColorRead(uint32_t id, std::vector<uint8_t> &rgba, uint32_t timeoutMs)
 {
+    uint32_t width = 0, height = 0;
+    return waitColorReadSized(id, rgba, width, height, timeoutMs);
+}
+
+bool waitColorReadSized(uint32_t id, std::vector<uint8_t> &rgba, uint32_t &width, uint32_t &height,
+                        uint32_t timeoutMs)
+{
     ColorMailbox &m = colorMailbox();
     std::unique_lock lock(m.mutex);
     const bool finished = m.done.wait_for(lock, std::chrono::milliseconds(timeoutMs), [&] {
@@ -145,7 +153,11 @@ bool waitColorRead(uint32_t id, std::vector<uint8_t> &rgba, uint32_t timeoutMs)
         return false;
     const bool ok = finished && e->second.finished && e->second.ok;
     if (ok)
+    {
         rgba = std::move(e->second.rgba);
+        width = e->second.width;
+        height = e->second.height;
+    }
     m.entries.erase(e); // a late answer finds nothing to fill
     return ok;
 }
@@ -261,6 +273,13 @@ void Renderer::apply(SDL_GPUDevice *device, Record &record, std::string &error)
                 m_targets[r.id] = r;
                 if (r.role == TargetRole::SceneColor)
                     m_sceneTarget = r.id;
+            }
+            else if constexpr (std::is_same_v<T, TargetFill>)
+            {
+                // Drawn into the target at the next frame (render).
+                if (r.id != 0u && r.width != 0u && r.height != 0u && r.rgba &&
+                    r.rgba->size() >= size_t(r.width) * r.height * 4u)
+                    m_fills.push_back(std::move(r));
             }
             else if constexpr (std::is_same_v<T, Camera>)
             {
@@ -562,10 +581,51 @@ bool Renderer::render(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, uin
         std::fprintf(stderr, "[native-pipeline] no mesh draws: %s\n", meshError.c_str());
         toldMeshes = true;
     }
+    // Targets a save state put back: their pixels go up as textures and are
+    // drawn into the targets, at the target's scale, before any draw.
+    struct FillBlit
+    {
+        SDL_GPUTexture *texture;
+        Id id;
+        uint32_t width, height;
+    };
+    std::vector<FillBlit> fillBlits;
+    for (TargetFill &fill : m_fills)
+    {
+        std::string failed;
+        SDL_GPUTexture *texture =
+            createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, fill.width, fill.height, failed);
+        if (!texture)
+            continue;
+        m_uploads.push_back({texture, fill.width, fill.height, fill.rgba});
+        fillBlits.push_back({texture, fill.id, fill.width, fill.height});
+    }
+    m_fills.clear();
     if (std::string failed; !upload(device, commands, failed))
     {
         std::fprintf(stderr, "[native-pipeline] uploads lost: %s\n", failed.c_str());
         m_uploads.clear();
+    }
+    for (const FillBlit &fill : fillBlits)
+    {
+        const uint32_t s = std::max(scale, 1u);
+        bool fresh = false;
+        std::string failed;
+        SDL_GPUTexture *target = targetTexture(device, fill.id, false, fill.width * s, fill.height * s, fresh, failed);
+        if (target)
+        {
+            SDL_GPUBlitInfo blit{};
+            blit.source.texture = fill.texture;
+            blit.source.w = fill.width;
+            blit.source.h = fill.height;
+            blit.destination.texture = target;
+            blit.destination.w = fill.width * s;
+            blit.destination.h = fill.height * s;
+            blit.load_op = SDL_GPU_LOADOP_DONT_CARE;
+            blit.filter = SDL_GPU_FILTER_NEAREST;
+            SDL_BlitGPUTexture(commands, &blit);
+        }
+        SDL_ReleaseGPUTexture(device, fill.texture);
     }
     evict(device);
     // The depth reads, from the last frame drawn (submitted ahead of this
@@ -929,7 +989,8 @@ void Renderer::serveColorReads(SDL_GPUDevice *device)
     }
     if (waiting.empty())
         return;
-    const auto finish = [&](uint32_t id, std::vector<uint8_t> &&rgba, bool ok) {
+    const auto finish = [&](uint32_t id, std::vector<uint8_t> &&rgba, bool ok, uint32_t answerW = 0u,
+                            uint32_t answerH = 0u) {
         ++(ok ? m_colorReads : m_colorReadsFailed);
         std::lock_guard lock(m.mutex);
         const auto e = m.entries.find(id);
@@ -938,6 +999,8 @@ void Renderer::serveColorReads(SDL_GPUDevice *device)
         e->second.finished = true;
         e->second.ok = ok;
         e->second.rgba = std::move(rgba);
+        e->second.width = answerW;
+        e->second.height = answerH;
     };
     const uint32_t s = std::max<uint32_t>(m_frameScale, 1u);
     for (const auto &[id, read] : waiting)
@@ -957,7 +1020,9 @@ void Renderer::serveColorReads(SDL_GPUDevice *device)
             texW = t->second.width;
             texH = t->second.height;
         }
-        const Rect &r = read.rect;
+        Rect r = read.rect;
+        if (read.whole)
+            r = {0, 0, int32_t(texW / s), int32_t(texH / s)};
         const uint32_t w = uint32_t(std::max(r.x1 - r.x0, 0)), h = uint32_t(std::max(r.y1 - r.y0, 0));
         if (!texture || m_frameScale == 0u || w == 0u || h == 0u || r.x0 < 0 || r.y0 < 0 ||
             uint32_t(r.x1) * s > texW || uint32_t(r.y1) * s > texH)
@@ -1065,7 +1130,7 @@ void Renderer::serveColorReads(SDL_GPUDevice *device)
             SDL_ReleaseGPUTransferBuffer(device, download);
         if (!ok)
             std::fprintf(stderr, "[native-pipeline] colour read %u failed: %s\n", id, SDL_GetError());
-        finish(id, std::move(rgba), ok);
+        finish(id, std::move(rgba), ok, w, h);
     }
     m.done.notify_all();
 }

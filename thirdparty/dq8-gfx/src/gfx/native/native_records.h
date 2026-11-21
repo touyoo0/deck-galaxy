@@ -306,6 +306,19 @@ struct DepthQuery
     int32_t x = 0, y = 0;
 };
 
+// A render target's contents, put back by a save state: RGBA8 at the game's
+// pixel size (alpha as the game stores it), rows in order. The renderer
+// draws it into the target at its own scale. A buffer the game draws into
+// once and samples for a while (a cached shadow, a minimap) is in no other
+// record: the game does not draw it again after a load.
+struct TargetFill
+{
+    Id id = 0;
+    uint16_t width = 0;
+    uint16_t height = 0;
+    Bytes rgba;
+};
+
 using Record = std::variant<Texture, Palette, Target, Camera, MeshDraw, SpriteDraw, Effect, FrameBegin, Present,
-                            Readback, DepthQuery>;
+                            Readback, DepthQuery, TargetFill>;
 } // namespace dq8::gfx::native

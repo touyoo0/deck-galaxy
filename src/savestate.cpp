@@ -456,6 +456,7 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
         rg::nativeproducer::saveState(out);
         rg::drawstate::saveState(out);
         rg::timing::saveState(out);
+        rg::nativeproducer::saveFills(out);
     }
     if (!taken)
     {
@@ -605,7 +606,11 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
                     rg::nativeproducer::loadState(in);
                     rg::drawstate::loadState(in);
                     if (in.remaining() >= sizeof(uint32_t))
+                    {
                         rg::timing::loadState(in);
+                        if (in.remaining() >= sizeof(uint32_t))
+                            rg::nativeproducer::loadFills(in);
+                    }
                 }
             }
         }
@@ -694,12 +699,16 @@ void requestAutoSave(PS2Runtime &runtime)
     queueAutoSave(runtime);
 }
 
-bool autoSaveBlocking(PS2Runtime &runtime, int timeoutMs)
+bool autoSaveBlocking(PS2Runtime &runtime, int timeoutMs, const std::function<void()> &whileWaiting)
 {
     const auto pending = queueAutoSave(runtime);
     const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     while (!pending->finished && std::chrono::steady_clock::now() < until)
+    {
+        if (whileWaiting)
+            whileWaiting();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     if (!pending->finished)
     {
         // Not taken in time, and maybe never: the old state would be a lie.

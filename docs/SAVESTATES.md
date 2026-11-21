@@ -104,11 +104,23 @@ another order), the stream and its pace. The native renderer's side
 and targets are made from what the game uploads, and the GS never sees those
 uploads, so GS memory in the state has none; the tables from the game's
 addresses to the renderer's records go in the state with their texels, and a
-load sends the records again. A state from before has no such trailer.
+load sends the records again. The small offscreen targets the game draws
+once and samples for a while (a cached shadow, a minimap: up to 512 by 512,
+about 5 MB) are read back from the renderer and drawn into the targets again
+(`saveFills`, `TargetFill`): the game does not draw them after a load, and
+the draws that sample them were dropped or sampled garbage. A state from
+before has no such trailer.
+
+When the game quits, the state Continue loads is taken on the thread that
+answers those reads, which waits for it (`autoSaveBlocking` serves them while
+it waits). Continue itself lets the game boot first: the host's side of the
+boot (the sound driver and its audio stream, the RPC tables) is not in a
+state.
 
 ## What is not in a state
 
-The contents of the renderer's offscreen targets (the game redraws them), the
+The contents of the renderer's big offscreen targets (the frame's own, which
+the game draws again at once), the
 video decoder, the memory card's and the disc's open handles, and the
 achievements' progress. Loading while the game reads the disc or the card is
 the risk that is left. `RG_STATE_SCRIPT` and `RG_INPUT` make a test without a

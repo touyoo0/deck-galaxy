@@ -3053,6 +3053,117 @@ void loadState(ps2_savestate::Reader &in)
         native::push(std::move(record));
     }
 }
+
+// The contents of the render targets the game draws once and samples for a
+// while (a cached shadow, a minimap): no other record holds them, and the game
+// does not draw them again after a load, so the draws that sample them were
+// dropped or sampled whatever the target held. Read back from the renderer at
+// the game's pixel size; the small targets only (the big ones are the frame's
+// own, drawn again at once).
+void saveFills(ps2_savestate::Writer &out)
+{
+    constexpr uint32_t kMaxPixels = 512u * 512u;
+    constexpr uint32_t kMaxTargets = 96u;
+    struct Fill
+    {
+        native::Id id;
+        uint32_t width, height;
+        std::vector<uint8_t> rgba;
+    };
+    std::vector<Fill> fills;
+    size_t asked = 0;
+    if (native::enabled())
+    {
+        std::vector<native::Target> wanted;
+        {
+            State &s = state();
+            std::lock_guard lock(s.mutex);
+            const auto consider = [&](const native::Target &t)
+            {
+                if (t.id == 0u || t.id == kSceneTarget || t.id == s.layer || t.role != native::TargetRole::Offscreen ||
+                    t.format != native::PixelFormat::Rgba8 || t.width == 0u || t.height == 0u ||
+                    uint32_t(t.width) * t.height > kMaxPixels || wanted.size() >= kMaxTargets)
+                    return;
+                for (const native::Target &other : wanted)
+                    if (other.id == t.id)
+                        return;
+                wanted.push_back(t);
+            };
+            for (const auto &[base, t] : s.targets)
+                consider(t);
+            for (const auto &[key, t] : s.views)
+                consider(t);
+        }
+        asked = wanted.size();
+        // All asked first: the presenting thread answers them together.
+        std::vector<std::pair<native::Target, uint32_t>> reads;
+        for (const native::Target &t : wanted)
+        {
+            native::ColorRead read;
+            read.target = t.id;
+            read.whole = true;
+            reads.emplace_back(t, native::beginColorRead(read));
+        }
+        // The first read that is not answered in time (the presenter has
+        // stopped, as when the game quits) ends the waiting: the rest are
+        // taken as they are.
+        uint32_t patience = 500u;
+        for (const auto &[t, request] : reads)
+        {
+            Fill fill{t.id, 0u, 0u, {}};
+            if (native::waitColorReadSized(request, fill.rgba, fill.width, fill.height, patience) &&
+                fill.width != 0u && fill.height != 0u && fill.rgba.size() == size_t(fill.width) * fill.height * 4u)
+                fills.push_back(std::move(fill));
+            else
+                patience = 0u;
+        }
+    }
+    if (std::getenv("RG_STATE_LOG") != nullptr)
+    {
+        std::string ids;
+        for (const Fill &f : fills)
+            ids += " " + std::to_string(f.id) + "(" + std::to_string(f.width) + "x" + std::to_string(f.height) + ")";
+        std::fprintf(stderr, "[savestate] render targets kept: %zu of %zu:%s\n", fills.size(), asked, ids.c_str());
+    }
+    out.tag(ps2_savestate::makeTag('T', 'G', 'F', '1'));
+    out.put<uint32_t>(static_cast<uint32_t>(fills.size()));
+    for (const Fill &f : fills)
+    {
+        out.put<uint32_t>(f.id);
+        out.put<uint32_t>(f.width);
+        out.put<uint32_t>(f.height);
+        out.bytes(f.rgba.data(), f.rgba.size());
+    }
+}
+
+void loadFills(ps2_savestate::Reader &in)
+{
+    in.expectTag(ps2_savestate::makeTag('T', 'G', 'F', '1'));
+    std::vector<native::TargetFill> fills;
+    for (uint32_t i = 0, n = getCount(in, 1024u); i < n; ++i)
+    {
+        native::TargetFill fill;
+        fill.id = in.get<uint32_t>();
+        const uint32_t width = in.get<uint32_t>();
+        const uint32_t height = in.get<uint32_t>();
+        if (width == 0u || height == 0u || width > 4096u || height > 4096u)
+            throw ps2_savestate::SaveStateError("save state target is damaged");
+        auto rgba = std::make_shared<std::vector<uint8_t>>(size_t(width) * height * 4u);
+        in.bytes(rgba->data(), rgba->size());
+        // The read gave alpha as the game's (0x80 is 1.0); the target stores
+        // it as 0xFF is 1.0.
+        for (size_t at = 3; at < rgba->size(); at += 4)
+            (*rgba)[at] = static_cast<uint8_t>(std::min<uint32_t>(255u, ((*rgba)[at] * 255u + 64u) / 128u));
+        fill.width = static_cast<uint16_t>(width);
+        fill.height = static_cast<uint16_t>(height);
+        fill.rgba = std::move(rgba);
+        fills.push_back(std::move(fill));
+    }
+    if (!native::enabled())
+        return;
+    for (native::TargetFill &fill : fills)
+        native::push(std::move(fill));
+}
 } // namespace rg::nativeproducer
 
 #else
@@ -3087,6 +3198,12 @@ void loadState(ps2_savestate::Reader &in)
 {
     in.expectTag(ps2_savestate::makeTag('N', 'P', 'R', '1'));
     in.get<uint8_t>();
+}
+void saveFills(ps2_savestate::Writer &out) { out.tag(ps2_savestate::makeTag('T', 'G', 'F', '1')); out.put<uint32_t>(0u); }
+void loadFills(ps2_savestate::Reader &in)
+{
+    in.expectTag(ps2_savestate::makeTag('T', 'G', 'F', '1'));
+    in.get<uint32_t>();
 }
 } // namespace rg::nativeproducer
 

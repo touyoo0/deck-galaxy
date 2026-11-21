@@ -731,7 +731,7 @@ bool pump(void *userData)
         // Quitting: the state Continue will load, taken now and waited for, unless
         // the game has not started (the home screen).
         if (g_runtime && g_menu && !g_menu->homeOpen())
-            rg::savestate::autoSaveBlocking(*g_runtime, 3000);
+            rg::savestate::autoSaveBlocking(*g_runtime, 3000, [&backend] { backend->serveNativeReads(); });
         return false;
     }
     {
