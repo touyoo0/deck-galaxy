@@ -11,6 +11,10 @@ author wants to redraw.
 
 ## For players
 
+- The native renderer, the only one the game starts with, does not draw packs
+  yet: they are read, and only the GS path (`RG_NATIVE_RENDERER=0`, for
+  development) draws them.
+
 - Put each pack in `textures\packs`, in the game's folder, as a folder or a
   zip. Make the folder `textures\packs` if it is not there.
 - A pack's pictures must be at the top of its folder (or of its zip, or of

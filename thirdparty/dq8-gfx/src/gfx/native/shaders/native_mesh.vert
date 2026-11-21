@@ -14,7 +14,7 @@ layout(set = 1, binding = 0) uniform Draw {
     vec4 target;   // the target's width and height in game pixels; z: fog per vertex (a window-space draw)
     vec4 fog;      // F = clamp(fog.x + fog.w * w, at most fog.y, at least fog.z)
     vec4 depthRow; // reversed depth (w - z) / 2 from the position, made in double, with the program's depthScale
-    vec4 depthLimit; // x: the program's depthMax as this depth; y: 1 when it applies
+    vec4 depthLimit; // x: the program's depthMax as this depth; y: 1 when it applies; z: 1 for a chunk the program clips
 } draw;
 
 // One surface drawn by several meshes in several pipelines (terrain layers,
@@ -47,4 +47,10 @@ void main() {
                        window.w - window.y * 2.0 / draw.target.y,
                        depth,
                        clip.w);
+    // A chunk the program clips (slot E) is cut at the game's near and far
+    // planes, z = -w and z = w: the depth is clamped, not clipped, so a
+    // triangle across the eye plane would otherwise be rasterized wrongly.
+    float cut = draw.depthLimit.z != 0.0 ? 1.0 : 0.0;
+    gl_ClipDistance[0] = cut != 0.0 ? clip.z + clip.w : 1.0;
+    gl_ClipDistance[1] = cut != 0.0 ? clip.w - clip.z : 1.0;
 }
