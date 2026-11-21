@@ -9,6 +9,7 @@
 - No "Fullscreen" option or F11: the game is always fullscreen on the Deck.
 - Quick loads keep the music, the battles and the textures, also after restarting the game.
 - Continue loads your last quick save, not the place where you left the game.
+- Overwriting a quick save: the question starts on Overwrite, not Cancel.
 
 ## 0.11.0 - 2026-11-19
 
