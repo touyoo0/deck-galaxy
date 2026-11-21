@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The home screen makes soft sounds: a light tick when the selection moves, a tap when a button is pressed, and a warm chord when Play starts the game.
 - A new game starts with the camera rotation on "Reversed"; existing saves keep their own choice.
 - No more button combinations: L4 (F1) opens the menu. Developer tools removed.
 - Native renderer, lighter on the Deck: steady 60 fps, about 4 W less. Starts at 2x. Texture packs are not drawn for now.
