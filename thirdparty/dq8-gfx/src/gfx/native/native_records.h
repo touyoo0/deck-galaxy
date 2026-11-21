@@ -221,6 +221,15 @@ struct MeshDraw
     Id depthTarget = 0;
     Id camera = 0;      // 0: no camera (a screen-space draw)
     bool hasModel = false;
+    // With hasModel: model is not object to world but object straight to the
+    // target's pixels (homogeneous, the game's window depth in z), for a draw
+    // whose matrix does not split into model, view and projection. The
+    // camera, when there is one (the newest 3D draw's), only maps the depth.
+    bool windowModel = false;
+    // A chunk the VU1 program clips (its slot E cuts at z = -w and z = w): the
+    // renderer cuts it there too, as the game's own clip volume. The other
+    // draws are only clamped at the far plane (the sky sits past it).
+    bool clips = false;
     // Object to world, row vectors, when hasModel. With no camera, object
     // straight to the target's pixels, homogeneous (divide by w).
     float model[16] = {};

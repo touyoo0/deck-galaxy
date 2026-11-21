@@ -360,7 +360,6 @@ private:
     bool waitsForRestart(const GameOption &option) const;
     // A game number's value, the same way, within the option's range.
     int gameNumber(const GameOption &option) const;
-    void setFullscreen(bool fullscreen);
     void setPadConfig(const gfx::PadConfig &config);
     // Asks for an internal resolution and saves it. Asking for the active one
     // replaces a request still queued, which cancels it.

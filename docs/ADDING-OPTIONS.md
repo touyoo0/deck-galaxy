@@ -177,8 +177,8 @@ translation is logged as a `[lang]` line.
 
 The release notes on the home screen are translated by version: when a
 release is cut, copy the new version's entry into
-`docs/changelog/CHANGELOG.<code>.md` (headings as in `CHANGELOG.md`), and
-translate its bullets. A version that file lacks shows in English.
+`docs/changelog/CHANGELOG.<code>.md` (version headings as in `CHANGELOG.md`), and
+translate its lines. A version that file lacks shows in English.
 
 ## 5. The docs
 
@@ -187,7 +187,8 @@ translate its bullets. A version that file lacks shows in English.
 - [DEVELOPMENT.md](DEVELOPMENT.md): the environment variable, in the
   "Player options" table, with the menu's label in brackets ("the menu's
   "Instant text"") and the module's header.
-- [CHANGELOG.md](../CHANGELOG.md): a line under Unreleased.
+- [CHANGELOG.md](../CHANGELOG.md): one short line under Unreleased (flat list, no
+  sections).
 
 ## Checklist
 

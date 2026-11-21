@@ -1318,6 +1318,7 @@ bool mesh(const GSNativeMesh &mesh, const GSDrawState *drawState, const uint8_t 
     // The program scales its window depth and caps it (VU quad 87.z, quad
     // 1.y): decals at 1.01 and 1.02 sit in front of their surfaces.
     draw.depthScale = mesh.header.depthScale;
+    draw.clips = mesh.header.clips;
     draw.depthMax = mesh.header.depthMax;
 
     // The triangles the program draws: a strip's every vertex from the
@@ -1465,6 +1466,11 @@ bool mesh(const GSNativeMesh &mesh, const GSDrawState *drawState, const uint8_t 
                 draw.model[i * 4 + j] = h.matrix[i][j];
         foldOffset(draw.model, ofx, ofy);
         draw.hasModel = true;
+        // Object to the target's pixels: the renderer needs no camera for
+        // it, only the newest one's depth mapping (it was dropped without
+        // one, so a gate whose matrix did not split blinked).
+        draw.windowModel = true;
+        draw.camera = s.lastCamera;
         ++s.counts.meshesWhole;
     }
 

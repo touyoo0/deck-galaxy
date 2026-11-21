@@ -28,7 +28,7 @@ constexpr double kCaptureSeconds = 6.0;
 // gameShortcuts: Rogue Galaxy's F6, the free camera), never bound: binding
 // one would fight the shortcut.
 constexpr SDL_Scancode kMenuKeys[] = {SDL_SCANCODE_F1, SDL_SCANCODE_F4, SDL_SCANCODE_F5,
-                                      SDL_SCANCODE_F11, SDL_SCANCODE_F12};
+                                      SDL_SCANCODE_F12};
 
 bool reservedKey(SDL_Scancode scancode, const std::vector<HostServices::Shortcut> &game) {
     return std::find(std::begin(kMenuKeys), std::end(kMenuKeys), scancode) != std::end(kMenuKeys) ||
@@ -37,7 +37,7 @@ bool reservedKey(SDL_Scancode scancode, const std::vector<HostServices::Shortcut
 }
 
 // The reserved keys as the binding prompt names them, runs of function keys
-// shortened: "F1 to F4, F6, F11 and F12".
+// shortened: "F1 to F4, F6 and F12".
 std::string reservedKeysText(const std::vector<HostServices::Shortcut> &game) {
     std::vector<int> functions;
     std::vector<std::string> others;
@@ -484,9 +484,6 @@ bool Overlay::hotkey(const SDL_KeyboardEvent &key) {
         if (!canChangeSpeed())
             return false;
         setFastForward(!m_fastForward);
-        return true;
-    case SDL_SCANCODE_F11:
-        setFullscreen(!m_settings.fullscreen);
         return true;
     case SDL_SCANCODE_F12:
         takeScreenshot(false);
@@ -2105,13 +2102,6 @@ void Overlay::applyPause() {
         return;
     m_hostPaused = paused;
     m_host.setPaused(paused);
-}
-
-void Overlay::setFullscreen(bool fullscreen) {
-    if (m_window && m_window == m_backend.window())
-        SDL_SetWindowFullscreen(m_window, fullscreen);
-    m_settings.fullscreen = fullscreen;
-    markDirty();
 }
 
 void Overlay::setPadConfig(const gfx::PadConfig &config) {
