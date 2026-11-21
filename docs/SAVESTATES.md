@@ -96,10 +96,20 @@ and a game that had not opened a port yet (Continue, from the home screen)
 would read "controller not connected". A state without the trailer loads as
 before.
 
+The disc and the renderer follow the machine as trailers too. The disc
+(`patches/ps2recomp/0041-cd-state.patch`): the files the game has looked up
+with the sector number it holds for each (a new process would number them in
+another order), the stream and its pace. The native renderer's side
+(`nativeproducer::saveState`, `drawstate::saveState`): its textures, palettes
+and targets are made from what the game uploads, and the GS never sees those
+uploads, so GS memory in the state has none; the tables from the game's
+addresses to the renderer's records go in the state with their texels, and a
+load sends the records again. A state from before has no such trailer.
+
 ## What is not in a state
 
-The GS front end's registers and the GPU's caches (the game redraws them),
-the video decoder, the memory card's and the disc's open handles, and the
+The contents of the renderer's offscreen targets (the game redraws them), the
+video decoder, the memory card's and the disc's open handles, and the
 achievements' progress. Loading while the game reads the disc or the card is
 the risk that is left. `RG_STATE_SCRIPT` and `RG_INPUT` make a test without a
 keyboard (see [DEVELOPMENT.md](DEVELOPMENT.md)).

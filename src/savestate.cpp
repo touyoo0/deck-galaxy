@@ -2,6 +2,10 @@
 
 #include "overlay/overlay_manager.h"
 #include "ps2_runtime.h"
+#include "Stubs/CD.h"
+#include "draw_state_mirror.h"
+#include "native_producer.h"
+#include "scene_timing.h"
 #include "Stubs/Pad.h"
 #include "runtime/ee_scheduler.h"
 #include "vif1_thread.h"
@@ -446,7 +450,13 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
     std::string why;
     const bool taken = runtime.eeScheduler().saveMachine(out, why);
     if (taken)
+    {
         writePadTrailer(out);
+        ps2_stubs::cdSaveState(out, &runtime);
+        rg::nativeproducer::saveState(out);
+        rg::drawstate::saveState(out);
+        rg::timing::saveState(out);
+    }
     if (!taken)
     {
         pending->lastReason = why;
@@ -578,6 +588,19 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
         {
             runtime.eeScheduler().loadMachine(in);
             readPadTrailer(in, runtime);
+            // The disc's files and stream (a state from before has none).
+            if (in.remaining() >= sizeof(uint32_t))
+            {
+                ps2_stubs::cdLoadState(in, &runtime);
+                // The renderer's side of the picture (a state from before has none).
+                if (in.remaining() >= sizeof(uint32_t))
+                {
+                    rg::nativeproducer::loadState(in);
+                    rg::drawstate::loadState(in);
+                    if (in.remaining() >= sizeof(uint32_t))
+                        rg::timing::loadState(in);
+                }
+            }
         }
         catch (...)
         {

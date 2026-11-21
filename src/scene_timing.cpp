@@ -456,6 +456,43 @@ unsigned parseStepFixes(const char *value)
     return fixes;
 }
 
+// Save states: what the host knows of the frame pacing. It is derived from the
+// guest's draw environment (the interval it holds) and from the flips seen so
+// far; a process that loads a state without it sees the interval the last
+// flip wrote (1, at 60 fps) differ from its own start-up value (2), takes it
+// for the game's own, and runs the scene at full steps: twice as fast.
+void saveState(ps2_savestate::Writer &out)
+{
+    out.tag(ps2_savestate::makeTag('T', 'M', 'G', '1'));
+    out.put<uint32_t>(g_interval);
+    out.put<uint32_t>(g_gameInterval);
+    out.put<uint32_t>(g_logicInterval);
+    out.put<float>(g_lastScale);
+    out.put<uint8_t>(g_ours ? 1u : 0u);
+    out.put<float>(g_logicAccumulator);
+}
+
+void loadState(ps2_savestate::Reader &in)
+{
+    in.expectTag(ps2_savestate::makeTag('T', 'M', 'G', '1'));
+    const uint32_t interval = in.get<uint32_t>();
+    const uint32_t gameInterval = in.get<uint32_t>();
+    const uint32_t logicInterval = in.get<uint32_t>();
+    const float lastScale = in.get<float>();
+    const bool ours = in.get<uint8_t>() != 0u;
+    const float accumulator = in.get<float>();
+    g_interval = interval;
+    g_gameInterval = gameInterval;
+    g_logicInterval = logicInterval;
+    g_lastScale = lastScale;
+    g_ours = ours;
+    g_logicAccumulator = accumulator;
+    g_logicDecided = ~0u;
+    g_logicDue = false;
+    g_moviePlaying = false;
+    g_inMovieModal = false;
+}
+
 bool traceEnabled()
 {
     return g_trace;

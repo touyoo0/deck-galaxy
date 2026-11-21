@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ps2_runtime.h"
+#include "runtime/ps2_savestate.h"
 
 // Fixed time step, and the 60 fps mode.
 //
@@ -110,5 +111,10 @@ LogicFrame logicFrame(const uint8_t *rdram, const R5900Context *ctx);
 // replaced in `original`; false, with a message, when there is no entry.
 bool hookFunction(PS2Runtime &runtime, uint32_t address, PS2Runtime::RecompiledFunction replacement,
                   PS2Runtime::RecompiledFunction &original);
+
+// Save states: the pacing the host has settled on (the interval the flip
+// waits for, what the game itself set). See scene_timing.cpp.
+void saveState(ps2_savestate::Writer &out);
+void loadState(ps2_savestate::Reader &in);
 
 } // namespace rg::timing

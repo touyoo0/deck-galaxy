@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Loading a quick save no longer loses the music, the battles and the textures.
+
 ### Changed
 
 - No button or key combination is left: View + Menu (Back + Start) no longer
