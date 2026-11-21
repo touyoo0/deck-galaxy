@@ -4,6 +4,7 @@
 
 ## 0.12.0 - 2026-11-22
 
+- The installer goes page by page (disc, place, extras, achievements, recap), and says the achievements start on when you signed in.
 - The installer can import your PCSX2 save of the game: it looks for your memory card by itself (PCSX2, EmuDeck, RetroDECK, SD card), and you can choose a card file or folder by hand when it finds none.
 - The logos at boot can be skipped with a button (A, B, X, Y or Start), also at the first launch.
 - The loading screen's "Press A" comes up as soon as the game has loaded, not after the whole story text.
