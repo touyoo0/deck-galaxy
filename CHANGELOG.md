@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Loading a quick save no longer loses the music, the battles and the textures.
+- Continue loads your last quick save, not the place where you left the game.
 
 ### Changed
 

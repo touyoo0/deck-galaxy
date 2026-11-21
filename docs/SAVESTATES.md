@@ -39,16 +39,22 @@ and waited for when the game quits.
 
 ## Continue
 
-Besides the five slots the game keeps one state of its own, `states/auto.rgs`,
-and the home screen offers it as **Continue**, above Play. It is taken when
-the game's window leaves the front (the Steam menu, another window) and when
-the game quits, and replaced each time; there is no toast and no picture. When
-the game cannot take a state at that moment (a movie plays) the old one is
-removed, so Continue never takes you back to a place you had left. Continue
-starts the game and loads that state; Play starts it from the title as before.
-It is only good for the build that took it: after an update it is gone, and
-Continue with it, so a state is never run under other code. The game's own
-saves (the memory card) are untouched by all this.
+The home screen offers **Continue**, above Play, when a slot holds a state:
+it starts the game and loads the slot saved last (there is no state of the
+game's own any more: it was taken when the window left the front and at quit,
+and what it carried went wrong more often than a slot does). Play starts from
+the title as before. Quitting does not save: what was done since the last
+quick save is lost to Continue. A slot is only offered by the build that took
+it (`slotN.rev` beside it): after an update Continue is gone until the next
+quick save, so a state is never run under other code (loading a slot by hand
+still loads it). The game's own saves (the memory card) are untouched by all
+this.
+
+Continue does not load at once: the guest has not run when the home screen
+is shown, and the host's side of the boot (the sound driver and its audio
+stream, the RPC tables, the game's pad ports) is not in a state, so the game
+boots first and the state loads when it has run 1.5 s and opened its pad (and
+asks again while a logo movie plays, up to 20 s).
 
 A state is refused, with a message, **while a movie plays** (the cutscenes and
 the title screen: the video decoder is not part of it), and **while a callback, a
@@ -110,12 +116,6 @@ about 5 MB) are read back from the renderer and drawn into the targets again
 (`saveFills`, `TargetFill`): the game does not draw them after a load, and
 the draws that sample them were dropped or sampled garbage. A state from
 before has no such trailer.
-
-When the game quits, the state Continue loads is taken on the thread that
-answers those reads, which waits for it (`autoSaveBlocking` serves them while
-it waits). Continue itself lets the game boot first: the host's side of the
-boot (the sound driver and its audio stream, the RPC tables) is not in a
-state.
 
 ## What is not in a state
 
