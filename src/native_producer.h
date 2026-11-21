@@ -159,6 +159,9 @@ void loadState(ps2_savestate::Reader &in);
 // trailer: a state without it loads with the targets empty.
 void saveFills(ps2_savestate::Writer &out);
 void loadFills(ps2_savestate::Reader &in);
+// The uploads made and not yet taken by the VIF1 thread (an optional trailer).
+void saveProduced(ps2_savestate::Writer &out);
+void loadProduced(ps2_savestate::Reader &in);
 
 // The scene target's id (the frame's).
 constexpr uint32_t kSceneTarget = 1u;

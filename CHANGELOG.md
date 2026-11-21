@@ -11,6 +11,7 @@
 - Native renderer, lighter on the Deck: steady 60 fps, about 4 W less. Starts at 2x. Texture packs are not drawn for now.
 - No "Fullscreen" option or F11: the game is always fullscreen on the Deck.
 - Quick loads keep the music, the battles and the textures, also after restarting the game.
+- Quick loads made while the battle rewards are shown no longer lose the scenery's textures (take a new quick save: older ones keep the problem).
 - Continue loads your last quick save, not the place where you left the game.
 - Overwriting a quick save: the question starts on Overwrite, not Cancel.
 

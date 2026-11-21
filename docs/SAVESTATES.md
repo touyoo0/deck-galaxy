@@ -114,8 +114,13 @@ load sends the records again. The small offscreen targets the game draws
 once and samples for a while (a cached shadow, a minimap: up to 512 by 512,
 about 5 MB) are read back from the renderer and drawn into the targets again
 (`saveFills`, `TargetFill`): the game does not draw them after a load, and
-the draws that sample them were dropped or sampled garbage. A state from
-before has no such trailer.
+the draws that sample them were dropped or sampled garbage. The uploads the
+game thread has made and the VIF1 thread has not taken yet (`produced`,
+`saveProduced`; 435 in a state saved at the battle rewards) are a trailer too:
+the game thread's tables run ahead of the stream, and without them the
+stream's tables kept the texture that was at an address before (a 4-bit one
+where the draws read 8 bits), so the scenery came back grey. A state from
+before has no such trailers.
 
 ## What is not in a state
 
