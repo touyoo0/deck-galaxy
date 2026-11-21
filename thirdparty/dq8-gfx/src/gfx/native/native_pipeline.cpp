@@ -180,9 +180,11 @@ bool enabled()
     static const bool on = [] {
         bool (*outer)() = g_outer.load(std::memory_order_acquire);
         const char *v = std::getenv("RG_NATIVE_PIPELINE");
-        const bool asked = v && *v && *v != '0';
+        const bool given = v && *v;
+        // On unless RG_NATIVE_PIPELINE=0, where the native renderer is on.
+        const bool asked = given ? *v != '0' : true;
         const bool result = asked && outer && outer();
-        if (asked && !result)
+        if (given && asked && !result)
             std::fprintf(stderr, "[native-pipeline] RG_NATIVE_PIPELINE ignored: the native renderer is off\n");
         else if (result)
             std::fprintf(stderr, "[native-pipeline] on\n");

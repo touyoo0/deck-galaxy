@@ -10,7 +10,7 @@ namespace rg::nativerenderer
 namespace
 {
 
-std::atomic<bool> g_preferred{false};
+std::atomic<bool> g_preferred{true};
 
 } // namespace
 

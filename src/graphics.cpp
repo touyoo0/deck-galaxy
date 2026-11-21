@@ -1280,16 +1280,9 @@ Setup::Setup(PS2Runtime &runtime)
         }
         // A Steam Deck starts in fullscreen (its Game Mode shows a window
         // letterboxed), whatever an earlier run saved; RG_WINDOWED=1 keeps the
-        // saved window. Its first run also starts at the native scale: the
-        // 1280x800 screen shows nothing of a 2x one, and the APU is the
-        // limit in battle.
+        // saved window. Its first run starts at the settings' default scale, 2x.
         if (onSteamDeck())
         {
-            std::error_code none;
-            if (!std::filesystem::exists(settingsPath, none))
-            {
-                settings.resolutionScale = 1u;
-            }
             if (env("RG_WINDOWED", "0") != "1")
             {
                 settings.fullscreen = true;
