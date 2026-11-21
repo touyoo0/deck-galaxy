@@ -1121,6 +1121,17 @@ street walk at 60. What limits the gate now is VU1 itself: three quarters
 of the VIF1 thread are the compiled programs, `r_a786efabfa469ada_44` a
 sixth of it, `commitFlags` and `stall` 6%.
 
+**The logos skipped by a button at the first boot (2026-11-21).**
+TitleOpeningMovieTick (0x4EBAF0) checks five buttons (Triangle 0x10, Cross
+0x40, Circle 0x80, Square 0x20, Start 0x800) but takes a press only once the
+opening has been seen (0x481B90), so at the first boot the Sony and Level-5
+logos could not be skipped; only "Skip the opening" did, with no press.
+src/opening.cpp now marks the opening seen when one of the five checks (the
+returns 0x4EBB48, 0x4EBB60, 0x4EBB78, 0x4EBB90, 0x4EBBA8, the addresses after
+each call; the title overlay sits 0x40 after its disassembly's start) finds
+its button pressed, and the game's own fade does the rest, after the
+opening's first six frames. Not run on the Deck yet.
+
 **The loading screen at the console's pace, and a recap at once
 (2026-10-20 night).** The story so far that a loaded game shows, its lines
 fading in one by one before Press X, ran at twice its speed in the 60 fps

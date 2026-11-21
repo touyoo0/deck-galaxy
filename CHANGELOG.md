@@ -4,6 +4,8 @@
 
 ### Changed
 
+- The logos at boot (Sony, Level-5) and the opening movie can be skipped with
+  a button (A, B, X, Y or Start) at the first launch too, not only once seen.
 - No button or key combination is left: View + Menu (Back + Start) no longer
   opens the menu, and Alt+Enter and Shift+F12 are gone. The Deck's L4 (F1)
   opens it, and the start-up hint says so. The "Back + Start opens the menu"

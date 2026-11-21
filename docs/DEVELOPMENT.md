@@ -41,7 +41,7 @@ Most of these set an option of the F1 menu for one run, without saving it.
 | `RG_MUTE=1` | No sound output (the IOP still runs) |
 | `RG_MINIMAP_SIZE=N`, `RG_COMPASS_SIZE=N` | The field's minimap and compass, percent of the game's size, 50 to 100 (the menu's "Minimap size" and "Compass size"; `src/hud_size.h`) |
 | `RG_BUTTONS=xbox` | The game's text shows an Xbox controller's buttons whatever is connected (`src/button_glyphs.h`; the menu's "Buttons in the game's text" follows the controller in use); `RG_GAIJI_DUMP=FILE` writes the picture of special characters they are drawn in (gaiji2.img) as loaded |
-| `RG_SKIP_OPENING=1` | The logos at boot give way to the title screen (the menu's "Skip the opening") |
+| `RG_SKIP_OPENING=1` | The logos at boot give way to the title screen by themselves (the menu's "Skip the opening"); without it a button (A, B, X, Y, Start) skips them |
 | `RG_FIELD_OF_VIEW=N` | The camera's field of view in the field and in battle, degrees across a 4:3 picture (the menu's "Field of view"; the game's is 52) |
 | `RG_CAMERA_DISTANCE=N` | The camera's distance from the party, percent of the game's (the menu's "Camera distance") |
 | `RG_FASTER_CAMERA=1` | The right stick turns the camera twice as fast (the menu's "Faster camera rotation") |
