@@ -531,10 +531,6 @@ void Overlay::drawActionsPage() {
     }
     sectionHeader("View");
     if (beginSettings("view")) {
-        settingRow("Fullscreen", "F11");
-        bool fullscreen = m_settings.fullscreen;
-        if (toggle("fullscreen", &fullscreen))
-            setFullscreen(fullscreen);
         settingRow("Renderer statistics");
         bool stats = m_statsOpen;
         if (toggle("stats", &stats))
@@ -1037,7 +1033,7 @@ void Overlay::drawShortcuts() {
             ImGui::TableSetupColumn("keys", ImGuiTableColumnFlags_WidthFixed, em(7.5f));
             ImGui::TableSetupColumn("what", ImGuiTableColumnFlags_WidthFixed, em(15.0f));
             static constexpr const char *kF1[] = {"F1"}, *kF4[] = {"F4"}, *kF5[] = {"F5"},
-                                        *kF11[] = {"F11"}, *kF12[] = {"F12"}, *kEsc[] = {"Esc"};
+                                        *kF12[] = {"F12"}, *kEsc[] = {"Esc"};
             shortcutRow(kF1, 1, "Open or close this menu");
             if (canPause())
                 shortcutRow(kF5, 1, "Pause or resume");
@@ -1050,7 +1046,6 @@ void Overlay::drawShortcuts() {
                 const char *const keys[] = {SDL_GetScancodeName(shortcut.key)};
                 shortcutRow(keys, 1, shortcut.what.c_str());
             }
-            shortcutRow(kF11, 1, "Fullscreen");
             shortcutRow(kF12, 1, "Take screenshot");
             shortcutRow(kEsc, 1, "Back, in the menu");
             ImGui::EndTable();

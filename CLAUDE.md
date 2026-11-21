@@ -143,7 +143,10 @@ changes the generated code needs `setup.py tools`, `recompile` and `build`.
   goes in [docs/OPTIONS.md](docs/OPTIONS.md); a new environment variable gets
   a row in DEVELOPMENT.md; a change players notice gets a line in
   CHANGELOG.md under "Unreleased", linking its issue by the full URL:
-  `([#N](https://github.com/touyoo0/deck-galaxy/issues/N))`.
+  `([#N](https://github.com/touyoo0/deck-galaxy/issues/N))`. The changelog
+  is one flat list per version: no "Added/Changed" sections, one very short
+  line per change (2 at most), only what matters to the player. Translations
+  in `docs/changelog/` follow the same form.
 - Answer review with new commits; no force-push unless asked.
 - Line endings: LF.
 

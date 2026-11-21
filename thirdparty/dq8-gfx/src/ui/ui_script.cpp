@@ -127,8 +127,6 @@ void Overlay::runStep(const ScriptStep &step, uint64_t frame) {
         m_settings.fastForwardSpeed = static_cast<float>(std::atof(first.c_str()));
         if (m_fastForward && m_host.setSpeed)
             m_host.setSpeed(m_settings.fastForwardSpeed);
-    } else if (command == "fullscreen") {
-        setFullscreen(on);
     } else if (command == "key") {
         const SDL_Scancode scancode = SDL_GetScancodeFromName(joined(step.arguments).c_str());
         for (const bool down : {true, false}) {

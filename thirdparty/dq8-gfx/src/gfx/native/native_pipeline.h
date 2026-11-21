@@ -68,6 +68,10 @@ struct ColorRead
 {
     Id target = 0;
     Rect rect; // in the target's game pixels
+    // The whole of the target as it is allocated (`rect` is ignored): the size
+    // comes back with the answer (waitColorReadSized). A save state takes the
+    // targets so, since one is allocated no larger than what was drawn in it.
+    bool whole = false;
 };
 uint32_t beginColorRead(const ColorRead &read);
 // Any thread: a read was opened and not answered yet.
@@ -75,6 +79,9 @@ bool colorReadsWaiting();
 // RGBA8, rows in order, alpha as the game's (0x80 is 1.0). False when the
 // renderer could not serve it, or did not within `timeoutMs`.
 bool waitColorRead(uint32_t id, std::vector<uint8_t> &rgba, uint32_t timeoutMs);
+// The same, with the size of the pixels in game pixels (a `whole` read).
+bool waitColorReadSized(uint32_t id, std::vector<uint8_t> &rgba, uint32_t &width, uint32_t &height,
+                        uint32_t timeoutMs);
 
 // A line of the producers' own counts, printed with the renderer's.
 void setProducerStats(std::function<std::string()> line);
@@ -192,6 +199,7 @@ private:
     std::deque<Id> m_imageOrder;              // oldest first, for the budget
     uint64_t m_imageBytes = 0;
     std::vector<PendingUpload> m_uploads;
+    std::vector<TargetFill> m_fills; // a save state's targets, drawn at the next frame
     std::deque<Id> m_recent; // the newest textures, for the view
     Id m_sceneTarget = 0;
     uint64_t m_records[std::variant_size_v<Record>] = {};
