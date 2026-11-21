@@ -11,9 +11,9 @@ author wants to redraw.
 
 ## For players
 
-- Only the GS path draws packs: with one in `textures\hd` or `textures\packs`
-  (or `RG_TEXTURE_PACK`), the game stays on it, and the native renderer, which
-  gives the lighter frame on the Deck, is off (the log says so).
+- The native renderer, the only one the game starts with, does not draw packs
+  yet: they are read, and only the GS path (`RG_NATIVE_RENDERER=0`, for
+  development) draws them.
 
 - Put each pack in `textures\packs`, in the game's folder, as a folder or a
   zip. Make the folder `textures\packs` if it is not there.

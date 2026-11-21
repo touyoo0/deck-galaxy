@@ -1,8 +1,8 @@
 #pragma once
 
-// The native renderer switch (on by default, except when texture packs are
-// found, which only the GS path draws yet; RG_NATIVE_RENDERER=0 or 1 for a
-// run; the F1 menu has no switch for it on the Deck). It is what the
+// The native renderer switch (on; RG_NATIVE_RENDERER=0 is a developer's way
+// back to the GS emulation for one run; the F1 menu has no switch for it on
+// the Deck). It is what the
 // native side of the renderer goes behind as it is developed: the game's
 // VU1 programs computed natively and drawn as GPU meshes, and the post
 // effects drawn by the renderer instead of as the GS packets the game

@@ -4,8 +4,8 @@
 
 ### Changed
 
-- The game draws with the native renderer, lighter on the Deck (60 fps steady, about 4 W less). It
-  stays on the old one when a texture pack is installed.
+- The game draws with the native renderer, lighter on the Deck (60 fps steady, about 4 W less), and starts at 2x
+  resolution. Texture packs are not drawn for now.
 - No button or key combination is left: View + Menu (Back + Start) no longer
   opens the menu, and Alt+Enter and Shift+F12 are gone. The Deck's L4 (F1)
   opens it, and the start-up hint says so. The "Back + Start opens the menu"

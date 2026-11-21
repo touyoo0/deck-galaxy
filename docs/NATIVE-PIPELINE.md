@@ -188,9 +188,9 @@ producer to keep its colours first.
 
 ## Running it
 
-The pipeline is on by default with the native renderer, which is on unless
-texture packs are found (only the GS path draws them yet) or
-`RG_NATIVE_RENDERER=0`; `RG_NATIVE_PIPELINE=0` keeps the GS for a run. It is decided once, at its first use
+The pipeline is on by default with the native renderer, which is the only
+renderer players get; `RG_NATIVE_RENDERER=0` or `RG_NATIVE_PIPELINE=0` is a
+developer's way back to the GS for a run. It is decided once, at its first use
 after the menu's settings (`native::setOuterSwitch` in `graphics.cpp`);
 without the native renderer it is ignored and says so. The log says
 `[native-pipeline] on`. With `DQ8_GFX_STATS_EVERY`, the stats report gets
