@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A new game starts with the camera rotation (up/down and left/right) on "Reversed"; existing saves keep their own choice.
+
 ### Changed
 
 - No button or key combination is left: View + Menu (Back + Start) no longer
