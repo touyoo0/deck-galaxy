@@ -4,6 +4,7 @@
 
 - No more button combinations: L4 (F1) opens the menu. Developer tools removed.
 - Native renderer, lighter on the Deck: steady 60 fps, about 4 W less. Starts at 2x. Texture packs are not drawn for now.
+- No "Fullscreen" option or F11: the game is always fullscreen on the Deck.
 
 ## 0.11.0 - 2026-11-19
 

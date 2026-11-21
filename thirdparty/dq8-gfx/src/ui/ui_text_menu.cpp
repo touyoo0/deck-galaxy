@@ -255,7 +255,6 @@ const TextEntry kTextsMenu[] = {
      "Abrir o cerrar este menú", "Apri o chiudi questo menu"},
     {"Pause or resume", "Pause ou reprise", "Pausieren oder fortsetzen", "Pausar o reanudar", "Pausa o riprendi"},
     {"Fast-forward", "Avance rapide", "Vorspulen", "Avance rápido", "Avanti veloce"},
-    {"Fullscreen", "Plein écran", "Vollbild", "Pantalla completa", "Schermo intero"},
     {"Take screenshot", "Capture d'écran", "Screenshot aufnehmen", "Hacer captura de pantalla",
      "Fai uno screenshot"},
     {"Back, in the menu", "Retour, dans le menu", "Zurück, im Menü", "Atrás, en el menú", "Indietro, nel menu"},
