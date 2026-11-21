@@ -6,6 +6,12 @@ zeigt sie in dieser Sprache. Die Überschriften (`## Version - Datum`,
 Übersetzung zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf
 Englisch.
 
+## 0.12.0 - 2026-11-22
+
+### Changed
+
+- Keine Tasten- oder Tastenkombination bleibt übrig: Ansicht + Menü (Zurück + Start) öffnet das Menü nicht mehr, Alt+Eingabe und Umschalt+F12 entfallen. L4 des Decks (F1) öffnet es, und der Hinweis beim Start sagt das. Die Option „Zurück + Start öffnet das Menü“ entfällt. Die im Spiel verbliebenen Entwicklerwerkzeuge (die Option „Entwicklerwerkzeuge“, `RG_DEV_TOOLS`) sind samt ihren Kombinationen ebenfalls weg. Der Hinweis „Verbunden: Controller“ erscheint nicht mehr, ebenso wenig die Tastenhinweise unter den Neuigkeiten des Startbildschirms.
+
 ## 0.11.0 - 2026-11-19
 
 ### Added
@@ -37,17 +43,3 @@ Englisch.
 ### Added
 
 - Installer, Startbildschirm, Einstellungen, Beenden-Fenster und Update-Meldungen gibt es auf Englisch, Französisch, Deutsch, Spanisch und Italienisch. Die Sprache ist die von Steam (sonst die des Systems), bis du eine wählst: oben rechts im Installer oder im Spiel unter Einstellungen > Oberfläche > Menüsprache. Auch die Hinweise der letzten drei Versionen sind übersetzt (`docs/changelog/`).
-
-## 0.9.0 - 2026-11-18
-
-### Changed
-
-- Die Versionshinweise des Startbildschirms zeigen Daten als „18 Nov. 2026“.
-
-### Added
-
-- Ein Optionen-Knopf auf dem Startbildschirm, über Beenden, öffnet die Einstellungen.
-
-### Removed
-
-- Optionen ohne Sinn auf dem Deck: Fenstermodus, vertikale Synchronisierung, interne Auflösungen über 2x, Nearest-Filter, Ränder, ganzzahlige Skalierung, Stummschalten und Im Hintergrund stummschalten, Tastatur-Schalter, Controller-Auswahl, Tastenbelegung, die drei Optionen der Maus-Kamera, Tasten im Spieltext (immer an), nativer Renderer, Seite Texturen, Inaktiven Mauszeiger ausblenden (immer an) und Position des Bildraten-Zählers (oben rechts).

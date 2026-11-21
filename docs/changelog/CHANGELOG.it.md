@@ -5,6 +5,12 @@ mostra in questa lingua. I titoli (`## versione - data`, `### Added`)
 restano come in `CHANGELOG.md`: sono loro a collegare una versione alla sua
 traduzione. Una versione che manca in questo file viene mostrata in inglese.
 
+## 0.12.0 - 2026-11-22
+
+### Changed
+
+- Non resta nessuna combinazione di tasti o pulsanti: Vista + Menu (Indietro + Start) non apre più il menu, e Alt+Invio e Maiusc+F12 spariscono. L4 del Deck (F1) lo apre, e il suggerimento all'avvio lo dice. L'opzione «Indietro + Start apre il menu» è rimossa. Anche gli strumenti per sviluppatori rimasti nel gioco (l'opzione «Strumenti per sviluppatori», `RG_DEV_TOOLS`) spariscono, con le loro combinazioni. L'avviso «Connesso: controller» non compare più, né i suggerimenti dei pulsanti sotto le novità della schermata iniziale.
+
 ## 0.11.0 - 2026-11-19
 
 ### Added
@@ -36,17 +42,3 @@ traduzione. Una versione che manca in questo file viene mostrata in inglese.
 ### Added
 
 - Installer, schermata iniziale, impostazioni, riquadro di uscita e messaggi di aggiornamento sono in inglese, francese, tedesco, spagnolo e italiano. La lingua è quella di Steam (altrimenti del sistema) finché non ne scegli una: in alto a destra nell'installer, o Impostazioni > Interfaccia > Lingua del menu nel gioco. Anche le note delle ultime tre versioni sono tradotte (`docs/changelog/`).
-
-## 0.9.0 - 2026-11-18
-
-### Changed
-
-- Le note della schermata iniziale mostrano le date come «18 nov. 2026».
-
-### Added
-
-- Un pulsante Opzioni nella schermata iniziale, sopra Esci, apre le impostazioni.
-
-### Removed
-
-- Le opzioni prive di senso sul Deck: modalità finestra, sincronizzazione verticale, risoluzioni interne oltre 2x, filtro del vicino più prossimo, bordi, scala intera, Disattiva audio e Disattiva audio in secondo piano, interruttore Tastiera, scelta del controller, assegnazioni della tastiera, le tre opzioni della camera con il mouse, Pulsanti nel testo del gioco (sempre attivo), renderer nativo, pagina Texture, Nascondi il cursore inattivo (sempre attivo) e posizione del contatore di fotogrammi (in alto a destra).

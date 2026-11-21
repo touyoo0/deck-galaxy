@@ -5,6 +5,12 @@ les affiche dans cette langue. Les titres (`## version - date`, `### Added`)
 restent comme dans `CHANGELOG.md` : c'est eux qui relient une version à sa
 traduction. Une version absente de ce fichier s'affiche en anglais.
 
+## 0.12.0 - 2026-11-22
+
+### Changed
+
+- Plus aucune combinaison de boutons ou de touches : Vue + Menu (Retour + Start) n'ouvre plus le menu, et Alt+Entrée et Maj+F12 disparaissent. L4 du Deck (F1) l'ouvre, et l'indication au démarrage le dit. L'option « Retour + Start ouvre le menu » est supprimée. Les outils de développeur restés dans le jeu (l'option « Outils de développeur », `RG_DEV_TOOLS`) disparaissent aussi, avec leurs combinaisons. L'avis « Connecté : manette » ne s'affiche plus, ni les indications de boutons sous les nouveautés de l'écran d'accueil.
+
 ## 0.11.0 - 2026-11-19
 
 ### Added
@@ -36,17 +42,3 @@ traduction. Une version absente de ce fichier s'affiche en anglais.
 ### Added
 
 - L'installeur, l'écran d'accueil, les réglages, la boîte « Quitter » et les messages de mise à jour sont en anglais, français, allemand, espagnol et italien. La langue est celle de Steam (sinon du système) tant que vous n'en choisissez pas une : en haut à droite de l'installeur, ou Réglages > Interface > Langue du menu dans le jeu. Les notes des trois dernières versions sont traduites aussi (`docs/changelog/`).
-
-## 0.9.0 - 2026-11-18
-
-### Changed
-
-- Les notes de l'écran d'accueil affichent les dates sous la forme « 18 nov. 2026 ».
-
-### Added
-
-- Un bouton Options sur l'écran d'accueil, au-dessus de Quitter, ouvre les réglages.
-
-### Removed
-
-- Les options sans sens sur le Deck : mode de fenêtre, synchronisation verticale, résolutions internes au-delà de 2x, filtre « plus proche voisin », bordures, mise à l'échelle entière, Couper le son et Couper le son en arrière-plan, interrupteur Clavier, choix de la manette, affectations du clavier, les trois options de la caméra à la souris, Boutons dans le texte du jeu (toujours actif), rendu natif, page Textures, Masquer le curseur inactif (toujours actif) et position du compteur d'images (en haut à droite).

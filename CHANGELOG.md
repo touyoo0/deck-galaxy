@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.12.0 - 2026-11-22
+
 ### Changed
 
 - No button or key combination is left: View + Menu (Back + Start) no longer
