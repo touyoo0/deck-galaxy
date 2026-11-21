@@ -2,6 +2,10 @@
 
 #include "overlay/overlay_manager.h"
 #include "ps2_runtime.h"
+#include "Stubs/CD.h"
+#include "draw_state_mirror.h"
+#include "native_producer.h"
+#include "scene_timing.h"
 #include "Stubs/Pad.h"
 #include "runtime/ee_scheduler.h"
 #include "vif1_thread.h"
@@ -70,38 +74,50 @@ std::filesystem::path stateDir()
 
 std::filesystem::path slotPath(int slot)
 {
-    if (slot == kAutoSlot)
-        return stateDir() / "auto.rgs";
     return stateDir() / ("slot" + std::to_string(slot) + ".rgs");
 }
 
-// The automatic state is only good for the build that took it: a state holds the
-// machine under that build's code, and a newer one (an update) would run it
-// under other code. Its build is kept beside it, `auto.rev`; a state without it,
-// or from another build, is not offered and is removed. The player's own slots
-// are left to him.
-std::filesystem::path autoRevisionPath()
+// A state is only good for the build that took it: it holds the machine under
+// that build's code, and a newer one (an update) would run it under other code.
+// Its build is kept beside it, `slotN.rev`; Continue offers only a state of
+// this build. The player's slots are left to him: loading one by hand still
+// loads it.
+std::filesystem::path slotRevisionPath(int slot)
 {
-    return stateDir() / "auto.rev";
+    return stateDir() / ("slot" + std::to_string(slot) + ".rev");
 }
 
-void writeAutoRevision()
+void writeSlotRevision(int slot)
 {
-    std::ofstream file(autoRevisionPath(), std::ios::trunc);
+    std::ofstream file(slotRevisionPath(slot), std::ios::trunc);
     file << RG_REVISION << '\n';
 }
 
-bool autoStateFits()
+bool slotFits(int slot)
 {
-    std::ifstream file(autoRevisionPath());
+    std::ifstream file(slotRevisionPath(slot));
     std::string revision;
     std::getline(file, revision);
-    if (file && revision == RG_REVISION)
-        return true;
-    std::error_code ec;
-    std::filesystem::remove(slotPath(kAutoSlot), ec);
-    std::filesystem::remove(autoRevisionPath(), ec);
-    return false;
+    return file && revision == RG_REVISION;
+}
+
+// The slot Continue loads: the one saved last, of this build. 0: none.
+int latestSlot()
+{
+    int best = 0;
+    time_t bestTime = 0;
+    for (int slot = 1; slot <= kSlots; ++slot)
+    {
+        struct stat info{};
+        if (::stat(slotPath(slot).c_str(), &info) != 0 || info.st_size <= 0 || !slotFits(slot))
+            continue;
+        if (best == 0 || info.st_mtime >= bestTime)
+        {
+            best = slot;
+            bestTime = info.st_mtime;
+        }
+    }
+    return best;
 }
 
 bool validSlot(int slot)
@@ -430,7 +446,7 @@ struct Pending
     std::chrono::steady_clock::time_point since = std::chrono::steady_clock::now();
     std::string lastReason;
     // Set once the request is over, the file's writing started or the try
-    // given up: what autoSaveBlocking waits for.
+    // given up.
     std::atomic<bool> finished{false};
     std::atomic<bool> saved{false};
 };
@@ -446,7 +462,14 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
     std::string why;
     const bool taken = runtime.eeScheduler().saveMachine(out, why);
     if (taken)
+    {
         writePadTrailer(out);
+        ps2_stubs::cdSaveState(out, &runtime);
+        rg::nativeproducer::saveState(out);
+        rg::drawstate::saveState(out);
+        rg::timing::saveState(out);
+        rg::nativeproducer::saveFills(out);
+    }
     if (!taken)
     {
         pending->lastReason = why;
@@ -455,17 +478,7 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
             done = false;
             return;
         }
-        if (slot == kAutoSlot)
-        {
-            // An old state would take the player back to where he no longer is.
-            std::error_code ec;
-            std::filesystem::remove(slotPath(slot), ec);
-            std::fprintf(stderr, "[savestate] no automatic state: %s\n", why.c_str());
-        }
-        else
-        {
-            say("Could not save: " + why);
-        }
+        say("Could not save: " + why);
         done = true;
         return;
     }
@@ -501,15 +514,9 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
             {
                 std::fprintf(stderr, "[savestate] slot %d: %zu bytes (%zu on disk), after %.2f s\n", slot, raw.size(),
                              file.size(), std::chrono::duration<double>(std::chrono::steady_clock::now() - since).count());
-                if (slot == kAutoSlot)
-                {
-                    writeAutoRevision();
-                }
-                else
-                {
-                    say("Saved to slot " + std::to_string(slot));
-                    thumbnailSaved(slot);
-                }
+                writeSlotRevision(slot);
+                say("Saved to slot " + std::to_string(slot));
+                thumbnailSaved(slot);
             }
             else
             {
@@ -524,6 +531,15 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
     done = true;
 }
 
+// Continue's load waits for the boot (requestAutoLoad) up to this long, and
+// the vblanks the guest runs first (1.5 s).
+constexpr auto kBootWait = std::chrono::seconds(20);
+constexpr uint64_t kBootTicks = 90;
+// The slot Continue is loading (0: none), and until when its load may be asked
+// again.
+int g_continueSlot = 0;
+std::chrono::steady_clock::time_point g_autoLoadDeadline{};
+
 void doLoad(PS2Runtime &runtime, int slot, bool &done)
 {
     done = true;
@@ -531,13 +547,10 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
     {
         // A save still being written to this slot is waited for.
         std::lock_guard slotLock(g_slotLock[slot]);
-        if (slot == kAutoSlot && !autoStateFits())
-            return;
         std::ifstream file(slotPath(slot), std::ios::binary | std::ios::ate);
         if (!file)
         {
-            if (slot != kAutoSlot)
-                say("Slot " + std::to_string(slot) + " is empty");
+            say("Slot " + std::to_string(slot) + " is empty");
             return;
         }
         const std::streamsize size = file.tellg();
@@ -578,6 +591,23 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
         {
             runtime.eeScheduler().loadMachine(in);
             readPadTrailer(in, runtime);
+            // The disc's files and stream (a state from before has none).
+            if (in.remaining() >= sizeof(uint32_t))
+            {
+                ps2_stubs::cdLoadState(in, &runtime);
+                // The renderer's side of the picture (a state from before has none).
+                if (in.remaining() >= sizeof(uint32_t))
+                {
+                    rg::nativeproducer::loadState(in);
+                    rg::drawstate::loadState(in);
+                    if (in.remaining() >= sizeof(uint32_t))
+                    {
+                        rg::timing::loadState(in);
+                        if (in.remaining() >= sizeof(uint32_t))
+                            rg::nativeproducer::loadFills(in);
+                    }
+                }
+            }
         }
         catch (...)
         {
@@ -590,10 +620,19 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
     {
         // The scheduler's part is read before anything changes, the memory's
         // is not: a failure here may have left the machine half loaded.
+        // Continue loads while the game boots, which plays its logos as movies:
+        // the load asks again until the movie ends (it refused before it
+        // touched anything).
+        if (slot == g_continueSlot && std::strstr(error.what(), "movie") &&
+            std::chrono::steady_clock::now() < g_autoLoadDeadline)
+        {
+            done = false;
+            return;
+        }
         say(std::string("Load failed: ") + error.what());
         return;
     }
-    if (slot != kAutoSlot)
+    if (slot != g_continueSlot)
         say("Loaded slot " + std::to_string(slot));
 }
 
@@ -632,65 +671,58 @@ void requestLoad(PS2Runtime &runtime, int slot)
         });
 }
 
-namespace
-{
-std::shared_ptr<Pending> queueAutoSave(PS2Runtime &runtime)
-{
-    auto pending = std::make_shared<Pending>();
-    runtime.eeScheduler().requestExecutorTask(
-        [&runtime, pending]
-        {
-            bool done = true;
-            doSave(runtime, kAutoSlot, pending, done);
-            if (done)
-                pending->finished = true;
-            return done;
-        });
-    return pending;
-}
-} // namespace
-
-void requestAutoSave(PS2Runtime &runtime)
-{
-    queueAutoSave(runtime);
-}
-
-bool autoSaveBlocking(PS2Runtime &runtime, int timeoutMs)
-{
-    const auto pending = queueAutoSave(runtime);
-    const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-    while (!pending->finished && std::chrono::steady_clock::now() < until)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    if (!pending->finished)
-    {
-        // Not taken in time, and maybe never: the old state would be a lie.
-        std::error_code ec;
-        std::filesystem::remove(slotPath(kAutoSlot), ec);
-        std::fprintf(stderr, "[savestate] no automatic state: not taken in %d ms\n", timeoutMs);
-        return false;
-    }
-    flush();
-    return pending->saved;
-}
-
 void requestAutoLoad(PS2Runtime &runtime)
 {
+    // Continue is pressed on the home screen, with the guest not yet run: the
+    // host's side of the boot (the sound driver on the IOP and its audio
+    // stream, the RPC tables, the game's pad ports) does not exist, and a
+    // state cannot bring it (it is not in it). The game boots first, as for
+    // Play, and the state loads once it has opened its pad: no sound and
+    // broken textures otherwise.
+    const int slot = latestSlot();
+    if (slot == 0)
+        return;
+    const auto started = std::chrono::steady_clock::now();
+    g_continueSlot = slot;
+    g_autoLoadDeadline = started + kBootWait;
+    const uint64_t firstTick = runtime.eeScheduler().currentVSyncTick();
+    auto lastTry = std::make_shared<std::chrono::steady_clock::time_point>();
     runtime.eeScheduler().requestExecutorTask(
-        [&runtime]
+        [&runtime, slot, started, firstTick, lastTry]
         {
+            const auto now = std::chrono::steady_clock::now();
+            const bool booted = runtime.eeScheduler().currentVSyncTick() >= firstTick + kBootTicks &&
+                                ps2_stubs::getPadDebugSnapshot().ports[0][0].open;
+            if (!booted && now - started < kBootWait)
+                return false;
+            // A refused load asks again; not every pass.
+            if (*lastTry != std::chrono::steady_clock::time_point{} && now - *lastTry < std::chrono::milliseconds(200))
+                return false;
+            *lastTry = now;
             bool done = true;
-            doLoad(runtime, kAutoSlot, done);
+            doLoad(runtime, slot, done);
+            if (done)
+                g_continueSlot = 0;
             return done;
         });
 }
 
 SlotInfo autoSlot()
 {
+    // The states the first Continue kept by itself are no longer used.
+    static const bool cleaned = [] {
+        std::error_code ec;
+        std::filesystem::remove(stateDir() / "auto.rgs", ec);
+        std::filesystem::remove(stateDir() / "auto.rev", ec);
+        return true;
+    }();
+    (void)cleaned;
     SlotInfo entry;
-    struct stat info{};
-    if (::stat(slotPath(kAutoSlot).c_str(), &info) != 0 || info.st_size <= 0)
+    const int slot = latestSlot();
+    if (slot == 0)
         return entry;
-    if (!autoStateFits())
+    struct stat info{};
+    if (::stat(slotPath(slot).c_str(), &info) != 0)
         return entry;
     entry.used = true;
     std::tm local{};
@@ -818,6 +850,8 @@ void install(PS2Runtime &runtime)
                 std::fprintf(stderr, "[savestate] script: %s slot %d\n", step.save ? "save" : "load", step.slot);
                 if (step.save)
                     requestSave(runtime, step.slot);
+                else if (step.slot == kAutoSlot)
+                    requestAutoLoad(runtime); // Continue's state, as the home screen loads it
                 else
                     requestLoad(runtime, step.slot);
             }
