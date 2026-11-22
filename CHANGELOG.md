@@ -2,8 +2,9 @@
 
 ## Unreleased
 
-- Importing a PCSX2 save no longer leaves an empty save (the game said it was corrupted) with some memory cards; importing again from the installer repairs it.
+## 0.12.1 - 2026-11-22
 
+- Importing a PCSX2 save no longer leaves an empty save (the game said it was corrupted) with some memory cards; importing again from the installer repairs it.
 - With a European disc installed, the game's text starts in the Deck's language
   (Steam's, else the system's) on a first start, as the installer and the menu
   do; English when that language is not among the five.

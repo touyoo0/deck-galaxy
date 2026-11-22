@@ -5,6 +5,11 @@ les affiche dans cette langue. Les titres (`## version - date`) restent comme
 dans `CHANGELOG.md` : ce sont eux qui relient une version à sa traduction. Une
 version absente de ce fichier s'affiche en anglais.
 
+## 0.12.1 - 2026-11-22
+
+- L'import d'une sauvegarde PCSX2 ne laisse plus une sauvegarde vide (le jeu la disait corrompue) avec certaines cartes mémoire ; refaire l'import depuis l'installeur la répare.
+- Avec un disque européen, le texte du jeu démarre dans la langue de la Deck (celle de Steam, sinon du système) au premier lancement, comme l'installeur et le menu ; en anglais si cette langue n'est pas parmi les cinq.
+
 ## 0.12.0 - 2026-11-22
 
 - L'installeur peut importer votre sauvegarde PCSX2 du jeu : il cherche seul votre carte mémoire (PCSX2, EmuDeck, RetroDECK, carte SD), et vous pouvez choisir un fichier ou un dossier à la main s'il n'en trouve pas.
@@ -31,7 +36,3 @@ version absente de ce fichier s'affiche en anglais.
 - Le menu est une seule fenêtre centrée, avec les pages États de sauvegarde, Actions et Aide.
 - La pause est sur F5 (elle était sur F2).
 - Le jeu se met en pause quand sa fenêtre perd le focus (nouveau défaut).
-
-## 0.10.0 - 2026-11-18
-
-- Installeur, écran d'accueil et réglages en anglais, français, allemand, espagnol et italien.

@@ -5,6 +5,11 @@ inicio las muestra en este idioma. Los títulos (`## versión - fecha`) se
 quedan como en `CHANGELOG.md`: son los que unen una versión con su
 traducción. Una versión que falte en este archivo se muestra en inglés.
 
+## 0.12.1 - 2026-11-22
+
+- Importar una partida de PCSX2 ya no deja una partida vacía (el juego decía que estaba dañada) con algunas tarjetas de memoria; volver a importar desde el instalador la repara.
+- Con un disco europeo, el texto del juego arranca en el idioma de la Deck (el de Steam, si no el del sistema) en el primer inicio, como el instalador y el menú; en inglés si ese idioma no es uno de los cinco.
+
 ## 0.12.0 - 2026-11-22
 
 - El instalador puede importar tu partida de PCSX2: busca solo tu tarjeta de memoria (PCSX2, EmuDeck, RetroDECK, tarjeta SD), y puedes elegir un archivo o una carpeta a mano si no encuentra ninguna.
@@ -31,7 +36,3 @@ traducción. Una versión que falte en este archivo se muestra en inglés.
 - El menú es una sola ventana centrada, con las páginas Estados de guardado, Acciones y Ayuda.
 - La pausa está en F5 (antes F2).
 - El juego se pausa cuando su ventana pierde el foco (nuevo valor por defecto).
-
-## 0.10.0 - 2026-11-18
-
-- Instalador, pantalla de inicio y ajustes en inglés, francés, alemán, español e italiano.
