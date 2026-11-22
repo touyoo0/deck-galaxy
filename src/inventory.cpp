@@ -24,6 +24,13 @@ namespace
 constexpr uint32_t kItemDefGetStackLimit = 0x0040E070u;
 constexpr uint32_t kInvAddItemCore = 0x003C6540u;
 constexpr uint32_t kInvAddItemRepeat = 0x003C47B0u;
+// UiDrawSpritePixelMaybe, which draws a number from a UI sub-item (a2): the
+// value (a 32-bit word at +8), its digit count (a half at +0x10, 2 for the
+// item counts). The first digit is value / 10^(count-1) without a modulo, so
+// 987 in two digits draws glyph 98 then 7.
+constexpr uint32_t kUiDrawNumber = 0x00292300u;
+constexpr uint32_t kNumberValue = 0x8u;
+constexpr uint32_t kNumberDigits = 0x10u;
 // The adds that fall back to the overflow when the bag has no room, by
 // their return addresses: an item found. InvAddItemRepeat's (chests, event
 // commands and rewards, Insectron prizes), ScriptFnInvAddItem's and
@@ -35,8 +42,13 @@ constexpr uint32_t kRepeatAdd = 0x003C480Cu;
 // is kept in the bag.
 constexpr uint32_t kEquipDefaultsStart = 0x003C1250u;
 constexpr uint32_t kEquipDefaultsEnd = 0x003C1424u;
-// The stack limit of an item without its own (99).
+// The stack limit of an item without its own (99), read by the stack code
+// too (InvAddItemCore, InvMoveItem), not only through ItemDefGetStackLimit.
 constexpr uint32_t kDefaultStackLimit = 0x00465B60u;
+constexpr int32_t kGameStackLimit = 99;
+// The option's limit: a stack's count is a signed 16-bit (item +0x14), the
+// menus draw it in three digits at most.
+constexpr int32_t kBigStackLimit = 999;
 // The storage's first and last slots, in the range table.
 constexpr uint32_t kStorageFirst = 0x00465A38u;
 constexpr uint32_t kStorageLast = 0x00465A40u;
@@ -146,6 +158,7 @@ constexpr uint32_t kSpritesMax = 64u;
 PS2Runtime::RecompiledFunction g_itemDefGetStackLimit = nullptr;
 PS2Runtime::RecompiledFunction g_invAddItemCore = nullptr;
 PS2Runtime::RecompiledFunction g_invAddItemRepeat = nullptr;
+PS2Runtime::RecompiledFunction g_uiDrawNumber = nullptr;
 PS2Runtime::RecompiledFunction g_partySerialize = nullptr;
 PS2Runtime::RecompiledFunction g_partyDeserialize = nullptr;
 PS2Runtime::RecompiledFunction g_partyInit = nullptr;
@@ -169,6 +182,8 @@ std::vector<std::pair<uint32_t, uint32_t>> g_tabLists;
 // game's thread).
 bool g_equipping = false;
 std::atomic<bool> g_stackLimit99{false};
+// The guest's RAM, for the default limit's word.
+uint8_t *g_rdram = nullptr;
 std::atomic<bool> g_fullBagToStorage{false};
 std::atomic<unsigned> g_sentToStorage{0u};
 
@@ -191,17 +206,79 @@ void setRegS32(R5900Context *ctx, int reg, int32_t value)
     ctx->r[reg] = _mm_set_epi64x(_mm_extract_epi64(ctx->r[reg], 1), value);
 }
 
+void writeS32(uint8_t *rdram, uint32_t address, int32_t value);
+void writeS16(uint8_t *rdram, uint32_t address, int16_t value);
+
+// The default limit's word at the option's value, or the game's back.
+void syncDefaultLimit(uint8_t *rdram, bool on)
+{
+    const int32_t want = on ? kBigStackLimit : kGameStackLimit;
+    if (readS32(rdram, kDefaultStackLimit) != want)
+    {
+        writeS32(rdram, kDefaultStackLimit, want);
+    }
+}
+
 void itemDefGetStackLimit(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
 {
-    if (!g_stackLimit99.load(std::memory_order_relaxed))
+    const bool on = g_stackLimit99.load(std::memory_order_relaxed);
+    syncDefaultLimit(rdram, on);
+    if (!on)
     {
         g_itemDefGetStackLimit(rdram, ctx, runtime);
         return;
     }
-    setReturnS32(ctx, readS32(rdram, kDefaultStackLimit));
+    setReturnS32(ctx, kBigStackLimit);
     // A host function stands in for the guest's `jr ra` too (see
     // libc_rand.cpp).
     ctx->pc = getRegU32(ctx, 31);
+}
+
+// The sub-item's digit count as the menu set it, put back after the draw
+// (the menu sets it once; a later, smaller number must not keep the extra
+// digit).
+uint32_t g_numberAt = 0u;
+int16_t g_numberDigits = 0;
+
+void putBackDigits(uint8_t *rdram, R5900Context *, PS2Runtime *, uint32_t)
+{
+    if (g_numberAt)
+    {
+        writeS16(rdram, g_numberAt + kNumberDigits, g_numberDigits);
+        g_numberAt = 0u;
+    }
+}
+
+// (draw state, ..., sub-item): a count the digits cannot hold gets the
+// digits it needs, three for 999. Only with the item limit option on: the
+// game's own numbers fit their digits.
+void uiDrawNumber(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+{
+    const uint32_t at = getRegU32(ctx, 6) & 0x1FFFFFFFu;
+    if (g_stackLimit99.load(std::memory_order_relaxed) && at != 0u && at + kNumberDigits + 2u <= PS2_RAM_SIZE)
+    {
+        const int32_t value = readS32(rdram, at + kNumberValue);
+        int16_t digits = 0;
+        std::memcpy(&digits, rdram + at + kNumberDigits, sizeof(digits));
+        int16_t need = digits;
+        int64_t limit = 1;
+        for (int i = 0; i < need; ++i)
+            limit *= 10;
+        while (digits > 0 && need < 9 && value >= limit)
+        {
+            ++need;
+            limit *= 10;
+        }
+        if (need != digits && digits > 0)
+        {
+            g_numberAt = at;
+            g_numberDigits = digits;
+            writeS16(rdram, at + kNumberDigits, need);
+            rg::hooks::callThen(g_uiDrawNumber, rdram, ctx, runtime, &putBackDigits, 0u);
+            return;
+        }
+    }
+    g_uiDrawNumber(rdram, ctx, runtime);
 }
 
 // The object the add returned, if it is in the storage: an item the bag had
@@ -590,6 +667,7 @@ void patchTable(uint8_t *rdram)
 
 void install(PS2Runtime &runtime)
 {
+    g_rdram = runtime.memory().getRDRAM();
     if (envOn("RG_STACK_LIMIT_99"))
     {
         setStackLimit99(true);
@@ -604,7 +682,8 @@ void install(PS2Runtime &runtime)
     }
     if (!rg::timing::hookFunction(runtime, kItemDefGetStackLimit, &itemDefGetStackLimit, g_itemDefGetStackLimit) ||
         !rg::timing::hookFunction(runtime, kInvAddItemCore, &invAddItemCore, g_invAddItemCore) ||
-        !rg::timing::hookFunction(runtime, kInvAddItemRepeat, &invAddItemRepeat, g_invAddItemRepeat))
+        !rg::timing::hookFunction(runtime, kInvAddItemRepeat, &invAddItemRepeat, g_invAddItemRepeat) ||
+        !rg::timing::hookFunction(runtime, kUiDrawNumber, &uiDrawNumber, g_uiDrawNumber))
     {
         std::fprintf(stderr, "[rg] inventory options: some hooks are missing, see above\n");
     }
@@ -641,6 +720,12 @@ void install(PS2Runtime &runtime)
 void setStackLimit99(bool on)
 {
     g_stackLimit99.store(on, std::memory_order_relaxed);
+    // Turned off: the game's word back now. Turned on: the hook sets it, once
+    // the item data (which keeps its low 7 bits) is loaded.
+    if (!on && g_rdram)
+    {
+        syncDefaultLimit(g_rdram, false);
+    }
 }
 
 void setFullBagToStorage(bool on)

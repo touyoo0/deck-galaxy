@@ -95,7 +95,7 @@ and **Check for new versions**, which is on F1 > Interface:
 | Fast transporters | Transporter warps play up to twice as fast. |
 | Check for new versions | At each start, asks GitHub for this project's releases and says when a newer one is out (Rogue Galaxy > About links to it). On by default. |
 | Full bag to storage | An item found when the bag has no room for it goes to the transporter's item storage, instead of the overflow you have to sort out (or losing it when that is full too). Shops and the Factory still need room in the bag. |
-| Item limit 99 | Every item that stacks can be carried up to 99 in the bag; the game holds some (healing items, boosts) to 20, 30 or 50. |
+| Item limit 999 | Every item that stacks can be carried up to 999 in the bag; the game holds some (healing items, boosts) to 20, 30 or 50. |
 | Seventh bag page | The bag holds 280 items instead of 240; the transporter's storage keeps its 320. A save made with it loads without it too, the seventh page's items kept out of sight until it is back on. From the next start. |
 
 **Battles and rewards**

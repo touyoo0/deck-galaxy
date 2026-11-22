@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The item limit option now goes up to 999 per item instead of 99.
+
 ## 0.12.3 - 2026-11-22
 
 - The RetroAchievements notice no longer shows each time the game starts.
