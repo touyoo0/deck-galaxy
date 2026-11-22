@@ -5,6 +5,11 @@ mostra in questa lingua. I titoli (`## versione - data`) restano come in
 `CHANGELOG.md`: sono loro a collegare una versione alla sua traduzione. Una
 versione che manca in questo file viene mostrata in inglese.
 
+## 0.12.3 - 2026-11-22
+
+- Il bagliore attorno a un personaggio (l'aura della Spada del Fulmine) torna a essere un sottile contorno bianco, non più un'ampia macchia di luce sul pavimento.
+- Il nome della zona in basso sullo schermo appare per intero in francese, tedesco, spagnolo e italiano (gli accenti sono disegnati come lettere semplici); veniva tagliato al primo accento o trattino, oppure mancava.
+
 ## 0.12.2 - 2026-11-22
 
 - Il salto all'indietro in combattimento non è più molto troppo alto e lungo a 60 fps.

@@ -5,6 +5,11 @@ zeigt sie in dieser Sprache. Die Überschriften (`## Version - Datum`) bleiben
 wie in `CHANGELOG.md`: Über sie wird eine Version ihrer Übersetzung
 zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf Englisch.
 
+## 0.12.3 - 2026-11-22
+
+- Das Leuchten um eine Figur (die Aura des Blitzschwerts) ist wieder eine dünne weiße Kontur und kein breiter Lichtschleier mehr auf dem Boden.
+- Der Name des Gebiets am unteren Bildrand erscheint auf Französisch, Deutsch, Spanisch und Italienisch vollständig (Akzente werden als einfache Buchstaben gezeichnet); er wurde beim ersten Akzent oder Bindestrich abgeschnitten oder fehlte.
+
 ## 0.12.2 - 2026-11-22
 
 - Der Rückwärtssprung im Kampf ist bei 60 fps nicht mehr viel zu hoch und zu weit.

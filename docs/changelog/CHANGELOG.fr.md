@@ -5,6 +5,11 @@ les affiche dans cette langue. Les titres (`## version - date`) restent comme
 dans `CHANGELOG.md` : ce sont eux qui relient une version à sa traduction. Une
 version absente de ce fichier s'affiche en anglais.
 
+## 0.12.3 - 2026-11-22
+
+- Le halo autour d'un personnage (l'aura de l'Épée de foudre) redevient un fin contour blanc, plus une large traînée de lumière sur le sol.
+- Le nom de la zone en bas de l'écran s'affiche en entier en français, allemand, espagnol et italien (les accents sont dessinés en lettres simples) ; il était coupé au premier accent ou tiret, ou absent.
+
 ## 0.12.2 - 2026-11-22
 
 - Le saut arrière en combat n'est plus beaucoup trop haut et trop long à 60 images par seconde.
