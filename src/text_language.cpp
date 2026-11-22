@@ -504,6 +504,75 @@ void textSymbolTagFind(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     g_originalSymbolFind(rdram, ctx, runtime);
 }
 
+// The area name at the bottom of the screen (MapCaptionUpdate's panel) is made
+// of glyphs from map\caption\common_caption.pac, which holds a space, 0-9, ':',
+// an apostrophe, A-Z and a-z only. CaptionPanelSetText never moves past a
+// character the font lacks, so everything after it came out blank: "Zone
+// r<'e>sidentielle" drew "Zone r", and a name starting with one drew nothing.
+// The text is rewritten into letters the font has: an accent tag gives its
+// letter ("<'e>" -> "e", "<oe>" -> "oe"), a dash or a slash a space, any other
+// mark nothing.
+constexpr uint32_t kCaptionPanelSetText = 0x0033DFD0u; // (panel, text)
+constexpr uint32_t kCaptionTextBytes = 256u;
+PS2Runtime::RecompiledFunction g_originalCaptionText = nullptr;
+uint32_t g_captionText = 0; // guest buffer of the rewritten text
+
+std::string captionLetters(const char *text)
+{
+    std::string out;
+    for (const char *p = text; *p && out.size() + 2 < kCaptionTextBytes; ++p)
+    {
+        const unsigned char c = static_cast<unsigned char>(*p);
+        if (c == '<')
+        {
+            const char *end = std::strchr(p, '>');
+            if (end && end - p <= 24)
+            {
+                const std::string tag(p + 1, end);
+                if (tag == "oe" || tag == "OE" || tag == "ss")
+                {
+                    out += tag == "ss" ? "ss" : tag;
+                }
+                else if (tag.size() == 2 && std::strchr("`'^:,~", tag[0]) && std::isalpha(static_cast<unsigned char>(tag[1])))
+                {
+                    out += tag[1];
+                }
+                p = end;
+                continue;
+            }
+        }
+        if (std::isalnum(c) || c == ' ' || c == ':' || c == '\'' || c == '\n')
+        {
+            out += static_cast<char>(c);
+        }
+        else if (c == '-' || c == '/' || c == '_')
+        {
+            out += ' ';
+        }
+    }
+    return out;
+}
+
+void captionPanelSetText(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+{
+    const uint32_t textAddress = getRegU32(ctx, 5);
+    const char *text = textAddress ? reinterpret_cast<const char *>(getConstMemPtr(rdram, textAddress)) : nullptr;
+    if (text)
+    {
+        if (!g_captionText)
+        {
+            g_captionText = g_runtime->guestMalloc(kCaptionTextBytes, 16u);
+        }
+        if (g_captionText)
+        {
+            const std::string letters = captionLetters(text);
+            std::memcpy(rdram + (g_captionText & 0x1FFFFFFFu), letters.c_str(), letters.size() + 1);
+            ctx->r[5] = _mm_set_epi64x(0, static_cast<int64_t>(g_captionText));
+        }
+    }
+    g_originalCaptionText(rdram, ctx, runtime);
+}
+
 // The menus draw their own font (UiGlyphTableBuild from menu_font_setting, UiGlyphFind),
 // one byte or one Shift-JIS pair a glyph, with no tags. The European menu_font_setting
 // lists the accents as tags; setup.py writes each as one byte, 0xA0 + its index in
@@ -2205,6 +2274,10 @@ void install(PS2Runtime &runtime)
     if (!rg::timing::hookFunction(runtime, kUiLayoutStringGlyphs, &uiLayoutStringGlyphs, g_originalUiLayout))
     {
         std::fprintf(stderr, "[rg] the menus' accent tags stay as they are\n");
+    }
+    if (!rg::timing::hookFunction(runtime, kCaptionPanelSetText, &captionPanelSetText, g_originalCaptionText))
+    {
+        std::fprintf(stderr, "[rg] the area names keep their accents and marks (and are cut at the first)\n");
     }
     if (!rg::timing::hookFunction(runtime, kPauseReasonDraw, &pauseReasonDraw, g_originalPauseDraw))
     {
