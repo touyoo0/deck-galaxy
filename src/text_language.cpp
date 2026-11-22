@@ -2045,6 +2045,11 @@ void forgetGuestMemory()
     g_accentEntries = 0;
     g_layoutBuffers = 0;
     g_pathScratch = 0;
+    // The tables patched once in the game's memory are the loaded state's now: patch them again
+    // (each patch checks the table is the one it expects, and keeps a patched one as it is).
+    g_pausePatched = false;
+    g_itemCommandsPatched = false;
+    g_kindIconsPatched = false;
 }
 
 int europeanColumn()
