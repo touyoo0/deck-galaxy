@@ -9,6 +9,8 @@ zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf Englisch.
 
 - Der Import eines PCSX2-Spielstands hinterlässt bei manchen Memory Cards keinen leeren Spielstand mehr (das Spiel meldete ihn als beschädigt); ein erneuter Import über den Installer repariert ihn.
 - Mit einer europäischen Disc startet der Text des Spiels beim ersten Start in der Sprache des Decks (die von Steam, sonst die des Systems), wie der Installer und das Menü; Englisch, wenn diese Sprache nicht zu den fünf gehört.
+- Die Steinhund-Monster haben ihre Texturen (sie waren grau und durchsichtig).
+- Das Laden eines Savestates lässt das Spiel mit den europäischen Texten nicht mehr einfrieren oder abstürzen und bringt das Pausenmenü nicht mehr durcheinander.
 
 ## 0.12.0 - 2026-11-22
 
