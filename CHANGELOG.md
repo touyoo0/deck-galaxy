@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The area name at the bottom of the screen shows whole in French, German, Spanish and Italian (accents are drawn as plain letters); it was cut at the first accent or dash, or missing.
 - The glow around a character (the Lightning Sword aura) is a thin white outline again, no longer a wide light smear on the floor.
 
 ## 0.12.2 - 2026-11-22
