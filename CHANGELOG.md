@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The backward jump in battle is no longer much higher and farther than it should be at 60 fps.
+
 ## 0.12.1 - 2026-11-22
 
 - Importing a PCSX2 save no longer leaves an empty save (the game said it was corrupted) with some memory cards; importing again from the installer repairs it.

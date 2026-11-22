@@ -62,6 +62,8 @@ constexpr unsigned kMaxLinesAll = 300000u;
 
 PS2Runtime::RecompiledFunction g_moveCollide = nullptr;
 PS2Runtime::RecompiledFunction g_moveReqSet = nullptr;
+// The party leader's character, as the last move saw it.
+uint32_t g_leader = 0u;
 std::chrono::steady_clock::time_point g_start;
 bool g_everyMove = false; // RG_JUMP_TRACE=2 or 4: on the ground as well (speed ramps, a party following)
 bool g_allCharas = false; // RG_JUMP_TRACE=3 or 4: every character, not only the leader
@@ -273,6 +275,10 @@ void moveCollide(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         enemyMove(rdram, ctx, runtime, chara);
         return;
     }
+    if (isLeader(rdram, chara))
+    {
+        g_leader = chara;
+    }
     if (g_allCharas || isLeader(rdram, chara))
     {
         ++g_moves;
@@ -300,6 +306,72 @@ void moveReqSet(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     g_moveReqSet(rdram, ctx, runtime);
 }
 
+// RG_JUMP_TRACE=5: the script commands that set or scale a character's
+// velocity (a jump's launch), logged on the same clock as the moves.
+constexpr uint32_t kCharaCmdSpeed = 0x0022C7F0u;
+constexpr uint32_t kCharaCmdSpeedScale = 0x0022C650u;
+PS2Runtime::RecompiledFunction g_cmdSpeed = nullptr;
+PS2Runtime::RecompiledFunction g_cmdSpeedScale = nullptr;
+
+void logCmd(const uint8_t *rdram, const R5900Context *ctx, const char *name, const char *when, int32_t mode)
+{
+    float v[3] = {0.0f, 0.0f, 0.0f};
+    readVec(rdram, g_leader + kCharaVelocity, v);
+    std::printf("[cmd] %9.3f s %s %s mode %d, leader velocity (%.3f, %.3f, %.3f), step %.2f\n", secondsNow(), name,
+                when, mode, v[0], v[1], v[2], rg::timing::sceneStep(rdram, ctx));
+}
+
+void cmdSpeed(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+{
+    const int32_t mode = static_cast<int32_t>(getRegU32(ctx, 6));
+    logCmd(rdram, ctx, "CharaCmdSpeed", "before", mode);
+    g_cmdSpeed(rdram, ctx, runtime);
+    logCmd(rdram, ctx, "CharaCmdSpeed", "after", mode);
+}
+
+void cmdSpeedScale(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+{
+    const int32_t mode = static_cast<int32_t>(getRegU32(ctx, 6));
+    logCmd(rdram, ctx, "CharaCmdSpeedScale", "before", mode);
+    g_cmdSpeedScale(rdram, ctx, runtime);
+    logCmd(rdram, ctx, "CharaCmdSpeedScale", "after", mode);
+}
+
+
+// The calls that put a velocity or an impulse on the leader: CharaAddActMove
+// (+0xB0), CharaAddActAccel (+0xA0), CharaAddReqMove (+0xD0), CharaSetVelocity
+// and CharaSetVelocityFromVec; the caller and the vector.
+#define RG_TRACE_VEC_CALL(NAME, ADDRESS, TEXT, VECTOR_IN_A1)                                                     \
+    constexpr uint32_t k##NAME = ADDRESS;                                                                        \
+    PS2Runtime::RecompiledFunction g_##NAME = nullptr;                                                           \
+    void hook##NAME(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)                                     \
+    {                                                                                                            \
+        if (g_leader != 0u && getRegU32(ctx, 4) == g_leader)                                                     \
+        {                                                                                                        \
+            float v[3] = {0.0f, 0.0f, 0.0f};                                                                     \
+            if (VECTOR_IN_A1)                                                                                    \
+            {                                                                                                    \
+                readVec(rdram, getRegU32(ctx, 5), v);                                                            \
+            }                                                                                                    \
+            else                                                                                                 \
+            {                                                                                                    \
+                std::memcpy(&v[0], &ctx->f[12], sizeof(float));                                                  \
+                std::memcpy(&v[1], &ctx->f[13], sizeof(float));                                                  \
+                std::memcpy(&v[2], &ctx->f[14], sizeof(float));                                                  \
+            }                                                                                                    \
+            std::printf("[vel] %9.3f s " TEXT " (%.3f, %.3f, %.3f) from 0x%08X, step %.2f\n", secondsNow(), v[0],  \
+                        v[1], v[2], getRegU32(ctx, 31), rg::timing::sceneStep(rdram, ctx));                      \
+        }                                                                                                        \
+        g_##NAME(rdram, ctx, runtime);                                                                           \
+    }
+
+RG_TRACE_VEC_CALL(AddActMove, 0x00238740u, "AddActMove", true)
+RG_TRACE_VEC_CALL(AddActAccel, 0x00238750u, "AddActAccel", true)
+RG_TRACE_VEC_CALL(AddReqMove, 0x00238730u, "AddReqMove", true)
+RG_TRACE_VEC_CALL(SetVelocity, 0x00238770u, "SetVelocity", false)
+RG_TRACE_VEC_CALL(SetVelocityFromVec, 0x00238790u, "SetVelocityFromVec", true)
+#undef RG_TRACE_VEC_CALL
+
 } // namespace
 
 void installJumpTrace(PS2Runtime &runtime)
@@ -316,6 +388,17 @@ void installJumpTrace(PS2Runtime &runtime)
     if (g_allCharas)
     {
         complete = rg::timing::hookFunction(runtime, kCharaMoveReqSet, &moveReqSet, g_moveReqSet) && complete;
+    }
+    if (*enabled == '5' || g_allCharas)
+    {
+        complete = rg::timing::hookFunction(runtime, kCharaCmdSpeed, &cmdSpeed, g_cmdSpeed) && complete;
+        complete = rg::timing::hookFunction(runtime, kCharaCmdSpeedScale, &cmdSpeedScale, g_cmdSpeedScale) && complete;
+        complete = rg::timing::hookFunction(runtime, kAddActMove, &hookAddActMove, g_AddActMove) && complete;
+        complete = rg::timing::hookFunction(runtime, kAddActAccel, &hookAddActAccel, g_AddActAccel) && complete;
+        complete = rg::timing::hookFunction(runtime, kAddReqMove, &hookAddReqMove, g_AddReqMove) && complete;
+        complete = rg::timing::hookFunction(runtime, kSetVelocity, &hookSetVelocity, g_SetVelocity) && complete;
+        complete = rg::timing::hookFunction(runtime, kSetVelocityFromVec, &hookSetVelocityFromVec, g_SetVelocityFromVec) &&
+                   complete;
     }
     std::printf("[rg] jump trace: %s moves off the ground go to the log%s\n",
                 g_allCharas ? "every character's" : "the leader's", complete ? "" : " (the hook is missing, see above)");

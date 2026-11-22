@@ -295,6 +295,14 @@ the `CharaMoveCollideMaybe` hook sees f23 == 1.0 with a step below 1 (f23
 is callee-saved and holds the step on the walking path), scales the
 velocity by the step before the move and divides it back after, since
 CharaUpdateMovement's own unscale divides by 1.0.
+The animation's one-shot accelerations are the same trap (found 2026-11-22
+with `RG_JUMP_TRACE=5`): `CharaUpdateMovement` sums the motion's keys into
+the character's act accel (+0xA0: the backward jump's launch is (0, 5, -10),
+local), and `CharaMoveCollideMaybe` adds it to the velocity it holds scaled
+by the step, so the unscale gave it 1/step times its size: a launch of 10
+instead of 5 at half steps, a jump 4 times as high (112 units against 29) and
+longer. The `CharaMoveCollideMaybe` hook scales +0xA0 by the step too on the
+air path.
 
 ## 4. Assessment against our mode (60 fps: env+0x24 = 1 before each flip, scale 0.5 at full rate / step 1 after each update, interval 2 during movies and the loading screen)
 

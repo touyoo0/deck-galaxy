@@ -67,6 +67,12 @@ constexpr float kTerminalVelocity = 10.0f;
 // units against 101 in the 30 fps mode. f23 is callee-saved and still 1.0
 // at the call; on the walking path it holds the step.
 constexpr unsigned kStepRegister = 23u;
+// The animation's one-shot accelerations (a jump's launch: 5 up and 10 back
+// for the backward jump), summed into +0xA0 by CharaUpdateMovement and added
+// to the velocity inside CharaMoveCollideMaybe, which holds it scaled by the
+// step: the unscale after the move then gave them 1/step times their size,
+// and the backward jump 4 times its height at half steps.
+constexpr uint32_t kActAccel = 0xA0u;
 // Scripts and events. SystemVmUpdate (0x2509F0, from TaskStepEvent and the
 // battle sub-modes) resumes the system VM and runs EventSysUpdate (0x26AC10:
 // the event camera, the event player with its cast, voices, sound fades and
@@ -430,6 +436,24 @@ bool scaleVelocity(uint8_t *rdram, uint32_t chara, float factor)
     return true;
 }
 
+// The animation's accelerations are added to the step-scaled velocity: they
+// take the step as well, so that the unscale gives them back whole.
+void scaleActAccel(uint8_t *rdram, uint32_t chara, float factor)
+{
+    float accel[3] = {0.0f, 0.0f, 0.0f};
+    for (unsigned i = 0u; i < 3u; ++i)
+    {
+        if (!readGuest(rdram, chara + kActAccel + 4u * i, accel[i]))
+        {
+            return;
+        }
+    }
+    for (unsigned i = 0u; i < 3u; ++i)
+    {
+        writeGuest(rdram, chara + kActAccel + 4u * i, accel[i] * factor);
+    }
+}
+
 void afterMove(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t chara)
 {
     clampTerminal(rdram, ctx, runtime, chara);
@@ -452,6 +476,7 @@ void charaMoveCollide(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     if (step < 1.0f && ctx->f[kStepRegister] == 1.0f && scaleVelocity(rdram, chara, step))
     {
         g_airStep = step;
+        scaleActAccel(rdram, chara, step);
         ++g_counts.air;
     }
     rg::hooks::callThen(g_charaMoveCollide, rdram, ctx, runtime, &afterMove, chara);
