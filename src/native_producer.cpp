@@ -34,7 +34,7 @@ namespace
 {
 namespace native = dq8::gfx::native;
 
-constexpr uint32_t kCT32 = 0x00u, kCT16 = 0x02u, kCT16S = 0x0Au, kT8 = 0x13u, kT4 = 0x14u;
+constexpr uint32_t kCT32 = 0x00u, kCT24 = 0x01u, kCT16 = 0x02u, kCT16S = 0x0Au, kT8 = 0x13u, kT4 = 0x14u;
 
 struct Counts
 {
@@ -483,6 +483,8 @@ void texture(const TextureLevel &l)
         bytes = size_t(l.transferWidth) * l.transferHeight * 4u;
     else if (psm == kCT32)
         bytes = texels * 4u;
+    else if (psm == kCT24)
+        bytes = texels * 3u;
     else if (psm == kCT16 || psm == kCT16S)
         bytes = texels * 2u;
     else if (psm == kT8)
@@ -492,6 +494,11 @@ void texture(const TextureLevel &l)
     else
     {
         ++s.counts.refusedFormat;
+        // First sight of each (format, size): which texture the producer drops.
+        static std::set<uint64_t> seenRefused;
+        if (seenRefused.insert(uint64_t(psm) << 40 | uint64_t(l.width) << 20 | l.height).second)
+            std::fprintf(stderr, "[texture-refused] psm %x %ux%u tbp %x cbp %x preSwizzled %d\n", psm, l.width, l.height, l.tbp,
+                         l.cbp, l.preSwizzled ? 1 : 0);
         return;
     }
     if (texels == 0u || bytes == 0u || !l.ram || l.ramBytes < bytes || l.width > 4096u || l.height > 4096u)
@@ -527,6 +534,17 @@ void texture(const TextureLevel &l)
         out->resize(texels * 4u);
         for (size_t i = 0; i < texels; ++i)
             ct16(uint16_t(l.ram[i * 2u] | (l.ram[i * 2u + 1u] << 8)), out->data() + i * 4u);
+    }
+    else if (psm == kCT24)
+    {
+        // Packed RGB; the alpha is TEXA's at the draw (materialOf), so any here.
+        record.format = native::PixelFormat::Rgba8;
+        out->resize(texels * 4u);
+        for (size_t i = 0; i < texels; ++i)
+        {
+            std::memcpy(out->data() + i * 4u, l.ram + i * 3u, 3u);
+            (*out)[i * 4u + 3u] = 0xFFu;
+        }
     }
     else if (l.preSwizzled)
     {
