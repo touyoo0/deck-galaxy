@@ -5,6 +5,11 @@ zeigt sie in dieser Sprache. Die Überschriften (`## Version - Datum`) bleiben
 wie in `CHANGELOG.md`: Über sie wird eine Version ihrer Übersetzung
 zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf Englisch.
 
+## 0.12.1 - 2026-11-22
+
+- Der Import eines PCSX2-Spielstands hinterlässt bei manchen Memory Cards keinen leeren Spielstand mehr (das Spiel meldete ihn als beschädigt); ein erneuter Import über den Installer repariert ihn.
+- Mit einer europäischen Disc startet der Text des Spiels beim ersten Start in der Sprache des Decks (die von Steam, sonst die des Systems), wie der Installer und das Menü; Englisch, wenn diese Sprache nicht zu den fünf gehört.
+
 ## 0.12.0 - 2026-11-22
 
 - Der Installer kann deinen PCSX2-Spielstand des Spiels importieren: Er sucht deine Memory Card selbst (PCSX2, EmuDeck, RetroDECK, SD-Karte); findet er keine, kannst du eine Datei oder einen Ordner von Hand wählen.
@@ -31,7 +36,3 @@ zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf Englisch.
 - Das Menü ist ein einziges zentriertes Fenster mit den neuen Seiten Speicherstände, Aktionen und Hilfe.
 - Die Pause liegt auf F5 (vorher F2).
 - Das Spiel pausiert, wenn sein Fenster den Fokus verliert (neuer Standard).
-
-## 0.10.0 - 2026-11-18
-
-- Installer, Startbildschirm und Einstellungen auf Englisch, Französisch, Deutsch, Spanisch und Italienisch.
