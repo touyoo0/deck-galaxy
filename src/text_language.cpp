@@ -148,7 +148,20 @@ std::string upperCode()
 
 std::filesystem::path languageIndex(const std::string &upper)
 {
-    return PS2Runtime::getIoPaths().cdRoot / kFolder / (upper + ".idx");
+    const std::filesystem::path file = PS2Runtime::getIoPaths().cdRoot / kFolder / (upper + ".idx");
+    // Before loadELF() sets the disc folder (the first start's default language
+    // asks then), the runtime's disc folder is the working folder: the disc is
+    // the usual disc/ under it.
+    std::error_code ec;
+    if (!std::filesystem::exists(file, ec))
+    {
+        const std::filesystem::path usual = std::filesystem::current_path(ec) / "disc" / kFolder / (upper + ".idx");
+        if (std::filesystem::exists(usual, ec))
+        {
+            return usual;
+        }
+    }
+    return file;
 }
 
 // The HD6 index: header, token pool, names as LEB128 token ids, one u64 a file
