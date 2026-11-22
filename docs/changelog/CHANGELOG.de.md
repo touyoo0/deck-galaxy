@@ -5,6 +5,10 @@ zeigt sie in dieser Sprache. Die Überschriften (`## Version - Datum`) bleiben
 wie in `CHANGELOG.md`: Über sie wird eine Version ihrer Übersetzung
 zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf Englisch.
 
+## 0.12.2 - 2026-11-22
+
+- Der Rückwärtssprung im Kampf ist bei 60 fps nicht mehr viel zu hoch und zu weit.
+
 ## 0.12.1 - 2026-11-22
 
 - Der Import eines PCSX2-Spielstands hinterlässt bei manchen Memory Cards keinen leeren Spielstand mehr (das Spiel meldete ihn als beschädigt); ein erneuter Import über den Installer repariert ihn.

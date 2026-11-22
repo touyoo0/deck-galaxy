@@ -5,6 +5,10 @@ les affiche dans cette langue. Les titres (`## version - date`) restent comme
 dans `CHANGELOG.md` : ce sont eux qui relient une version à sa traduction. Une
 version absente de ce fichier s'affiche en anglais.
 
+## 0.12.2 - 2026-11-22
+
+- Le saut arrière en combat n'est plus beaucoup trop haut et trop long à 60 images par seconde.
+
 ## 0.12.1 - 2026-11-22
 
 - L'import d'une sauvegarde PCSX2 ne laisse plus une sauvegarde vide (le jeu la disait corrompue) avec certaines cartes mémoire ; refaire l'import depuis l'installeur la répare.

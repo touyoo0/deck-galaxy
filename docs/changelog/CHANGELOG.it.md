@@ -5,6 +5,10 @@ mostra in questa lingua. I titoli (`## versione - data`) restano come in
 `CHANGELOG.md`: sono loro a collegare una versione alla sua traduzione. Una
 versione che manca in questo file viene mostrata in inglese.
 
+## 0.12.2 - 2026-11-22
+
+- Il salto all'indietro in combattimento non è più molto troppo alto e lungo a 60 fps.
+
 ## 0.12.1 - 2026-11-22
 
 - L'importazione di un salvataggio PCSX2 non lascia più un salvataggio vuoto (il gioco lo diceva danneggiato) con alcune memory card; importare di nuovo dall'installer lo ripara.
