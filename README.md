@@ -75,23 +75,25 @@ installer sets up itself. More in [docs/INSTALL.md](docs/INSTALL.md) and
 The game is played through on a real Steam Deck, chapter by chapter, to catch
 bugs the recompilation may have. This table is updated as the playthrough goes.
 
-| Chapter | Status | Notes |
-|---|---|---|
-| 1 | ✅ Tested | No bug found. |
-| 2 | ⏳ TBD | |
-| 3 | ⏳ TBD | |
-| 4 | ⏳ TBD | |
-| 5 | ⏳ TBD | |
-| 6 | ⏳ TBD | |
-| 7 | ⏳ TBD | |
-| 8 | ⏳ TBD | |
-| 9 | ⏳ TBD | |
-| 10 | ⏳ TBD | |
-| 11 | ⏳ TBD | |
-| 12 | ⏳ TBD | |
-| 13 | ⏳ TBD | |
-| Bonus: Alistair | ⏳ TBD | |
-| The Ghost Ship | ⏳ TBD | |
+| Chapter | Status | Settings used | Notes |
+|---|---|---|---|
+| 1 | ✅ Tested | French text, 2x, 60 fps, sharp filter, instant text, opening skipped, bag 99. English voices, no Director's Cut. | No bug found. |
+| 2 | ⏳ TBD | | |
+| 3 | ⏳ TBD | | |
+| 4 | ⏳ TBD | | |
+| 5 | ⏳ TBD | | |
+| 6 | ⏳ TBD | | |
+| 7 | ⏳ TBD | | |
+| 8 | ⏳ TBD | | |
+| 9 | ⏳ TBD | | |
+| 10 | ⏳ TBD | | |
+| 11 | ⏳ TBD | | |
+| 12 | ⏳ TBD | | |
+| 13 | ⏳ TBD | | |
+| Bonus: Alistair | ⏳ TBD | | |
+| The Ghost Ship | ⏳ TBD | | |
+
+**Settings used**: the options that can change the result (language, fps, 2x resolution, voices, Director's Cut...).
 
 ✅ tested, no bug · ⚠️ tested, known bug (see [issues](../../issues)) · ⏳ TBD, not tested yet.
 
