@@ -221,6 +221,15 @@ struct MeshDraw
     Id depthTarget = 0;
     Id camera = 0;      // 0: no camera (a screen-space draw)
     bool hasModel = false;
+    // With hasModel: model is not object to world but object straight to the
+    // target's pixels (homogeneous, the game's window depth in z), for a draw
+    // whose matrix does not split into model, view and projection. The
+    // camera, when there is one (the newest 3D draw's), only maps the depth.
+    bool windowModel = false;
+    // A chunk the VU1 program clips (its slot E cuts at z = -w and z = w): the
+    // renderer cuts it there too, as the game's own clip volume. The other
+    // draws are only clamped at the far plane (the sky sits past it).
+    bool clips = false;
     // Object to world, row vectors, when hasModel. With no camera, object
     // straight to the target's pixels, homogeneous (divide by w).
     float model[16] = {};
@@ -306,6 +315,19 @@ struct DepthQuery
     int32_t x = 0, y = 0;
 };
 
+// A render target's contents, put back by a save state: RGBA8 at the game's
+// pixel size (alpha as the game stores it), rows in order. The renderer
+// draws it into the target at its own scale. A buffer the game draws into
+// once and samples for a while (a cached shadow, a minimap) is in no other
+// record: the game does not draw it again after a load.
+struct TargetFill
+{
+    Id id = 0;
+    uint16_t width = 0;
+    uint16_t height = 0;
+    Bytes rgba;
+};
+
 using Record = std::variant<Texture, Palette, Target, Camera, MeshDraw, SpriteDraw, Effect, FrameBegin, Present,
-                            Readback, DepthQuery>;
+                            Readback, DepthQuery, TargetFill>;
 } // namespace dq8::gfx::native

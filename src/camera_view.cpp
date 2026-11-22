@@ -131,6 +131,29 @@ PS2Runtime::RecompiledFunction g_padReads[std::size(kPadReads)] = {};
 PS2Runtime::RecompiledFunction g_firstPersonUpdate = nullptr;
 PS2Runtime::RecompiledFunction g_cameraApplyInput = nullptr;
 PS2Runtime::RecompiledFunction g_cameraApplyMode = nullptr;
+PS2Runtime::RecompiledFunction g_optionsResetDefaults = nullptr;
+
+// OptionsResetDefaults (0x3D62C0, the options at a0; GameDataReset calls it
+// for a new game) sets the flags halfword (+0x1A) to 1. Bits 2 and 4 are the
+// camera's up/down and left/right on "Reversed" (CameraModeUpdate, 0x309770),
+// which a new game now has by default. A save keeps its own options.
+constexpr uint32_t kOptionsResetDefaults = 0x003D62C0u;
+constexpr uint32_t kOptionsFlags = 0x1Au;
+constexpr int16_t kCameraReversed = 0x2 | 0x4;
+
+void optionsResetDefaults(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+{
+    const uint32_t options = getRegU32(ctx, 4);
+    g_optionsResetDefaults(rdram, ctx, runtime);
+    if (options != 0u)
+    {
+        const uint32_t address = (options + kOptionsFlags) & 0x1FFFFFFFu;
+        int16_t flags;
+        std::memcpy(&flags, rdram + address, sizeof(flags));
+        flags = static_cast<int16_t>(flags | kCameraReversed);
+        std::memcpy(rdram + address, &flags, sizeof(flags));
+    }
+}
 // The game thread's: whether the field camera may turn this frame, as
 // CameraObjApplyInput found it before it ran; whether the mouse holds the
 // field camera's height, and which; the look up from its lowest the mouse
@@ -560,6 +583,10 @@ void install(PS2Runtime &runtime)
     if (const char *value = std::getenv("RG_FASTER_CAMERA"))
     {
         setFasterTurn(*value && *value != '0');
+    }
+    if (!rg::timing::hookFunction(runtime, kOptionsResetDefaults, &optionsResetDefaults, g_optionsResetDefaults))
+    {
+        std::fprintf(stderr, "[rg] a new game's camera rotation stays the game's Normal\n");
     }
     if (!rg::timing::hookFunction(runtime, kViewSetProjection, &viewSetProjection, g_viewSetProjection))
     {

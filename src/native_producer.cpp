@@ -21,6 +21,7 @@
 #include "native_effect.h"
 #include "draw_state_mirror.h"
 #include "flip_pacing.h"
+#include "runtime/ps2_savestate.h"
 
 #include <cmath>
 #include <cstring>
@@ -166,6 +167,11 @@ struct State
     // GS memory still holds (forgetEvicted sends it again); forgotten with
     // the renderer's other evictions.
     std::unordered_map<native::Id, Kept> texels;
+    // Every palette's colours (Rgba8 each, in index order) and every depth
+    // target's declaration, kept for the save states: the renderer holds the
+    // palettes and targets, the producer cannot ask it for them back.
+    std::unordered_map<native::Id, std::shared_ptr<std::vector<uint8_t>>> paletteColors;
+    std::unordered_map<native::Id, native::Target> depthRecords;
     std::set<uint64_t> dumped;
     Counts counts, reported;
     bool statsSet = false;
@@ -605,6 +611,7 @@ void palette(const uint8_t *ram, uint32_t ramBytes, uint32_t cbp, uint32_t cpsm,
     record.entries = static_cast<uint16_t>(entries);
     if (dumpingTextures())
         s.keptPalettes[record.id] = {colors, record.entries, 1u, false};
+    s.paletteColors[record.id] = colors;
     record.colors = std::move(colors);
     s.paletteIds[key] = record.id;
     s.paletteAt[cbp] = record.id;
@@ -863,6 +870,7 @@ void replaceUpload(bool palette, uint32_t dbp, uint32_t dpsm, uint32_t width, ui
             record.entries = static_cast<uint16_t>(entries);
             if (dumpingTextures())
                 s.keptPalettes[record.id] = {colors, record.entries, 1u, false};
+            s.paletteColors[record.id] = colors;
             record.colors = std::move(colors);
             s.paletteIds[key] = record.id;
             native::push(std::move(record));
@@ -1249,6 +1257,7 @@ native::Id depthTarget(State &s, uint32_t base, uint32_t colorBase, native::Id c
         record.height = declared->second.height;
     }
     s.depthAt.emplace(base, record.id);
+    s.depthRecords[record.id] = record;
     ++s.counts.targetsNew;
     native::push(native::Target(record));
     return record.id;
@@ -1309,6 +1318,7 @@ bool mesh(const GSNativeMesh &mesh, const GSDrawState *drawState, const uint8_t 
     // The program scales its window depth and caps it (VU quad 87.z, quad
     // 1.y): decals at 1.01 and 1.02 sit in front of their surfaces.
     draw.depthScale = mesh.header.depthScale;
+    draw.clips = mesh.header.clips;
     draw.depthMax = mesh.header.depthMax;
 
     // The triangles the program draws: a strip's every vertex from the
@@ -1456,6 +1466,11 @@ bool mesh(const GSNativeMesh &mesh, const GSDrawState *drawState, const uint8_t 
                 draw.model[i * 4 + j] = h.matrix[i][j];
         foldOffset(draw.model, ofx, ofy);
         draw.hasModel = true;
+        // Object to the target's pixels: the renderer needs no camera for
+        // it, only the newest one's depth mapping (it was dropped without
+        // one, so a gate whose matrix did not split blinked).
+        draw.windowModel = true;
+        draw.camera = s.lastCamera;
         ++s.counts.meshesWhole;
     }
 
@@ -1665,6 +1680,7 @@ native::Id hostPalette(State &s, const State::HostImage &image, uint32_t cbp, ui
     record.entries = static_cast<uint16_t>(entries);
     if (dumpingTextures())
         s.keptPalettes[record.id] = {colors, record.entries, 1u, false};
+    s.paletteColors[record.id] = colors;
     record.colors = std::move(colors);
     s.paletteIds[key] = record.id;
     made.id = record.id;
@@ -2679,6 +2695,556 @@ bool readDepth(uint32_t base, uint32_t psm, uint32_t x, uint32_t y, uint32_t wid
     }
     return true;
 }
+
+// ---- save states. The renderer's textures, palettes and targets are made
+// from what the game uploads, and the GS never sees those uploads (they are
+// withheld), so a state's copy of GS memory has none of them: the producer's
+// tables go in the state, and a load sends the records again (a record sent
+// with an id the renderer holds replaces it).
+namespace
+{
+constexpr uint32_t kTagProducer = ps2_savestate::makeTag('N', 'P', 'R', '1');
+
+template <typename K, typename V, typename F>
+void putMap(ps2_savestate::Writer &out, const std::unordered_map<K, V> &map, F &&each)
+{
+    out.put<uint32_t>(static_cast<uint32_t>(map.size()));
+    for (const auto &[key, value] : map)
+        each(key, value);
+}
+
+uint32_t getCount(ps2_savestate::Reader &in, uint32_t limit)
+{
+    const uint32_t n = in.get<uint32_t>();
+    if (n > limit)
+        throw ps2_savestate::SaveStateError("save state native section is implausibly large");
+    return n;
+}
+} // namespace
+
+void saveState(ps2_savestate::Writer &out)
+{
+    out.tag(kTagProducer);
+    if (!native::enabled())
+    {
+        out.put<uint8_t>(0u);
+        return;
+    }
+    out.put<uint8_t>(1u);
+    State &s = state();
+    std::lock_guard lock(s.mutex);
+    out.put<uint32_t>(s.nextTexture);
+    out.put<uint32_t>(s.nextPalette);
+    out.put<uint32_t>(s.nextTarget);
+    out.put<uint32_t>(s.sceneBase);
+    out.put<uint8_t>(s.sceneBaseKnown ? 1u : 0u);
+    out.put<uint32_t>(s.layer);
+    out.put<uint16_t>(s.layerWidth);
+    out.put<uint16_t>(s.layerHeight);
+    out.put<uint64_t>(s.sequence);
+
+    // Palettes: every one whose colours are kept.
+    std::vector<std::pair<uint64_t, native::Id>> palettes;
+    for (const auto &[key, id] : s.paletteIds)
+        if (s.paletteColors.count(id))
+            palettes.emplace_back(key, id);
+    out.put<uint32_t>(static_cast<uint32_t>(palettes.size()));
+    for (const auto &[key, id] : palettes)
+    {
+        const auto &colors = *s.paletteColors[id];
+        out.put<uint64_t>(key);
+        out.put<uint32_t>(id);
+        out.put<uint32_t>(static_cast<uint32_t>(colors.size()));
+        out.bytes(colors.data(), colors.size());
+    }
+
+    // Textures: the ones GS memory still holds (the others are made again
+    // when uploaded), with their contents.
+    // Also the ones an upload still waiting to be taken names (saveProduced).
+    std::set<native::Id> pending;
+    for (const State::Produced &p : s.produced)
+        if (!p.palette)
+            pending.insert(p.id);
+    std::vector<native::Id> textures;
+    for (const auto &[id, kept] : s.texels)
+        if (kept.data && s.textureKeys.count(id) && (textureNamed(s, id) || pending.count(id)))
+            textures.push_back(id);
+    std::sort(textures.begin(), textures.end());
+    out.put<uint32_t>(static_cast<uint32_t>(textures.size()));
+    for (const native::Id id : textures)
+    {
+        const State::Kept &kept = s.texels[id];
+        out.put<uint32_t>(id);
+        out.put<uint64_t>(s.textureKeys[id]);
+        out.put<uint32_t>(kept.width);
+        out.put<uint32_t>(kept.height);
+        out.put<uint8_t>(kept.indexed ? 1u : 0u);
+        out.put<uint32_t>(kept.palette);
+        out.put<uint64_t>(static_cast<uint64_t>(kept.data->size()));
+        out.bytes(kept.data->data(), kept.data->size());
+    }
+    const auto isSaved = [&](native::Id id) { return std::binary_search(textures.begin(), textures.end(), id); };
+    const auto putTextureMap = [&](const std::unordered_map<uint32_t, std::pair<uint32_t, native::Id>> &map)
+    {
+        uint32_t n = 0;
+        for (const auto &[tbp, at] : map)
+            n += isSaved(at.second) ? 1u : 0u;
+        out.put<uint32_t>(n);
+        for (const auto &[tbp, at] : map)
+            if (isSaved(at.second))
+            {
+                out.put<uint32_t>(tbp);
+                out.put<uint32_t>(at.first);
+                out.put<uint32_t>(at.second);
+            }
+    };
+    putTextureMap(s.textureAt);
+    putTextureMap(s.residentTexture);
+    const auto putIdMap = [&](const std::unordered_map<uint32_t, native::Id> &map)
+    {
+        putMap(out, map, [&](uint32_t key, native::Id id) {
+            out.put<uint32_t>(key);
+            out.put<uint32_t>(id);
+        });
+    };
+    putIdMap(s.paletteAt);
+    putIdMap(s.residentPalette);
+    putIdMap(s.targetAt);
+    putIdMap(s.depthAt);
+
+    out.put<uint32_t>(static_cast<uint32_t>(s.targets.size()));
+    for (const auto &[base, target] : s.targets)
+    {
+        out.put<uint32_t>(base);
+        out.put<native::Target>(target);
+    }
+    putMap(out, s.views, [&](uint32_t key, const native::Target &t) {
+        out.put<uint32_t>(key);
+        out.put<native::Target>(t);
+    });
+    putMap(out, s.viewWidths, [&](uint32_t base, const std::vector<uint32_t> &widths) {
+        out.put<uint32_t>(base);
+        out.put<uint32_t>(static_cast<uint32_t>(widths.size()));
+        for (const uint32_t w : widths)
+            out.put<uint32_t>(w);
+    });
+    putMap(out, s.depthRecords, [&](native::Id id, const native::Target &t) {
+        out.put<uint32_t>(id);
+        out.put<native::Target>(t);
+    });
+
+    out.put<uint32_t>(static_cast<uint32_t>(s.hostImages.size()));
+    for (const auto &[key, image] : s.hostImages)
+    {
+        out.put<uint32_t>(key.first);
+        out.put<uint32_t>(key.second);
+        out.put<uint32_t>(image.dbw);
+        out.put<uint32_t>(image.psm);
+        out.put<uint32_t>(image.height);
+        out.put<uint64_t>(image.seq);
+        out.put<uint64_t>(image.version);
+        out.put<uint64_t>(static_cast<uint64_t>(image.pixels.size()));
+        out.bytes(image.pixels.data(), image.pixels.size());
+    }
+    const auto putSeq = [&](const std::unordered_map<uint32_t, uint64_t> &map)
+    {
+        putMap(out, map, [&](uint32_t key, uint64_t value) {
+            out.put<uint32_t>(key);
+            out.put<uint64_t>(value);
+        });
+    };
+    putSeq(s.uploadedSeq);
+    putSeq(s.drawnSeq);
+    putSeq(s.takenSeq);
+    putSeq(s.takenPaletteSeq);
+}
+
+void loadState(ps2_savestate::Reader &in)
+{
+    in.expectTag(kTagProducer);
+    if (in.get<uint8_t>() == 0u)
+        return;
+    // Read whole into a table of its own first: a damaged section leaves the
+    // running tables as they are.
+    State fresh;
+    fresh.nextTexture = in.get<uint32_t>();
+    fresh.nextPalette = in.get<uint32_t>();
+    fresh.nextTarget = in.get<uint32_t>();
+    fresh.sceneBase = in.get<uint32_t>();
+    fresh.sceneBaseKnown = in.get<uint8_t>() != 0u;
+    fresh.layer = in.get<uint32_t>();
+    fresh.layerWidth = in.get<uint16_t>();
+    fresh.layerHeight = in.get<uint16_t>();
+    fresh.sequence = in.get<uint64_t>();
+
+    std::vector<native::Palette> palettes;
+    for (uint32_t i = 0, n = getCount(in, 1u << 20); i < n; ++i)
+    {
+        const uint64_t key = in.get<uint64_t>();
+        native::Palette record;
+        record.id = in.get<uint32_t>();
+        const uint32_t size = in.get<uint32_t>();
+        if (size == 0u || size > 256u * 4u || (size & 3u) != 0u)
+            throw ps2_savestate::SaveStateError("save state palette is damaged");
+        auto colors = std::make_shared<std::vector<uint8_t>>(size);
+        in.bytes(colors->data(), size);
+        record.entries = static_cast<uint16_t>(size / 4u);
+        fresh.paletteIds[key] = record.id;
+        fresh.paletteColors[record.id] = colors;
+        record.colors = std::move(colors);
+        palettes.push_back(std::move(record));
+    }
+
+    std::vector<native::Texture> textures;
+    for (uint32_t i = 0, n = getCount(in, 1u << 20); i < n; ++i)
+    {
+        native::Texture record;
+        record.id = in.get<uint32_t>();
+        const uint64_t key = in.get<uint64_t>();
+        const uint32_t width = in.get<uint32_t>();
+        const uint32_t height = in.get<uint32_t>();
+        const bool indexed = in.get<uint8_t>() != 0u;
+        record.palette = in.get<uint32_t>();
+        const uint64_t size = in.get<uint64_t>();
+        if (width == 0u || height == 0u || width > 4096u || height > 4096u || size > (256ull << 20))
+            throw ps2_savestate::SaveStateError("save state texture is damaged");
+        auto texels = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(size));
+        in.bytes(texels->data(), texels->size());
+        record.width = static_cast<uint16_t>(width);
+        record.height = static_cast<uint16_t>(height);
+        record.format = indexed ? native::PixelFormat::Index8 : native::PixelFormat::Rgba8;
+        fresh.textureIds[key] = record.id;
+        fresh.textureKeys[record.id] = key;
+        fresh.texels[record.id] = {texels, width, height, indexed, record.palette};
+        record.texels = std::move(texels);
+        textures.push_back(std::move(record));
+    }
+    const auto getTextureMap = [&](std::unordered_map<uint32_t, std::pair<uint32_t, native::Id>> &map)
+    {
+        for (uint32_t i = 0, n = getCount(in, 1u << 20); i < n; ++i)
+        {
+            const uint32_t tbp = in.get<uint32_t>();
+            const uint32_t psm = in.get<uint32_t>();
+            map[tbp] = {psm, in.get<uint32_t>()};
+        }
+    };
+    getTextureMap(fresh.textureAt);
+    getTextureMap(fresh.residentTexture);
+    const auto getIdMap = [&](std::unordered_map<uint32_t, native::Id> &map)
+    {
+        for (uint32_t i = 0, n = getCount(in, 1u << 20); i < n; ++i)
+        {
+            const uint32_t key = in.get<uint32_t>();
+            map[key] = in.get<uint32_t>();
+        }
+    };
+    getIdMap(fresh.paletteAt);
+    getIdMap(fresh.residentPalette);
+    getIdMap(fresh.targetAt);
+    getIdMap(fresh.depthAt);
+
+    for (uint32_t i = 0, n = getCount(in, 1u << 20); i < n; ++i)
+    {
+        const uint32_t base = in.get<uint32_t>();
+        fresh.targets[base] = in.get<native::Target>();
+    }
+    for (uint32_t i = 0, n = getCount(in, 1u << 20); i < n; ++i)
+    {
+        const uint32_t key = in.get<uint32_t>();
+        fresh.views[key] = in.get<native::Target>();
+    }
+    for (uint32_t i = 0, n = getCount(in, 1u << 20); i < n; ++i)
+    {
+        const uint32_t base = in.get<uint32_t>();
+        std::vector<uint32_t> &widths = fresh.viewWidths[base];
+        for (uint32_t j = 0, m = getCount(in, 4096u); j < m; ++j)
+            widths.push_back(in.get<uint32_t>());
+    }
+    for (uint32_t i = 0, n = getCount(in, 1u << 20); i < n; ++i)
+    {
+        const uint32_t id = in.get<uint32_t>();
+        fresh.depthRecords[id] = in.get<native::Target>();
+    }
+
+    for (uint32_t i = 0, n = getCount(in, 1u << 16); i < n; ++i)
+    {
+        const uint32_t base = in.get<uint32_t>();
+        const uint32_t psm = in.get<uint32_t>();
+        State::HostImage &image = fresh.hostImages[{base, psm}];
+        image.dbw = in.get<uint32_t>();
+        image.psm = in.get<uint32_t>();
+        image.height = in.get<uint32_t>();
+        image.seq = in.get<uint64_t>();
+        image.version = in.get<uint64_t>();
+        const uint64_t size = in.get<uint64_t>();
+        if (size > (64ull << 20))
+            throw ps2_savestate::SaveStateError("save state host image is damaged");
+        image.pixels.resize(static_cast<size_t>(size));
+        in.bytes(image.pixels.data(), image.pixels.size());
+    }
+    const auto getSeq = [&](std::unordered_map<uint32_t, uint64_t> &map)
+    {
+        for (uint32_t i = 0, n = getCount(in, 1u << 20); i < n; ++i)
+        {
+            const uint32_t key = in.get<uint32_t>();
+            map[key] = in.get<uint64_t>();
+        }
+    };
+    getSeq(fresh.uploadedSeq);
+    getSeq(fresh.drawnSeq);
+    getSeq(fresh.takenSeq);
+    getSeq(fresh.takenPaletteSeq);
+
+    if (!native::enabled())
+        return;
+    State &s = state();
+    std::lock_guard lock(s.mutex);
+    // What the producer keeps through a load: the cameras (the renderer
+    // keeps them by id, and ids go on counting), the counters, the flags
+    // that say which effects are on. Everything about the game's textures,
+    // palettes and targets is the state's.
+    s.nextTexture = fresh.nextTexture;
+    s.nextPalette = fresh.nextPalette;
+    s.nextTarget = fresh.nextTarget;
+    s.sceneBase = fresh.sceneBase;
+    s.sceneBaseKnown = fresh.sceneBaseKnown;
+    s.layer = fresh.layer;
+    s.layerWidth = fresh.layerWidth;
+    s.layerHeight = fresh.layerHeight;
+    s.sequence = fresh.sequence;
+    s.textureIds = std::move(fresh.textureIds);
+    s.paletteIds = std::move(fresh.paletteIds);
+    s.textureKeys = std::move(fresh.textureKeys);
+    s.textureAt = std::move(fresh.textureAt);
+    s.paletteAt = std::move(fresh.paletteAt);
+    s.targetAt = std::move(fresh.targetAt);
+    s.targets = std::move(fresh.targets);
+    s.depthAt = std::move(fresh.depthAt);
+    s.depthRecords = std::move(fresh.depthRecords);
+    s.residentTexture = std::move(fresh.residentTexture);
+    s.residentPalette = std::move(fresh.residentPalette);
+    s.views = std::move(fresh.views);
+    s.viewWidths = std::move(fresh.viewWidths);
+    s.hostImages = std::move(fresh.hostImages);
+    s.uploadedSeq = std::move(fresh.uploadedSeq);
+    s.drawnSeq = std::move(fresh.drawnSeq);
+    s.takenSeq = std::move(fresh.takenSeq);
+    s.takenPaletteSeq = std::move(fresh.takenPaletteSeq);
+    s.texels = std::move(fresh.texels);
+    s.paletteColors = std::move(fresh.paletteColors);
+    s.keptTextures.clear();
+    s.keptPalettes.clear();
+    s.produced.clear();
+    s.hostTextures.clear();
+    s.hostPalettes.clear();
+    s.copiedTo.clear();
+    s.routing = false;
+    s.lastCamera = 0u;
+
+    // The renderer gets every record again, under the ids the draws will
+    // name: palettes first, a texture names its own.
+    for (native::Palette &record : palettes)
+        native::push(std::move(record));
+    for (native::Texture &record : textures)
+        native::push(std::move(record));
+    for (const auto &[base, target] : s.targets)
+        native::push(native::Target(target));
+    for (const auto &[key, target] : s.views)
+        if (target.id != 0u)
+            native::push(native::Target(target));
+    for (const auto &[id, target] : s.depthRecords)
+        native::push(native::Target(target));
+    if (s.layer != 0u)
+    {
+        native::Target record;
+        record.id = s.layer;
+        record.role = native::TargetRole::Offscreen;
+        record.width = s.layerWidth;
+        record.height = s.layerHeight;
+        native::push(std::move(record));
+    }
+}
+
+// The contents of the render targets the game draws once and samples for a
+// while (a cached shadow, a minimap): no other record holds them, and the game
+// does not draw them again after a load, so the draws that sample them were
+// dropped or sampled whatever the target held. Read back from the renderer at
+// the game's pixel size; the small targets only (the big ones are the frame's
+// own, drawn again at once).
+void saveFills(ps2_savestate::Writer &out)
+{
+    constexpr uint32_t kMaxPixels = 512u * 512u;
+    constexpr uint32_t kMaxTargets = 96u;
+    struct Fill
+    {
+        native::Id id;
+        uint32_t width, height;
+        std::vector<uint8_t> rgba;
+    };
+    std::vector<Fill> fills;
+    size_t asked = 0;
+    if (native::enabled())
+    {
+        std::vector<native::Target> wanted;
+        {
+            State &s = state();
+            std::lock_guard lock(s.mutex);
+            const auto consider = [&](const native::Target &t)
+            {
+                if (t.id == 0u || t.id == kSceneTarget || t.id == s.layer || t.role != native::TargetRole::Offscreen ||
+                    t.format != native::PixelFormat::Rgba8 || t.width == 0u || t.height == 0u ||
+                    uint32_t(t.width) * t.height > kMaxPixels || wanted.size() >= kMaxTargets)
+                    return;
+                for (const native::Target &other : wanted)
+                    if (other.id == t.id)
+                        return;
+                wanted.push_back(t);
+            };
+            for (const auto &[base, t] : s.targets)
+                consider(t);
+            for (const auto &[key, t] : s.views)
+                consider(t);
+        }
+        asked = wanted.size();
+        // All asked first: the presenting thread answers them together.
+        std::vector<std::pair<native::Target, uint32_t>> reads;
+        for (const native::Target &t : wanted)
+        {
+            native::ColorRead read;
+            read.target = t.id;
+            read.whole = true;
+            reads.emplace_back(t, native::beginColorRead(read));
+        }
+        // The first read that is not answered in time (the presenter has
+        // stopped, as when the game quits) ends the waiting: the rest are
+        // taken as they are.
+        uint32_t patience = 500u;
+        for (const auto &[t, request] : reads)
+        {
+            Fill fill{t.id, 0u, 0u, {}};
+            if (native::waitColorReadSized(request, fill.rgba, fill.width, fill.height, patience) &&
+                fill.width != 0u && fill.height != 0u && fill.rgba.size() == size_t(fill.width) * fill.height * 4u)
+                fills.push_back(std::move(fill));
+            else
+                patience = 0u;
+        }
+    }
+    if (std::getenv("RG_STATE_LOG") != nullptr)
+    {
+        std::string ids;
+        for (const Fill &f : fills)
+            ids += " " + std::to_string(f.id) + "(" + std::to_string(f.width) + "x" + std::to_string(f.height) + ")";
+        std::fprintf(stderr, "[savestate] render targets kept: %zu of %zu:%s\n", fills.size(), asked, ids.c_str());
+    }
+    out.tag(ps2_savestate::makeTag('T', 'G', 'F', '1'));
+    out.put<uint32_t>(static_cast<uint32_t>(fills.size()));
+    for (const Fill &f : fills)
+    {
+        out.put<uint32_t>(f.id);
+        out.put<uint32_t>(f.width);
+        out.put<uint32_t>(f.height);
+        out.bytes(f.rgba.data(), f.rgba.size());
+    }
+}
+
+// The uploads the game thread has made that the VIF1 thread has not taken
+// yet (takeProduced): the game thread's tables run ahead of the stream, and a
+// texture it uploaded a moment before the save is taken only when the stream
+// reaches its transfer, after the load. Without them the stream's tables keep
+// the texture that was there before (another format, often), and the draws
+// that sample the new one find nothing (a grey floor under the battle's
+// rewards).
+void saveProduced(ps2_savestate::Writer &out)
+{
+    out.tag(ps2_savestate::makeTag('P', 'R', 'D', '1'));
+    if (!native::enabled())
+    {
+        out.put<uint32_t>(0u);
+        return;
+    }
+    State &s = state();
+    std::lock_guard lock(s.mutex);
+    std::vector<const State::Produced *> kept;
+    for (const State::Produced &p : s.produced)
+    {
+        const bool held = p.palette ? s.paletteColors.count(p.id) != 0u
+                                    : (s.textureKeys.count(p.id) != 0u && s.texels.count(p.id) != 0u &&
+                                       s.texels[p.id].data != nullptr);
+        if (held)
+            kept.push_back(&p);
+    }
+    out.put<uint32_t>(static_cast<uint32_t>(kept.size()));
+    for (const State::Produced *p : kept)
+    {
+        out.put<uint32_t>(p->dbp);
+        out.put<uint32_t>(p->dbw);
+        out.put<uint32_t>(p->dpsm);
+        out.put<uint32_t>(p->width);
+        out.put<uint32_t>(p->height);
+        out.put<uint8_t>(p->palette ? 1u : 0u);
+        out.put<uint32_t>(p->key);
+        out.put<uint32_t>(p->psm);
+        out.put<uint32_t>(p->id);
+        out.put<uint64_t>(p->hash);
+        out.put<uint32_t>(p->bytes);
+    }
+}
+
+void loadProduced(ps2_savestate::Reader &in)
+{
+    in.expectTag(ps2_savestate::makeTag('P', 'R', 'D', '1'));
+    std::deque<State::Produced> produced;
+    for (uint32_t i = 0, n = getCount(in, 8192u); i < n; ++i)
+    {
+        State::Produced p;
+        p.dbp = in.get<uint32_t>();
+        p.dbw = in.get<uint32_t>();
+        p.dpsm = in.get<uint32_t>();
+        p.width = in.get<uint32_t>();
+        p.height = in.get<uint32_t>();
+        p.palette = in.get<uint8_t>() != 0u;
+        p.key = in.get<uint32_t>();
+        p.psm = in.get<uint32_t>();
+        p.id = in.get<uint32_t>();
+        p.hash = in.get<uint64_t>();
+        p.bytes = in.get<uint32_t>();
+        produced.push_back(p);
+    }
+    if (!native::enabled())
+        return;
+    State &s = state();
+    std::lock_guard lock(s.mutex);
+    s.produced = std::move(produced);
+}
+
+void loadFills(ps2_savestate::Reader &in)
+{
+    in.expectTag(ps2_savestate::makeTag('T', 'G', 'F', '1'));
+    std::vector<native::TargetFill> fills;
+    for (uint32_t i = 0, n = getCount(in, 1024u); i < n; ++i)
+    {
+        native::TargetFill fill;
+        fill.id = in.get<uint32_t>();
+        const uint32_t width = in.get<uint32_t>();
+        const uint32_t height = in.get<uint32_t>();
+        if (width == 0u || height == 0u || width > 4096u || height > 4096u)
+            throw ps2_savestate::SaveStateError("save state target is damaged");
+        auto rgba = std::make_shared<std::vector<uint8_t>>(size_t(width) * height * 4u);
+        in.bytes(rgba->data(), rgba->size());
+        // The read gave alpha as the game's (0x80 is 1.0); the target stores
+        // it as 0xFF is 1.0.
+        for (size_t at = 3; at < rgba->size(); at += 4)
+            (*rgba)[at] = static_cast<uint8_t>(std::min<uint32_t>(255u, ((*rgba)[at] * 255u + 64u) / 128u));
+        fill.width = static_cast<uint16_t>(width);
+        fill.height = static_cast<uint16_t>(height);
+        fill.rgba = std::move(rgba);
+        fills.push_back(std::move(fill));
+    }
+    if (!native::enabled())
+        return;
+    for (native::TargetFill &fill : fills)
+        native::push(std::move(fill));
+}
 } // namespace rg::nativeproducer
 
 #else
@@ -2708,6 +3274,24 @@ void noteLocalCopy(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, u
 uint32_t textureAt(uint32_t, uint32_t) { return 0u; }
 uint32_t paletteAt(uint32_t) { return 0u; }
 uint32_t targetAt(uint32_t) { return 0u; }
+void saveState(ps2_savestate::Writer &out) { out.tag(ps2_savestate::makeTag('N', 'P', 'R', '1')); out.put<uint8_t>(0u); }
+void loadState(ps2_savestate::Reader &in)
+{
+    in.expectTag(ps2_savestate::makeTag('N', 'P', 'R', '1'));
+    in.get<uint8_t>();
+}
+void saveFills(ps2_savestate::Writer &out) { out.tag(ps2_savestate::makeTag('T', 'G', 'F', '1')); out.put<uint32_t>(0u); }
+void loadFills(ps2_savestate::Reader &in)
+{
+    in.expectTag(ps2_savestate::makeTag('T', 'G', 'F', '1'));
+    in.get<uint32_t>();
+}
+void saveProduced(ps2_savestate::Writer &out) { out.tag(ps2_savestate::makeTag('P', 'R', 'D', '1')); out.put<uint32_t>(0u); }
+void loadProduced(ps2_savestate::Reader &in)
+{
+    in.expectTag(ps2_savestate::makeTag('P', 'R', 'D', '1'));
+    in.get<uint32_t>();
+}
 } // namespace rg::nativeproducer
 
 #endif

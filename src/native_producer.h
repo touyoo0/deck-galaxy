@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "runtime/ps2_savestate.h"
+
 struct GSNativeMesh;
 struct GSDrawState;
 struct GSNativeEffect;
@@ -143,6 +145,23 @@ bool readDepth(uint32_t base, uint32_t psm, uint32_t x, uint32_t y, uint32_t wid
 // one drawn there, or the scene (for the display buffer, or a buffer never
 // drawn).
 uint32_t captureTarget(uint32_t base);
+
+// Save states: the tables from the game's GS addresses to the renderer's
+// records, with the texels and colours behind them (the GS never holds them
+// under the pipeline: its uploads are withheld). saveState writes a marker
+// alone when the pipeline is off; loadState sends the renderer every record
+// again, under the ids the draws name, and leaves the producer as it was when
+// the section is damaged.
+void saveState(ps2_savestate::Writer &out);
+void loadState(ps2_savestate::Reader &in);
+// The contents of the small render targets the game draws once and samples for
+// a while (read back from the renderer), and putting them back. A separate
+// trailer: a state without it loads with the targets empty.
+void saveFills(ps2_savestate::Writer &out);
+void loadFills(ps2_savestate::Reader &in);
+// The uploads made and not yet taken by the VIF1 thread (an optional trailer).
+void saveProduced(ps2_savestate::Writer &out);
+void loadProduced(ps2_savestate::Reader &in);
 
 // The scene target's id (the frame's).
 constexpr uint32_t kSceneTarget = 1u;

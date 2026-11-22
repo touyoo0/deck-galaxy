@@ -29,7 +29,7 @@ The menu has ten pages, written here as F1 > Game and so on:
   before it is overwritten. Choosing one closes the menu and does it. Not on
   the home screen.
 - **Actions**: pause, fast-forward and its speed, mute, screenshots (take one, take one with the menu, open the
-  folder), fullscreen and the renderer statistics. Not on the home screen.
+  folder) and the renderer statistics. Not on the home screen.
 
 - **Display**: internal resolution (1x or 2x, 2x by default; the Deck's
   screen is 800 lines, the PS2's picture 448), scaling filter (Sharp or
@@ -63,7 +63,6 @@ whose files are missing.
 | F5 | Pause |
 | F4 | Fast-forward |
 | F6 | Free camera |
-| F11 | Fullscreen |
 | F12 | Take screenshot |
 
 ## Game options

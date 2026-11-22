@@ -1121,6 +1121,26 @@ street walk at 60. What limits the gate now is VU1 itself: three quarters
 of the VIF1 thread are the compiled programs, `r_a786efabfa469ada_44` a
 sixth of it, `commitFlags` and `stall` 6%.
 
+**Skip button as soon as loaded (2026-11-21).** "Press X" is drawn only
+once every recap line is shown (LoadingScreenFrame 0x344318: lines shown
+0x4E8990 equal the count 0x4E8D84, state 0x482D78 at 5 or 6), and a press
+is taken only then (LoadingScreenTryFinish), but the game loads in a few
+seconds and the lines fade in at the console's pace, so the button came at
+the end of the text. LoadingScreenRequestEnd (the loaded game) moves the
+state from 3 or 4 to 5: the frame hook now shows every line at once from
+then on, as the instant recap does for the whole screen. Not run on the
+Deck yet.
+**The logos skipped by a button at the first boot (2026-11-21).**
+TitleOpeningMovieTick (0x4EBAF0) checks five buttons (Triangle 0x10, Cross
+0x40, Circle 0x80, Square 0x20, Start 0x800) but takes a press only once the
+opening has been seen (0x481B90), so at the first boot the Sony and Level-5
+logos could not be skipped; only "Skip the opening" did, with no press.
+src/opening.cpp now marks the opening seen when one of the five checks (the
+returns 0x4EBB48, 0x4EBB60, 0x4EBB78, 0x4EBB90, 0x4EBBA8, the addresses after
+each call; the title overlay sits 0x40 after its disassembly's start) finds
+its button pressed, and the game's own fade does the rest, after the
+opening's first six frames. Not run on the Deck yet.
+
 **The loading screen at the console's pace, and a recap at once
 (2026-10-20 night).** The story so far that a loaded game shows, its lines
 fading in one by one before Press X, ran at twice its speed in the 60 fps
@@ -2669,3 +2689,15 @@ it; the user's play profile is the better read.
 - PCSX2 [GameIndex.yaml](https://github.com/PCSX2/pcsx2/blob/master/bin/resources/GameIndex.yaml)
   and [pcsx2_patches](https://github.com/PCSX2/pcsx2_patches)
   (`SCUS-97490_0643F90C.pnach`).
+
+## Quick load at the battle rewards: grey scenery (2026-11-22)
+
+A state saved with the rewards window open loaded with a grey, flat floor.
+Loaded, 7920 draws a period missed their texture ("another format there":
+the stream's `residentTexture` held a 4-bit texture at 0x2c80, 0x2d40, 0x2ba0
+and 0x2bc0 where the draws read 8 bits); the live run before the save missed
+none. The state held 435 entries of `produced` (uploads the game thread had
+made, not yet taken by the VIF1 thread), which a load cleared: the transfers
+that would have taken them were already in RAM's packets. Fix: they go in the
+state (trailer `PRD1`, with the textures they name). Checked on the Deck by
+a save and a load at the rewards, in the same run and after a restart.
