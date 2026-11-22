@@ -23,13 +23,12 @@ is the game's side of it.
    `ra/game_2671.json`, which is only for reading the conditions: the game
    downloads its own.
 2. The F1 menu's "RetroAchievements" starts on once an account is saved (or
-   start with `RG_ACHIEVEMENTS=1`). A notice says how many you have, and another shows
-   at each one earned.
+   start with `RG_ACHIEVEMENTS=1`). A notice shows at each one earned.
 
 ## What you see
 
-- **A notice** at each one earned, with its badge, and one at the start with
-  how many you have.
+- **A notice** at each one earned, with its badge. Nothing shows at launch;
+  the count is on the Achievements page.
 - **The Achievements page**: F1 menu, Settings, Achievements (also Rogue
   Galaxy, Achievements). At the top the account: who is signed in with a
   Sign out button, or a user and a password with Sign in (typed with the

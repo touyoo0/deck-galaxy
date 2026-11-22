@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The RetroAchievements notice no longer shows each time the game starts.
+- The notices for an unlocked achievement, the free camera, a full bag and the quick saves are translated in French, German, Spanish and Italian.
+
 ## 0.12.3 - 2026-11-22
 
 - The area name at the bottom of the screen shows whole in French, German, Spanish and Italian (accents are drawn as plain letters); it was cut at the first accent or dash, or missing.

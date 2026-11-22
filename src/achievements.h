@@ -43,7 +43,8 @@ void frame(const uint8_t *rdram);
 
 struct Toast
 {
-    std::string text;
+    std::string text;    // English, with one %s for arg at most: the menu translates it
+    std::string arg;     // what goes in the %s, shown as it is
     bool earned = false; // an achievement unlocked, rather than a notice
     std::string badge;   // its badge's PNG (may still be downloading), else empty
 };

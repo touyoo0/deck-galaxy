@@ -7,6 +7,7 @@
 #include "native_producer.h"
 #include "scene_timing.h"
 #include "text_language.h"
+#include "ui/ui_text.h"
 #include "Stubs/Pad.h"
 #include "runtime/ee_scheduler.h"
 #include "vif1_thread.h"
@@ -45,15 +46,25 @@ constexpr uint32_t kVersion = 2u;
 constexpr auto kGiveUpAfter = std::chrono::seconds(5);
 
 std::mutex g_messageMutex;
-std::deque<std::string> g_messages;
-
-void say(const std::string &text, bool player = true)
+// A message is an English format with at most one %s and its argument; it is
+// translated when the menu takes it (takeMessage), on the menu's thread.
+struct Message
 {
+    std::string format;
+    std::string arg;
+};
+std::deque<Message> g_messages;
+
+void say(const std::string &format, const std::string &arg = {}, bool player = true)
+{
+    std::string text = format;
+    if (const size_t at = text.find("%s"); at != std::string::npos)
+        text.replace(at, 2, arg);
     std::fprintf(stderr, "[savestate] %s\n", text.c_str());
     if (player)
     {
         std::lock_guard lock(g_messageMutex);
-        g_messages.push_back(text);
+        g_messages.push_back({format, arg});
     }
 }
 
@@ -480,7 +491,7 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
             done = false;
             return;
         }
-        say("Could not save: " + why);
+        say("Could not save: %s", why);
         done = true;
         return;
     }
@@ -517,7 +528,7 @@ void doSave(PS2Runtime &runtime, int slot, std::shared_ptr<Pending> pending, boo
                 std::fprintf(stderr, "[savestate] slot %d: %zu bytes (%zu on disk), after %.2f s\n", slot, raw.size(),
                              file.size(), std::chrono::duration<double>(std::chrono::steady_clock::now() - since).count());
                 writeSlotRevision(slot);
-                say("Saved to slot " + std::to_string(slot));
+                say("Saved to slot %s", std::to_string(slot));
                 thumbnailSaved(slot);
             }
             else
@@ -552,7 +563,7 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
         std::ifstream file(slotPath(slot), std::ios::binary | std::ios::ate);
         if (!file)
         {
-            say("Slot " + std::to_string(slot) + " is empty");
+            say("Slot %s is empty", std::to_string(slot));
             return;
         }
         const std::streamsize size = file.tellg();
@@ -567,7 +578,7 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
         bytes = decodeFile(std::move(packed), why);
         if (bytes.empty())
         {
-            say("Could not load: " + why);
+            say("Could not load: %s", why);
             return;
         }
     }
@@ -580,13 +591,13 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
         const std::string problem = checkHeader(in, overlay);
         if (!problem.empty())
         {
-            say("Could not load: " + problem);
+            say("Could not load: %s", problem);
             return;
         }
         const std::string before = rg::overlay::residentName();
         if (overlay != before && !rg::overlay::makeResident(overlay.c_str()))
         {
-            say("Could not load: saved in an area this build does not have (" + overlay + ")");
+            say("Could not load: saved in an area this build does not have (%s)", overlay);
             return;
         }
         try
@@ -637,11 +648,11 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
             done = false;
             return;
         }
-        say(std::string("Load failed: ") + error.what());
+        say("Load failed: %s", error.what());
         return;
     }
     if (slot != g_continueSlot)
-        say("Loaded slot " + std::to_string(slot));
+        say("Loaded slot %s", std::to_string(slot));
 }
 
 } // namespace
@@ -747,8 +758,11 @@ bool takeMessage(std::string &text)
     std::lock_guard lock(g_messageMutex);
     if (g_messages.empty())
         return false;
-    text = std::move(g_messages.front());
+    const Message message = std::move(g_messages.front());
     g_messages.pop_front();
+    text = dq8::ui::L(message.format);
+    if (const size_t at = text.find("%s"); at != std::string::npos)
+        text.replace(at, 2, dq8::ui::L(message.arg));
     return true;
 }
 
