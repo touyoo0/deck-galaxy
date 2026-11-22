@@ -126,7 +126,7 @@ constexpr Row kNumbers[] = {
 constexpr Row kScenes[] = {
     {"fast_transporter", "Fast Transporters", Kind::Switch},
     {"full_bag_to_storage", "Full Bag to Storage", Kind::Switch},
-    {"stack_limit_99", "Item Limit 99", Kind::Switch},
+    {"stack_limit_99", "Item Limit 999", Kind::Switch},
     {"bigger_bag", "Bag Page 7 (Next Start)", Kind::Switch},
     {"minimap_size", "Minimap Size", Kind::Number},
     {"compass_size", "Compass Size", Kind::Number},
@@ -164,7 +164,7 @@ constexpr Local kLocal[] = {
     {"action_gauge", {"Jauge d'action", "Aktionsanzeige", "Ind. de acci<'o>n", "Barra Azione"}},
     {"fast_transporter", {"Transporteurs rapides", "Schnelle Transporter", "Transportador r<'a>pido", "Warp rapido"}},
     {"full_bag_to_storage", {"Surplus en r<'e>serve", "<:U>berschuss ins Lager", "Exceso al inventario", "Eccesso in Inventario"}},
-    {"stack_limit_99", {"Limite d'objets 99", "Gegenstandslimit 99", "L<'i>mite de objetos 99", "Limite oggetti 99"}},
+    {"stack_limit_99", {"Limite d'objets 999", "Gegenstandslimit 999", "L<'i>mite de objetos 999", "Limite oggetti 999"}},
     {"bigger_bag", {"Sac page 7 (red<'e>m.)", "Taschenseite 7 (Neust.)", "Mochila p<'a>g. 7 (reinicio)", "Sacca pag. 7 (riavvio)"}},
     {"minimap_size", {"Taille mini-carte", "Minikartengr<:o><ss>e", "Tama<~n>o minimapa", "Dim. minimappa"}},
     {"compass_size", {"Taille boussole", "Kompassgr<:o><ss>e", "Tama<~n>o br<'u>jula", "Dim. bussola"}},

@@ -24,7 +24,7 @@ namespace rg::inventory
 void install(PS2Runtime &runtime);
 
 // Game option `stack_limit_99` (RG_STACK_LIMIT_99=1): every item that stacks
-// is held to 99 in the bag.
+// is held to 999 in the bag (the game's 99 for most, 20, 30 or 50 for some).
 void setStackLimit99(bool on);
 
 // Game option `full_bag_to_storage` (RG_FULL_BAG_TO_STORAGE=1): an item added

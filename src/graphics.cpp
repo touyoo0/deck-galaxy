@@ -1089,8 +1089,8 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
          "the item menu, or losing it when that is full too. Shops and the Factory still ask for room in the "
          "bag.",
          false},
-        {"stack_limit_99", "Item limit 99",
-         "Every item that stacks can be carried up to 99 in the bag. The game holds some to 20, 30 or 50, healing "
+        {"stack_limit_99", "Item limit 999",
+         "Every item that stacks can be carried up to 999 in the bag. The game holds some to 20, 30 or 50, healing "
          "items and boosts among them. Off again, nothing carried is lost; more just cannot be added.",
          false},
         {"bigger_bag", "Seventh bag page",
