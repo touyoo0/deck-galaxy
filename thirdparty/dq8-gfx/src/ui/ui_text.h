@@ -17,6 +17,9 @@ extern const char *const kMenuLanguageNames[kMenuLanguageCount]; // each in its 
 // own language setting, then the system's locale), else one of the codes.
 // Anything else is English.
 void setMenuLanguage(const std::string &setting);
+// The Deck's own language, what "auto" comes to, as a place in kMenuLanguageCodes
+// (0 English); the game's text language starts from it too.
+int detectedLanguageIndex();
 // The code in use ("en", "fr", ...), what "auto" came to.
 const char *menuLanguage();
 // Its place in kMenuLanguageCodes.

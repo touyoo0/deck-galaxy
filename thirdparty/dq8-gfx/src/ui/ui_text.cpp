@@ -153,6 +153,8 @@ void setMenuLanguage(const std::string &setting) {
     table();
 }
 
+int detectedLanguageIndex() { return detectLanguage(); }
+
 const char *menuLanguage() { return kMenuLanguageCodes[gLanguage]; }
 
 int menuLanguageIndex() { return gLanguage; }
