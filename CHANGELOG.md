@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.12.2 - 2026-11-22
+
 - The backward jump in battle is no longer much higher and farther than it should be at 60 fps.
 
 ## 0.12.1 - 2026-11-22

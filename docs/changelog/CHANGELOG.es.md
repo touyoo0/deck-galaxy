@@ -5,6 +5,10 @@ inicio las muestra en este idioma. Los títulos (`## versión - fecha`) se
 quedan como en `CHANGELOG.md`: son los que unen una versión con su
 traducción. Una versión que falte en este archivo se muestra en inglés.
 
+## 0.12.2 - 2026-11-22
+
+- El salto hacia atrás en combate ya no es mucho más alto y largo de lo debido a 60 fps.
+
 ## 0.12.1 - 2026-11-22
 
 - Importar una partida de PCSX2 ya no deja una partida vacía (el juego decía que estaba dañada) con algunas tarjetas de memoria; volver a importar desde el instalador la repara.
