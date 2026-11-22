@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The glow around a character (the Lightning Sword aura) is a thin white outline again, no longer a wide light smear on the floor.
+
 ## 0.12.2 - 2026-11-22
 
 - The backward jump in battle is no longer much higher and farther than it should be at 60 fps.

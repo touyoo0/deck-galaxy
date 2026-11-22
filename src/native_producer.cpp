@@ -58,7 +58,7 @@ struct Counts
     uint64_t pieces = 0, piecesMade = 0, piecesNoState = 0, piecesNoTarget = 0, piecesNoSource = 0;
     uint64_t piecesFogged = 0, piecesFromTarget = 0, piecesSubTarget = 0, piecesCt24 = 0;
     uint64_t effectsMade = 0, effectsRefused = 0, opsMade = 0, opsNoTarget = 0, opsNoSource = 0, opsLayer = 0;
-    uint64_t opsGreenToAlpha = 0, opsFeedback = 0, opsDepth = 0;
+    uint64_t opsGreenToAlpha = 0, opsFeedback = 0, opsDepth = 0, opsTrailSkipped = 0, outlinesMade = 0;
     // Step 5c: object layers.
     uint64_t layersRouted = 0, drawsRouted = 0, tailsMade = 0, tailsBack = 0, tailsEmpty = 0;
     // Step 6: host uploads nobody took, kept as images (hostUpload).
@@ -2454,6 +2454,57 @@ bool layerCommand(State &s, const GSNativeEffect &e)
 }
 } // namespace
 
+namespace
+{
+// A thin glow around a boosted character, from its own silhouette at the
+// frame's resolution: the sprite that lays it over the frame, drawn first
+// shifted a few pixels each way, additive and white where the character is;
+// the character's own sprites follow and cover its inside, so only what sticks
+// out of it stays. (The game's glow mask is 64x64 for the whole frame: a texel
+// of it is 8 pixels, too coarse to be thin.)
+void outlineSprite(State &s, const native::MeshDraw &base)
+{
+    static const float width = [] {
+        const char *v = std::getenv("RG_NATIVE_AURA_PX");
+        return v ? static_cast<float>(std::atof(v)) : 2.0f;
+    }();
+    static const float gain = [] {
+        const char *v = std::getenv("RG_NATIVE_AURA_GAIN");
+        return std::clamp(v ? static_cast<float>(std::atof(v)) : 140.0f, 0.0f, 255.0f);
+    }();
+    if (width <= 0.0f || gain <= 0.0f || base.vertices.size() != 4u || !base.material.sourceTarget)
+        return;
+    static const float dirs[8][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0.7f, 0.7f}, {-0.7f, 0.7f}, {0.7f, -0.7f}, {-0.7f, -0.7f}};
+    // Four rings: bright close to the character, fainter and fainter further out.
+    static const float rings[4][2] = {{0.7f, 1.0f}, {1.4f, 0.55f}, {2.2f, 0.3f}, {3.0f, 0.14f}};
+    for (const auto &ring : rings)
+    for (const auto &dir : dirs)
+    {
+        native::MeshDraw copy = base;
+        native::Material &m = copy.material;
+        m.function = native::TextureFunction::Highlight2; // rgb from the vertex alpha, alpha the layer's
+        m.textureAlpha = true;
+        m.linear = true;
+        m.blending = true;
+        m.srcFactor = native::BlendFactor::SrcAlpha;
+        m.dstFactor = native::BlendFactor::One;
+        m.blendOp = native::BlendOp::Add;
+        m.alphaTest = native::Compare::Always;
+        m.colorWrite = 0x7u;
+        m.known = true;
+        for (native::Vertex &v : copy.vertices)
+        {
+            v.position[0] += dir[0] * width * ring[0];
+            v.position[1] += dir[1] * width * ring[0];
+            v.color[0] = v.color[1] = v.color[2] = 0.0f;
+            v.color[3] = gain * ring[1] / 5.0f; // the copies add up
+        }
+        native::push(native::MeshDraw(std::move(copy)));
+    }
+    ++s.counts.outlinesMade;
+}
+} // namespace
+
 bool effect(const GSNativeEffect &e)
 {
     if (!native::enabled())
@@ -2493,11 +2544,33 @@ bool effect(const GSNativeEffect &e)
     thread_local std::vector<uint32_t> bases;
     made.clear();
     bases.clear();
+    // An object tail that also copies its silhouette into the 64x64 glow mask
+    // (buffer 03f80) is a boosted character: its main sprite, laid over the
+    // frame, is outlined below.
+    bool glowMask = false;
+    int mainSprite = -1;
     for (uint32_t k = 0; k < ops; ++k)
     {
         const GSNativeEffect::Op &op = e.ops[k];
         if (op.target >= e.bufferCount)
             return refuse(s.counts.opsNoTarget);
+        // CBlurTexBlur (the glow behind a character) adds the last frame's
+        // 64x64 mask, moved a texel and faded by a tenth, back into its own
+        // buffer (03f80) from 02a00's corner. Drawn so, the mask's trail
+        // grows into a wide smear that lights the floor (the Lightning Sword
+        // aura); the GS's frame has none. Left out.
+        // CBlurDraw's last sprite lays that 64x64 mask over the frame (a texel
+        // of it is 8 pixels, a glow far too coarse and wide): left out too,
+        // the aura is outlined from the character's own silhouette instead
+        // (outlineSprite).
+        if (op.source >= 0 && static_cast<uint32_t>(op.source) < e.bufferCount && (op.flags & GSNativeEffect::kBlend) &&
+            e.buffers[op.source].base == 0x2A00u && e.buffers[op.source].fbw == 1u &&
+            ((e.buffers[op.target].base == 0x3F80u && e.buffers[op.target].fbw == 1u) || e.buffers[op.target].base == 0u) &&
+            !std::getenv("RG_NATIVE_CBLUR_GAME"))
+        {
+            ++s.counts.opsTrailSkipped;
+            continue;
+        }
         const GSNativeEffect::Buffer &into = e.buffers[op.target];
         const native::Id target = targetFor(s, into.base, into.width ? into.width : std::max(into.fbw, 1u) * 64u,
                                             into.height, into.psm);
@@ -2597,9 +2670,18 @@ bool effect(const GSNativeEffect &e)
                         static_cast<int32_t>(op.scissor[2]) + 1, static_cast<int32_t>(op.scissor[3]) + 1};
         draw.fog[0] = draw.fog[1] = 255.0f;
         m.known = known;
+        if (tail)
+        {
+            if (into.base == 0x3F80u)
+                glowMask = true;
+            else if (into.base == 0u && op.source >= 0)
+                mainSprite = static_cast<int>(made.size());
+        }
         made.push_back(std::move(draw));
         bases.push_back(into.base);
     }
+    if (tail && glowMask && mainSprite >= 0 && static_cast<size_t>(mainSprite) < made.size())
+        outlineSprite(s, made[static_cast<size_t>(mainSprite)]);
     for (size_t k = 0; k < made.size(); ++k)
     {
         if (made[k].target != s.layer || s.layer == 0u)
