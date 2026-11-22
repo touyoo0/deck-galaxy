@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Importing a PCSX2 save no longer leaves an empty save (the game said it was corrupted) with some memory cards; importing again from the installer repairs it.
+
 ## 0.12.0 - 2026-11-22
 
 - The installer goes page by page (disc, place, extras, achievements, recap), and says the achievements start on when you signed in.

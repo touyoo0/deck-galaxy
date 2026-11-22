@@ -815,9 +815,12 @@ def ps2_card_saves(path: Path) -> dict[str, dict[str, bytes]]:
             c = nxt & 0x7FFFFFFF
         return b"".join(out)
 
-    def entries(first: int) -> list[tuple[int, int, int, str]]:
+    def entries(first: int, count: int | None = None) -> list[tuple[int, int, int, str]]:
+        """A directory's entries. The count is the length its parent gives it; the "." entry's length is the
+        same figure in the root, but 0 in a save's folder on some cards (the saves would read as empty)."""
         raw = chain(first)
-        count = struct.unpack_from("<I", raw, 4)[0]
+        if count is None:
+            count = struct.unpack_from("<I", raw, 4)[0]
         found = []
         for i in range(min(count, len(raw) // 512)):
             mode, length, start = struct.unpack_from("<HxxI8xI", raw, i * 512)
@@ -827,11 +830,11 @@ def ps2_card_saves(path: Path) -> dict[str, dict[str, bytes]]:
         return found
 
     saves: dict[str, dict[str, bytes]] = {}
-    for mode, _length, start, name in entries(root):
+    for mode, length, start, name in entries(root):
         if not (mode & 0x20 and name.startswith(SAVE_PREFIX)):  # 0x20 a directory, 0x10 a file
             continue
         files = {}
-        for fmode, flen, fstart, fname in entries(start):
+        for fmode, flen, fstart, fname in entries(start, length):
             if fmode & 0x10 and fname not in (".", ".."):
                 files[fname] = chain(fstart)[:flen]
         saves[name] = files
@@ -883,23 +886,26 @@ def find_cards() -> list[Path]:
 
 def import_saves(source: Path, mc0: Path) -> tuple[list[str], list[str]]:
     """Copy the card's Rogue Galaxy saves into the game's memory card folder. A save already there is never
-    replaced. Returns (copied, kept) names."""
+    replaced (an empty folder, left by an earlier import, does not count as a save). Returns (copied, kept) names."""
+    def taken(name: str) -> bool:
+        return (mc0 / name).exists() and any((mc0 / name).iterdir())
+
     copied, kept = [], []
     mc0.mkdir(parents=True, exist_ok=True)
     if source.is_dir():
         wanted = {d.name: d for d in folder_card_saves(source)}
         for name, folder in wanted.items():
-            if (mc0 / name).exists():
+            if taken(name):
                 kept.append(name)
             else:
-                shutil.copytree(folder, mc0 / name)
+                shutil.copytree(folder, mc0 / name, dirs_exist_ok=True)
                 copied.append(name)
     else:
         for name, files in ps2_card_saves(source).items():
-            if (mc0 / name).exists():
+            if taken(name):
                 kept.append(name)
                 continue
-            (mc0 / name).mkdir()
+            (mc0 / name).mkdir(exist_ok=True)
             for fname, blob in files.items():
                 (mc0 / name / fname).write_bytes(blob)
             copied.append(name)
