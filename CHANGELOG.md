@@ -8,6 +8,8 @@
 - With a European disc installed, the game's text starts in the Deck's language
   (Steam's, else the system's) on a first start, as the installer and the menu
   do; English when that language is not among the five.
+- The stone dog monsters are textured (they were grey and see-through).
+- Loading a save state no longer freezes or crashes the game, nor breaks the pause menu, with the European texts.
 
 ## 0.12.0 - 2026-11-22
 

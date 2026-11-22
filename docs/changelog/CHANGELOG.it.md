@@ -9,6 +9,8 @@ versione che manca in questo file viene mostrata in inglese.
 
 - L'importazione di un salvataggio PCSX2 non lascia più un salvataggio vuoto (il gioco lo diceva danneggiato) con alcune memory card; importare di nuovo dall'installer lo ripara.
 - Con un disco europeo, il testo del gioco parte nella lingua del Deck (quella di Steam, altrimenti del sistema) al primo avvio, come l'installer e il menu; in inglese se quella lingua non è tra le cinque.
+- I mostri cane di pietra hanno le loro texture (erano grigi e trasparenti).
+- Caricare uno stato salvato non blocca né chiude più il gioco, né rompe il menu di pausa, con i testi europei.
 
 ## 0.12.0 - 2026-11-22
 

@@ -9,6 +9,8 @@ traducción. Una versión que falte en este archivo se muestra en inglés.
 
 - Importar una partida de PCSX2 ya no deja una partida vacía (el juego decía que estaba dañada) con algunas tarjetas de memoria; volver a importar desde el instalador la repara.
 - Con un disco europeo, el texto del juego arranca en el idioma de la Deck (el de Steam, si no el del sistema) en el primer inicio, como el instalador y el menú; en inglés si ese idioma no es uno de los cinco.
+- Los monstruos perro de piedra tienen sus texturas (eran grises y transparentes).
+- Cargar un estado guardado ya no congela ni cierra el juego, ni rompe el menú de pausa, con los textos europeos.
 
 ## 0.12.0 - 2026-11-22
 

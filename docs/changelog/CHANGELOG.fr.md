@@ -9,6 +9,8 @@ version absente de ce fichier s'affiche en anglais.
 
 - L'import d'une sauvegarde PCSX2 ne laisse plus une sauvegarde vide (le jeu la disait corrompue) avec certaines cartes mémoire ; refaire l'import depuis l'installeur la répare.
 - Avec un disque européen, le texte du jeu démarre dans la langue de la Deck (celle de Steam, sinon du système) au premier lancement, comme l'installeur et le menu ; en anglais si cette langue n'est pas parmi les cinq.
+- Les monstres chiens de pierre ont leurs textures (ils étaient gris et transparents).
+- Charger un état sauvegardé ne fige ni ne plante plus le jeu, et ne casse plus le menu pause, avec les textes européens.
 
 ## 0.12.0 - 2026-11-22
 

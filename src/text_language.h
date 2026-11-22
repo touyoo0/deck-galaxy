@@ -47,6 +47,12 @@ void chooseAtBoot(uint8_t *rdram, PS2Runtime &runtime);
 // ones).
 int europeanColumn();
 
+// After a save state is loaded: the guest-heap blocks this file made (the accent table, the
+// menu layout buffers) are not the loaded heap's, so it lets go of them; they are made again.
+// The tables it patched once in the game's memory (the pause hint, the item commands, the kind
+// icons) are patched again.
+void forgetGuestMemory();
+
 // After loadELF(): the hooks.
 void install(PS2Runtime &runtime);
 

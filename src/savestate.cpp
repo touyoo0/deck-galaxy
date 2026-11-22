@@ -6,6 +6,7 @@
 #include "draw_state_mirror.h"
 #include "native_producer.h"
 #include "scene_timing.h"
+#include "text_language.h"
 #include "Stubs/Pad.h"
 #include "runtime/ee_scheduler.h"
 #include "vif1_thread.h"
@@ -591,6 +592,7 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
         try
         {
             runtime.eeScheduler().loadMachine(in);
+            rg::textlanguage::forgetGuestMemory();
             readPadTrailer(in, runtime);
             // The disc's files and stream (a state from before has none).
             if (in.remaining() >= sizeof(uint32_t))
