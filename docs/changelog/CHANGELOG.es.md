@@ -5,6 +5,11 @@ inicio las muestra en este idioma. Los títulos (`## versión - fecha`) se
 quedan como en `CHANGELOG.md`: son los que unen una versión con su
 traducción. Una versión que falte en este archivo se muestra en inglés.
 
+## 0.12.3 - 2026-11-22
+
+- El brillo alrededor de un personaje (el aura de la Espada del Rayo) vuelve a ser un fino contorno blanco, ya no una ancha mancha de luz en el suelo.
+- El nombre de la zona en la parte inferior de la pantalla se muestra completo en francés, alemán, español e italiano (los acentos se dibujan como letras simples); se cortaba en el primer acento o guion, o no aparecía.
+
 ## 0.12.2 - 2026-11-22
 
 - El salto hacia atrás en combate ya no es mucho más alto y largo de lo debido a 60 fps.
