@@ -7,6 +7,8 @@ traducción. Una versión que falte en este archivo se muestra en inglés.
 
 ## 0.12.3 - 2026-11-22
 
+- El aviso de RetroAchievements ya no aparece cada vez que se inicia el juego.
+- Los avisos de logro desbloqueado, cámara libre, bolsa llena y guardado rápido están traducidos al francés, alemán, español e italiano.
 - El brillo alrededor de un personaje (el aura de la Espada del Rayo) vuelve a ser un fino contorno blanco, ya no una ancha mancha de luz en el suelo.
 - El nombre de la zona en la parte inferior de la pantalla se muestra completo en francés, alemán, español e italiano (los acentos se dibujan como letras simples); se cortaba en el primer acento o guion, o no aparecía.
 

@@ -7,6 +7,8 @@ versione che manca in questo file viene mostrata in inglese.
 
 ## 0.12.3 - 2026-11-22
 
+- L'avviso di RetroAchievements non compare più a ogni avvio del gioco.
+- Gli avvisi di obiettivo sbloccato, camera libera, borsa piena e salvataggio rapido sono tradotti in francese, tedesco, spagnolo e italiano.
 - Il bagliore attorno a un personaggio (l'aura della Spada del Fulmine) torna a essere un sottile contorno bianco, non più un'ampia macchia di luce sul pavimento.
 - Il nome della zona in basso sullo schermo appare per intero in francese, tedesco, spagnolo e italiano (gli accenti sono disegnati come lettere semplici); veniva tagliato al primo accento o trattino, oppure mancava.
 

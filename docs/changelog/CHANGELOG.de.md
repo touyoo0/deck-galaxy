@@ -7,6 +7,8 @@ zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf Englisch.
 
 ## 0.12.3 - 2026-11-22
 
+- Die RetroAchievements-Meldung erscheint nicht mehr bei jedem Spielstart.
+- Die Meldungen zu freigeschalteten Erfolgen, freier Kamera, voller Tasche und Schnellspeichern sind auf Französisch, Deutsch, Spanisch und Italienisch übersetzt.
 - Das Leuchten um eine Figur (die Aura des Blitzschwerts) ist wieder eine dünne weiße Kontur und kein breiter Lichtschleier mehr auf dem Boden.
 - Der Name des Gebiets am unteren Bildrand erscheint auf Französisch, Deutsch, Spanisch und Italienisch vollständig (Akzente werden als einfache Buchstaben gezeichnet); er wurde beim ersten Akzent oder Bindestrich abgeschnitten oder fehlte.
 
