@@ -68,10 +68,10 @@ std::vector<Row> g_list;
 std::mutex g_toastMutex;
 std::deque<Toast> g_toasts;
 
-void pushToast(std::string text, bool earned = false, std::string badge = {})
+void pushToast(std::string text, bool earned = false, std::string badge = {}, std::string arg = {})
 {
     std::lock_guard<std::mutex> lock(g_toastMutex);
-    g_toasts.push_back({std::move(text), earned, std::move(badge)});
+    g_toasts.push_back({std::move(text), std::move(arg), earned, std::move(badge)});
 }
 
 void fail(const std::string &why)
@@ -379,9 +379,9 @@ void onEvent(const rc_client_event_t *event, rc_client_t *)
         }
         else if (event->achievement)
         {
-            pushToast(std::string(g_test ? "[test] Achievement unlocked: " : "Achievement unlocked: ") + event->achievement->title + " (" +
-                          std::to_string(event->achievement->points) + ")",
-                      true, badgeFile(event->achievement->badge_url));
+            pushToast(g_test ? "[test] Achievement unlocked: %s" : "Achievement unlocked: %s", true,
+                      badgeFile(event->achievement->badge_url),
+                      std::string(event->achievement->title) + " (" + std::to_string(event->achievement->points) + ")");
             std::fprintf(stderr, "[ra] unlocked %u: %s\n", event->achievement->id, event->achievement->title);
             refreshSummary();
         }
@@ -394,7 +394,7 @@ void onEvent(const rc_client_event_t *event, rc_client_t *)
         {
             std::fprintf(stderr, "[ra] server error (%s): %s\n", event->server_error->api,
                          event->server_error->error_message);
-            pushToast(std::string("RetroAchievements: ") + event->server_error->error_message);
+            pushToast("RetroAchievements: %s", false, {}, event->server_error->error_message);
         }
         break;
     case RC_CLIENT_EVENT_DISCONNECTED:
@@ -463,7 +463,6 @@ void onLoaded(int result, const char *error, rc_client_t *, void *)
     g_state = State::Running;
     refreshSummary();
     std::fprintf(stderr, "[ra] %s\n", g_summary.c_str());
-    pushToast("RetroAchievements: " + g_summary);
 }
 
 void onLogin(int result, const char *error, rc_client_t *client, void *)

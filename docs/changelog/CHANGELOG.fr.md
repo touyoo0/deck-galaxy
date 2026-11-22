@@ -7,6 +7,8 @@ version absente de ce fichier s'affiche en anglais.
 
 ## 0.12.3 - 2026-11-22
 
+- La notification RetroAchievements ne s'affiche plus à chaque lancement du jeu.
+- Les notifications de succès débloqué, de caméra libre, de sac plein et de sauvegarde rapide sont traduites en français, allemand, espagnol et italien.
 - Le halo autour d'un personnage (l'aura de l'Épée de foudre) redevient un fin contour blanc, plus une large traînée de lumière sur le sol.
 - Le nom de la zone en bas de l'écran s'affiche en entier en français, allemand, espagnol et italien (les accents sont dessinés en lettres simples) ; il était coupé au premier accent ou tiret, ou absent.
 

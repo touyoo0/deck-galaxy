@@ -790,7 +790,10 @@ bool pump(void *userData)
     rg::achievements::frame(g_runtime->memory().getRDRAM());
     for (rg::achievements::Toast toast; g_menu && rg::achievements::takeToast(toast);)
     {
-        g_menu->notify(toast.text, toast.earned ? dq8::ui::Icon::Check : dq8::ui::Icon::Info,
+        std::string text = dq8::ui::L(toast.text);
+        if (const size_t at = text.find("%s"); at != std::string::npos)
+            text.replace(at, 2, toast.arg);
+        g_menu->notify(text, toast.earned ? dq8::ui::Icon::Check : dq8::ui::Icon::Info,
                        toast.earned ? 6.0 : 4.0, toast.badge);
     }
     // The free camera turned on or off, by F6, either menu or Start: a toast.
@@ -807,9 +810,8 @@ bool pump(void *userData)
     // Items the bag had no room for, sent to the storage.
     if (const unsigned sent = rg::inventory::takeSentToStorage(); sent != 0u && g_menu)
     {
-        g_menu->notify(sent == 1u ? "The bag is full: the item went to the transporter's item storage"
-                                  : "The bag is full: " + std::to_string(sent) +
-                                        " items went to the transporter's item storage",
+        g_menu->notify(sent == 1u ? std::string("The bag is full: the item went to the transporter's item storage")
+                                  : dq8::ui::Lf("The bag is full: %u items went to the transporter's item storage", sent),
                        dq8::ui::Icon::Info);
     }
     // A newer release found by the check of this run: a toast, once.
