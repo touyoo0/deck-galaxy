@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "runtime/ps2_memory.h"
 #include "return_hook.h"
 #include "scene_timing.h"
 #include "widescreen.h"
@@ -117,6 +118,10 @@ void writeWord(uint8_t *rdram, uint32_t address, uint32_t value)
 {
     std::memcpy(rdram + (address & 0x1FFFFFFFu), &value, sizeof(value));
 }
+
+// Guest-heap blocks this file keeps the address of: a loaded state has its own heap, so
+// forgetGuestMemory() lets go of them (a block of the run before may be anything now).
+uint32_t g_pathScratch = 0;
 
 std::string normalize(const char *path)
 {
@@ -240,7 +245,7 @@ uint32_t discSector(uint8_t *rdram, R5900Context *caller, const std::string &pat
     {
         return 0;
     }
-    static uint32_t scratch = 0;
+    uint32_t &scratch = g_pathScratch;
     if (!scratch)
     {
         scratch = g_runtime->guestMalloc(0x200u, 16u);
@@ -468,9 +473,10 @@ uint32_t g_accentEntries = 0; // guest copy of the table: {name, length (s16), c
 void textSymbolTagFind(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
 {
     const uint32_t textAddress = getRegU32(ctx, 4);
-    if (g_active && textAddress != 0)
+    // The string may be in the scratchpad (0x7000xxxx), which rdram does not hold: translate it.
+    const char *text = reinterpret_cast<const char *>(getConstMemPtr(rdram, textAddress));
+    if (g_active && textAddress != 0 && text)
     {
-        const char *text = reinterpret_cast<const char *>(rdram + (textAddress & 0x1FFFFFFFu));
         if (text[0] == '<')
         {
             if (!g_accentEntries)
@@ -2033,6 +2039,13 @@ void resGroupStackInit(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
 }
 
 } // namespace
+
+void forgetGuestMemory()
+{
+    g_accentEntries = 0;
+    g_layoutBuffers = 0;
+    g_pathScratch = 0;
+}
 
 int europeanColumn()
 {
