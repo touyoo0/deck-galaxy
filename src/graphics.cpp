@@ -1278,6 +1278,17 @@ Setup::Setup(PS2Runtime &runtime)
         {
             std::fprintf(stderr, "[rg] could not read %s; using default settings\n", settingsPath.c_str());
         }
+        // The game's text language, never chosen yet (a first start): the Deck's
+        // own, as the installer's window and the menu have it, when the
+        // European disc made that language's files. English otherwise.
+        if (!settings.gameNumbers.count("text_language") && !settings.gameOptions.count("text_language"))
+        {
+            const int language = dq8::ui::detectedLanguageIndex();
+            if (language > 0 && language < kTextLanguages && rg::textlanguage::installed(language))
+            {
+                settings.gameNumbers["text_language"] = language;
+            }
+        }
         // A Steam Deck starts in fullscreen (its Game Mode shows a window
         // letterboxed), whatever an earlier run saved; RG_WINDOWED=1 keeps the
         // saved window. Its first run also starts at the native scale: the

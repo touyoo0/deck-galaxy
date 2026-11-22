@@ -4,6 +4,9 @@
 
 ### Changed
 
+- With a European disc installed, the game's text starts in the Deck's language
+  (Steam's, else the system's) on a first start, as the installer and the menu
+  do; English when that language is not among the five.
 - No button or key combination is left: View + Menu (Back + Start) no longer
   opens the menu, and Alt+Enter and Shift+F12 are gone. The Deck's L4 (F1)
   opens it, and the start-up hint says so. The "Back + Start opens the menu"

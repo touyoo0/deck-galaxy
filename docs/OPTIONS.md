@@ -122,7 +122,7 @@ F1 > Language. The menu's own language is there too, in the Menu section.
 
 | Option | |
 |---|---|
-| Game language | English (the game's), Français, Deutsch, Español or Italiano: the menus, scenes and battles in that language of the European release, from your own European disc (SCES-54552). Needs that disc's texts in `disc/EU`: add your European disc image on the installer's Options page, or drop it onto the file; by hand, `python setup.py extract-european --iso "<your European disc>"`. A few lines the European disc has no words for stay English. Takes effect at the next start. |
+| Game language | English (the game's), Français, Deutsch, Español or Italiano: the menus, scenes and battles in that language of the European release, from your own European disc (SCES-54552). Needs that disc's texts in `disc/EU`: add your European disc image on the installer's Options page, or drop it onto the file; by hand, `python setup.py extract-european --iso "<your European disc>"`. A few lines the European disc has no words for stay English. Until you pick one, it starts as the Deck's language (Steam's, else the system's) when that language is installed. Takes effect at the next start. |
 | Undub (Japanese voices) | The voices in scenes and the movies come from your own Japanese Director's Cut (SCPS-17013) instead of the English ones; the text stays as it is. Needs that disc's files in `disc/JA`: add your Japanese disc image on the installer's Options page, or drop it onto the file; by hand, `python setup.py extract-japanese --iso "<your Japanese disc>"`. A few lines (63) have no Japanese voice and play silent. Takes effect at the next start. |
 
 ## In the game's own menu
