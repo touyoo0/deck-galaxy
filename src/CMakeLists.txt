@@ -105,6 +105,7 @@ add_executable(roguegalaxy
     libc_rand.cpp
     loading_screen.cpp
     map_chests.cpp
+    fast_travel.cpp
     native_renderer.cpp
     opening.cpp
     text_language.cpp

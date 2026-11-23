@@ -30,6 +30,7 @@
 #include "text_language.h"
 #include "voice_language.h"
 #include "achievements.h"
+#include "fast_travel.h"
 #include "map_chests.h"
 #include "native_renderer.h"
 #include "loading_screen.h"
@@ -418,6 +419,8 @@ void applyGameOption(const std::string &key, bool on)
         rg::inventory::setBiggerBag(on);
     else if (key == "map_chests")
         rg::mapchests::setEnabled(on);
+    else if (key == "fast_travel")
+        rg::fasttravel::setEnabled(on);
     else if (key == "achievements")
         rg::achievements::setEnabled(on);
     else if (key == "free_camera")
@@ -796,6 +799,16 @@ bool pump(void *userData)
         g_menu->notify(text, toast.earned ? dq8::ui::Icon::Check : dq8::ui::Icon::Info,
                        toast.earned ? 6.0 : 4.0, toast.badge);
     }
+    // Fast travel from the full map: the selection, as a toast.
+    for (rg::fasttravel::Toast toast; rg::fasttravel::takeToast(toast);)
+    {
+        if (g_menu)
+        {
+            g_menu->notify(toast.count > 0 ? dq8::ui::Lf("Fast travel %d/%d: confirm to go", toast.index, toast.count)
+                                           : std::string("Fast travel: no transporter activated here"),
+                           dq8::ui::Icon::Info, 2.0);
+        }
+    }
     // The free camera turned on or off, by F6, either menu or Start: a toast.
     static bool freeCameraWas = false;
     if (const bool freeCamera = rg::freecamera::enabled(); freeCamera != freeCameraWas)
@@ -1072,6 +1085,11 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
          "The chests not yet opened show on the maps in the parts you have explored, as the game shows them once "
          "every save point of a planet is activated. Only the map changes: nothing goes into your save, and "
          "activating every save point still counts as before.",
+         false},
+        {"fast_travel", "Fast travel from the map",
+         "With the map open (Select), the d-pad chooses among the transporters you have activated on the planet "
+         "and the confirm button travels to the one chosen, as the transporter's Teleport does. Nothing goes into "
+         "your save.",
          false},
         {"achievements", "RetroAchievements",
          "Checks the game's 130 RetroAchievements as you play and shows a notice when one is earned. Turn it on, "

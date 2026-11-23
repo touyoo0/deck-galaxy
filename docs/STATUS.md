@@ -2701,3 +2701,46 @@ made, not yet taken by the VIF1 thread), which a load cleared: the transfers
 that would have taken them were already in RAM's packets. Fix: they go in the
 state (trailer `PRD1`, with the textures they name). Checked on the Deck by
 a save and a load at the rewards, in the same run and after a restart.
+
+## Fast travel from the full map (2026-11-23)
+
+With the full map open (Select), the d-pad chooses among the transporters
+activated on the planet and the confirm button travels to the one chosen
+(`src/fast_travel.cpp`, the game option `fast_travel`, off by default).
+How it works, found by reading the transporter menu and tracing the scripts
+on the Deck:
+
+- The list is the Teleport page's own: `GroupViewCtor` (0x425440) over the
+  group of transporter records (`GameData+8`, `+0x74`), walked with
+  `IterInit`/`IterNext` (0x370170/0x370040), keeping the records whose word
+  at `+0x40` has bit 0 set. Calling these from the host must go through the
+  dispatcher (`rg::hooks::runToEnd`): the view's virtual calls tail-jump
+  (`jr t9`), and called directly the iterator returned its index, not the
+  record.
+- The map's phase asks `PadIsTriggered(Select)` at 0x283DDC every frame
+  (return 0x283DE4). The hook reads the pad itself (held at `+4`, last
+  frame's at `+0x5C`) for the d-pad (0x1000 up, 0x2000 right, 0x4000 down,
+  0x8000 left) and Cross (0x40), and answers yes on Cross so the game closes
+  the map its own way.
+- The travel fills the warp record at 0x4D7E00 as `TransporterMenuModeUpdate`
+  does for a Teleport choice (0x27CEBC to 0x27D040), then queues what its
+  phase 0x12C queues: `GameReqQueuePushWarp(site, 0x320)`, `PushBack(5)`,
+  `PushWarp(site, 0x321)`.
+- The warp's modes leave the screen black after the arrival: the Teleport
+  page's phase 0x12D asks `ScreenFadeIn(scene, 15)`, which the host asks on
+  the field's first frame after the warp (the field's Select test is not
+  asked while the warp's modes run).
+- The departure's light is the script 0x320's (area 200): it places two
+  objects at the position `EvCmdFuncPointGetPosMaybe` (0x25AE60) reads from
+  the active transporter's record (id at 0x481B2C, -1 away from one). For
+  that one call the host gives the active id a record of the list and the
+  record the leader's position, then puts both back.
+
+Checked on the Deck from a copy of the install (`RogueTest01`, its build
+rebuilt incrementally through a private mount of the copy over the original
+path, so that ninja's command hashes stay valid): the list matches the
+activated transporters, the travel lands at the chosen one, the fade in at
+the arrival and the light around the party at the departure show. Not done:
+the map does not centre on the chosen point, the notice gives a number and
+not the name, and the choice goes through the list's order, not the map's
+directions.

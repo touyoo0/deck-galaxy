@@ -63,6 +63,7 @@ Most of these set an option of the F1 menu for one run, without saving it.
 | `RG_TEXT_LANG=FR` | The text in that language (FR, DE, ES, IT; EN for the game's), whatever the menu's "Text" says; needs `disc/EU/<LANG>.idx` from `setup.py extract-european` (`src/text_language.h`). Logs `[rg] text in FR`, and `[rg] in English: <path>` for a file the language has none of |
 | `RG_TEXT_TRACE=1` | With a European text language: logs each archive lookup and each file served from `disc/EU/<LANG>.DAT` |
 | `RG_MAP_CHESTS=1` | The chests not yet opened on the maps before a planet is complete (the menu's "Chests on the map"; `src/map_chests.h`) |
+| `RG_FAST_TRAVEL=1` | Fast travel from the full map: the d-pad chooses among the activated transporters and the confirm button travels (the menu's "Fast travel from the map"; `src/fast_travel.h`) |
 | `RG_ACHIEVEMENTS=1` | RetroAchievements on, as the menu's "RetroAchievements" (`src/achievements.h`, [RETROACHIEVEMENTS.md](RETROACHIEVEMENTS.md)) |
 | `RG_ACHIEVEMENTS_TEST=1` | With RetroAchievements on, checks the conditions against a save without sending anything: spectator and encore modes, so every achievement the save satisfies shows a `[test]` toast and a `[ra] unlocked` line in the log |
 | `RG_FULL_BAG_TO_STORAGE=1` | An item the bag has no room for goes to the transporter's item storage (the menu's "Full bag to storage"; `src/inventory.h`) |

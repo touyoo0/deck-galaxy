@@ -91,6 +91,7 @@ and **Check for new versions**, which is on F1 > Interface:
 | Quick loading recap | The story so far appears whole, and you can go on as soon as it has loaded. |
 | Instant text | Dialogue a page at a time instead of letter by letter. |
 | Chests on the map | Unopened chests show on the map in the parts explored. |
+| Fast travel from the map | With the map open (Select), the d-pad chooses among the transporters activated on the planet and the confirm button travels to the one chosen. |
 | RetroAchievements | The game's 130 RetroAchievements are checked as you play. On the Achievements page, with the account (sign in, sign out) and the list. |
 | Fast transporters | Transporter warps play up to twice as fast. |
 | Check for new versions | At each start, asks GitHub for this project's releases and says when a newer one is out (Rogue Galaxy > About links to it). On by default. |
