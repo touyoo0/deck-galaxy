@@ -5,6 +5,11 @@ mostra in questa lingua. I titoli (`## versione - data`) restano come in
 `CHANGELOG.md`: sono loro a collegare una versione alla sua traduzione. Una
 versione che manca in questo file viene mostrata in inglese.
 
+## 0.12.5 - 2026-11-23
+
+- La pagina dei traguardi mostra il progresso di un traguardo a contatore (ad esempio 3/9 trasportatori) finché è in corso.
+- La barra di scorrimento dell'elenco degli incantesimi in combattimento resta nella sua finestra quando l'elenco è corto.
+
 ## 0.12.4 - 2026-11-23
 
 - L'opzione del limite di oggetti arriva ora fino a 999 per oggetto invece di 99.

@@ -5,6 +5,11 @@ zeigt sie in dieser Sprache. Die Überschriften (`## Version - Datum`) bleiben
 wie in `CHANGELOG.md`: Über sie wird eine Version ihrer Übersetzung
 zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf Englisch.
 
+## 0.12.5 - 2026-11-23
+
+- Die Erfolgsseite zeigt den Fortschritt eines Zähl-Erfolgs (zum Beispiel 3/9 Transporter) an, solange er läuft.
+- Die Bildlaufleiste der Zauberliste im Kampf bleibt in ihrem Fenster, wenn die Liste kurz ist.
+
 ## 0.12.4 - 2026-11-23
 
 - Die Option für das Gegenstandslimit geht jetzt bis 999 pro Gegenstand statt bis 99.

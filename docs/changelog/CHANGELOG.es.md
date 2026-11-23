@@ -5,6 +5,11 @@ inicio las muestra en este idioma. Los títulos (`## versión - fecha`) se
 quedan como en `CHANGELOG.md`: son los que unen una versión con su
 traducción. Una versión que falte en este archivo se muestra en inglés.
 
+## 0.12.5 - 2026-11-23
+
+- La página de logros muestra el progreso de un logro con contador (por ejemplo 3/9 transportadores) mientras está en curso.
+- La barra de desplazamiento de la lista de hechizos en combate se queda en su ventana cuando la lista es corta.
+
 ## 0.12.4 - 2026-11-23
 
 - La opción del límite de objetos llega ahora hasta 999 por objeto en lugar de 99.
