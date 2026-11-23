@@ -97,7 +97,7 @@ struct Point
 // Built when the full map opens; empty while it is closed.
 std::vector<Point> g_points;
 bool g_open = false;
-int g_selected = 0;
+int g_selected = -1; // -1: none chosen
 uint32_t g_scratch = 0;
 // A warp has been queued: the field's first frame after the warp ends (the
 // field's Select test is not asked while the warp's modes run) gets the
@@ -292,7 +292,7 @@ void publish(bool open)
 void buildPoints(uint8_t *rdram, const R5900Context *caller)
 {
     g_points.clear();
-    g_selected = 0;
+    g_selected = -1; // none: the map stays on the leader until the d-pad chooses
     if (!g_scratch)
     {
         g_scratch = g_runtime->guestMalloc(kScratchSize, 16u);
@@ -379,6 +379,18 @@ void centerMap(uint8_t *rdram, const R5900Context *caller, const Point &p)
                readFloat(rdram, p.record + kRecPos + 8u) - readFloat(rdram, vec + 8u));
 }
 
+// Puts the full map's view back on the leader (no offset).
+void centerOnLeader(uint8_t *rdram, const R5900Context *caller)
+{
+    const uint32_t mapMgr = callGuest(rdram, caller, kGetMapMgr);
+    if (!mapMgr)
+    {
+        return;
+    }
+    writeFloat(rdram, mapMgr + kMapOffsetX, 0.0f);
+    writeFloat(rdram, mapMgr + kMapOffsetZ, 0.0f);
+}
+
 void announce()
 {
     if (g_points.empty())
@@ -448,10 +460,7 @@ bool onFullMapFrame(uint8_t *rdram, R5900Context *ctx, bool selectPressed)
         g_open = true;
         buildPoints(rdram, ctx);
         announce();
-        if (!g_points.empty())
-        {
-            centerMap(rdram, ctx, g_points[static_cast<size_t>(g_selected)]);
-        }
+        centerOnLeader(rdram, ctx); // the map opens on the leader, as the game's does
     }
     const uint32_t held = read32(rdram, kPad1 + 4u);
     const uint32_t before = read32(rdram, kPad1 + 0x5Cu);
@@ -462,19 +471,30 @@ bool onFullMapFrame(uint8_t *rdram, R5900Context *ctx, bool selectPressed)
         return selectPressed;
     }
     const int count = static_cast<int>(g_points.size());
+    // The d-pad goes round the list with one more stop, "none", where the map
+    // is on the leader: right and down forward, left and up back.
+    auto choose = [&](int selected)
+    {
+        g_selected = selected;
+        announce();
+        if (g_selected >= 0)
+        {
+            centerMap(rdram, ctx, g_points[static_cast<size_t>(g_selected)]);
+        }
+        else
+        {
+            centerOnLeader(rdram, ctx);
+        }
+    };
     if (pressed & (kButtonRight | kButtonDown))
     {
-        g_selected = (g_selected + 1) % count;
-        announce();
-        centerMap(rdram, ctx, g_points[static_cast<size_t>(g_selected)]);
+        choose(g_selected + 1 >= count ? -1 : g_selected + 1);
     }
     else if (pressed & (kButtonLeft | kButtonUp))
     {
-        g_selected = (g_selected + count - 1) % count;
-        announce();
-        centerMap(rdram, ctx, g_points[static_cast<size_t>(g_selected)]);
+        choose(g_selected < 0 ? count - 1 : g_selected - 1);
     }
-    else if (pressed & kButtonCross)
+    else if ((pressed & kButtonCross) && g_selected >= 0)
     {
         travel(rdram, ctx, g_points[static_cast<size_t>(g_selected)]);
         return true; // the game closes the map as it does for Select

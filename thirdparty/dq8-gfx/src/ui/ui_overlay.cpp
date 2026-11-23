@@ -1913,7 +1913,7 @@ void Overlay::drawTravelList() {
         return;
     ImVec2 min, max;
     windowBounds(min, max);
-    {
+    if (list.selected >= 0) {
         // The chosen transporter is at the middle of the map: a gold ring
         // there, flattened like the circles the map draws on the ground, and
         // a second that swells and fades, so it stands out from the other
@@ -1940,9 +1940,9 @@ void Overlay::drawTravelList() {
     if (beginWindow("##travel", nullptr, flags)) {
         ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
         const int count = static_cast<int>(list.names.size());
-        const int selected = std::clamp(list.selected, 0, count - 1);
+        const int selected = std::min(list.selected, count - 1); // -1: none chosen
         constexpr int kVisible = 8;
-        const int first = std::clamp(selected - kVisible / 2, 0, std::max(0, count - kVisible));
+        const int first = std::clamp(std::max(selected, 0) - kVisible / 2, 0, std::max(0, count - kVisible));
         const int last = std::min(count, first + kVisible);
         ImGui::PushStyleColor(ImGuiCol_Text, palette::kGold);
         ImGui::TextUnformatted(L("Fast travel"));
