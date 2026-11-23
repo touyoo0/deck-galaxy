@@ -5,6 +5,11 @@ zeigt sie in dieser Sprache. Die Überschriften (`## Version - Datum`) bleiben
 wie in `CHANGELOG.md`: Über sie wird eine Version ihrer Übersetzung
 zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf Englisch.
 
+## 0.12.4 - 2026-11-23
+
+- Die Option für das Gegenstandslimit geht jetzt bis 999 pro Gegenstand statt bis 99.
+- Neue Option „Schnellreise von der Karte“: Bei geöffneter Karte wählst du mit dem Steuerkreuz einen aktivierten Transporter und reist dorthin.
+
 ## 0.12.3 - 2026-11-22
 
 - Die RetroAchievements-Meldung erscheint nicht mehr bei jedem Spielstart.

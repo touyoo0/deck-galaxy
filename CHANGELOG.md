@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.12.4 - 2026-11-23
+
 - The item limit option now goes up to 999 per item instead of 99.
 - New option "Fast travel from the map": with the map open, choose an activated transporter with the d-pad and travel to it.
 
