@@ -131,9 +131,7 @@ const TextEntry kTextsOptions[] = {
      "Con el mapa abierto (Select), la cruceta elige entre los transportadores que has activado en el planeta y el botón de confirmar viaja al elegido, como el Teleport del transportador. Nada se guarda en tu partida.",
      "Con la mappa aperta (Select), la croce direzionale sceglie tra i trasportatori attivati sul pianeta e il tasto di conferma viaggia verso quello scelto, come il Teleport del trasportatore. Nulla entra nel tuo salvataggio."},
 
-    {"Fast travel %d/%d: confirm to go", "Voyage rapide %d/%d : confirmer pour partir",
-     "Schnellreise %d/%d: Bestätigen zum Reisen", "Viaje rápido %d/%d: confirma para ir",
-     "Viaggio rapido %d/%d: conferma per partire"},
+    {"Fast travel", "Voyage rapide", "Schnellreise", "Viaje rápido", "Viaggio rapido"},
     {"Fast travel: no transporter activated here", "Voyage rapide : aucun transporteur activé ici",
      "Schnellreise: Hier ist kein Transporter aktiviert", "Viaje rápido: no hay transportador activado aquí",
      "Viaggio rapido: nessun trasportatore attivato qui"},

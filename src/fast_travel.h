@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <vector>
+
 class PS2Runtime;
 
 // Fast travel from the full map (Select in the field).
@@ -35,5 +38,15 @@ struct Toast
     int count = 0;
 };
 bool takeToast(Toast &toast);
+
+// The list the menu draws over the map while it is open: the activated
+// transporters' names, in order, and the one chosen. Any thread.
+struct List
+{
+    bool open = false;
+    int selected = 0;
+    std::vector<std::string> names;
+};
+List list();
 
 } // namespace rg::fasttravel

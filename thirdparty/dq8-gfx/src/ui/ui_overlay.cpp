@@ -836,6 +836,7 @@ void Overlay::drawFrame() {
     m_toastTop = 0.0f;
     drawSpeedBadge();
     drawPauseBanner();
+    drawTravelList();
     drawToasts();
     drawIconSheet();
     updateCursor();
@@ -1896,6 +1897,58 @@ void Overlay::drawPauseBanner() {
                                                       : "Press F5 to resume"));
         ImGui::EndGroup();
         drawIconBeside(room, Icon::Pause, palette::kGold);
+    }
+    ImGui::End();
+    ImGui::PopStyleVar();
+}
+
+// The fast travel's choices, in the corner over the game's map: the
+// transporters activated on the planet, the one chosen in gold on a soft
+// plate, a few rows around it when there are many.
+void Overlay::drawTravelList() {
+    if (!m_host.travelList || m_menuOpen || m_homeOpen)
+        return;
+    const TravelList list = m_host.travelList();
+    if (!list.open || list.names.empty())
+        return;
+    ImVec2 min, max;
+    windowBounds(min, max);
+    const float margin = em(0.8f);
+    ImGui::SetNextWindowPos(ImVec2(min.x + margin, min.y + margin + (m_fastForward ? em(2.6f) : 0.0f)),
+                            ImGuiCond_Always);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(em(15.0f), 0.0f), ImVec2(FLT_MAX, FLT_MAX));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(0.9f), em(0.7f)));
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                                   ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing |
+                                   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings;
+    if (beginWindow("##travel", nullptr, flags)) {
+        ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+        const int count = static_cast<int>(list.names.size());
+        const int selected = std::clamp(list.selected, 0, count - 1);
+        constexpr int kVisible = 8;
+        const int first = std::clamp(selected - kVisible / 2, 0, std::max(0, count - kVisible));
+        const int last = std::min(count, first + kVisible);
+        ImGui::PushStyleColor(ImGuiCol_Text, palette::kGold);
+        ImGui::TextUnformatted(L("Fast travel"));
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        mutedText("%d/%d", selected + 1, count);
+        ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
+        ImDrawList *draw = ImGui::GetWindowDrawList();
+        for (int index = first; index < last; ++index) {
+            const bool chosen = index == selected;
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            const float width = ImGui::GetContentRegionAvail().x;
+            const float height = ImGui::GetTextLineHeight() + em(0.3f);
+            if (chosen)
+                draw->AddRectFilled(ImVec2(at.x - em(0.3f), at.y - em(0.1f)),
+                                    ImVec2(at.x + width + em(0.3f), at.y - em(0.1f) + height), palette::kGoldSoft,
+                                    em(0.3f));
+            ImGui::PushStyleColor(ImGuiCol_Text, chosen ? palette::kGold : palette::kText);
+            ImGui::Text("%s%s", chosen ? "> " : "  ", list.names[static_cast<size_t>(index)].c_str());
+            ImGui::PopStyleColor();
+            ImGui::Dummy(ImVec2(0.0f, em(0.1f)));
+        }
     }
     ImGui::End();
     ImGui::PopStyleVar();

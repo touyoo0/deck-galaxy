@@ -86,6 +86,7 @@ struct Point
     uint32_t record = 0;
     int32_t id = 0;
     int32_t block = 0;
+    std::string name;
 };
 // Built when the full map opens; empty while it is closed.
 std::vector<Point> g_points;
@@ -101,6 +102,9 @@ bool g_arrivalPending = false;
 // position (FuncPointGetPos): for the next call, the leader's own.
 bool g_departOverride = false;
 std::chrono::steady_clock::time_point g_lastFieldFrame;
+
+std::mutex g_listMutex;
+List g_list;
 
 std::mutex g_toastMutex;
 std::vector<Toast> g_toasts;
@@ -189,6 +193,94 @@ uint32_t callGuest(uint8_t *rdram, const R5900Context *caller, uint32_t address,
     return getRegU32(&local, 2);
 }
 
+
+// A letter with the accent the European text writes as a tag, "<'e>": the
+// accent's mark, then the letter.
+const char *accented(char mark, char letter)
+{
+    struct Entry
+    {
+        char mark;
+        char letter;
+        const char *utf8;
+    };
+    static constexpr Entry kTable[] = {
+        {'\'', 'a', "\u00e1"}, {'\'', 'e', "\u00e9"}, {'\'', 'i', "\u00ed"}, {'\'', 'o', "\u00f3"},
+        {'\'', 'u', "\u00fa"}, {'\'', 'A', "\u00c1"}, {'\'', 'E', "\u00c9"}, {'\'', 'I', "\u00cd"},
+        {'\'', 'O', "\u00d3"}, {'\'', 'U', "\u00da"}, {'`', 'a', "\u00e0"},  {'`', 'e', "\u00e8"},
+        {'`', 'i', "\u00ec"},  {'`', 'o', "\u00f2"},  {'`', 'u', "\u00f9"},  {'`', 'A', "\u00c0"},
+        {'`', 'E', "\u00c8"},  {'^', 'a', "\u00e2"},  {'^', 'e', "\u00ea"},  {'^', 'i', "\u00ee"},
+        {'^', 'o', "\u00f4"},  {'^', 'u', "\u00fb"},  {'^', 'A', "\u00c2"},  {'^', 'E', "\u00ca"},
+        {':', 'a', "\u00e4"},  {':', 'e', "\u00eb"},  {':', 'i', "\u00ef"},  {':', 'o', "\u00f6"},
+        {':', 'u', "\u00fc"},  {':', 'A', "\u00c4"},  {':', 'O', "\u00d6"},  {':', 'U', "\u00dc"},
+        {',', 'c', "\u00e7"},  {',', 'C', "\u00c7"},  {'~', 'n', "\u00f1"},  {'~', 'N', "\u00d1"},
+    };
+    for (const Entry &entry : kTable)
+    {
+        if (entry.mark == mark && entry.letter == letter)
+        {
+            return entry.utf8;
+        }
+    }
+    return nullptr;
+}
+
+// The name a transporter's record points at (+8): ASCII with the accent tags
+// of the European text, as UTF-8; "Transporter N" when it reads as nothing.
+std::string recordName(const uint8_t *rdram, uint32_t record, int32_t id)
+{
+    std::string raw;
+    const uint32_t pointer = read32(rdram, record + 8u);
+    if (pointer >= 0x00100000u && pointer < 0x02000000u)
+    {
+        for (uint32_t i = 0; i < 48; ++i)
+        {
+            const uint8_t *p = getConstMemPtr(rdram, pointer + i);
+            if (!p || *p == 0u)
+            {
+                break;
+            }
+            if (*p < 0x20u || *p > 0x7Eu)
+            {
+                raw.clear();
+                break;
+            }
+            raw.push_back(static_cast<char>(*p));
+        }
+    }
+    std::string out;
+    for (size_t i = 0; i < raw.size(); ++i)
+    {
+        if (raw[i] == '<' && i + 3 < raw.size() && raw[i + 3] == '>')
+        {
+            if (const char *letter = accented(raw[i + 1], raw[i + 2]))
+            {
+                out += letter;
+                i += 3;
+                continue;
+            }
+        }
+        out.push_back(raw[i]);
+    }
+    return out.empty() ? "Transporter " + std::to_string(id) : out;
+}
+
+// What the menu draws: copied under the lock whenever the choice changes.
+void publish(bool open)
+{
+    std::lock_guard<std::mutex> lock(g_listMutex);
+    g_list.open = open;
+    g_list.selected = g_selected;
+    g_list.names.clear();
+    if (open)
+    {
+        for (const Point &point : g_points)
+        {
+            g_list.names.push_back(point.name);
+        }
+    }
+}
+
 // The transporters the Teleport page lists: its own view over the group of
 // records (TransWarpListBuild, 0x51B120), the ones activated.
 void buildPoints(uint8_t *rdram, const R5900Context *caller)
@@ -249,6 +341,8 @@ void buildPoints(uint8_t *rdram, const R5900Context *caller)
         p.record = record;
         p.id = read16s(rdram, record + kRecId);
         p.block = read16s(rdram, record + kRecBlock);
+        p.name = recordName(rdram, record, p.id);
+        std::fprintf(stderr, "[fast-travel] name \"%s\" (pointer %08x)\n", p.name.c_str(), read32(rdram, record + 8u));
         g_points.push_back(p);
     }
     std::fprintf(stderr, "[fast-travel] area %d: %zu activated\n", area, g_points.size());
@@ -256,7 +350,11 @@ void buildPoints(uint8_t *rdram, const R5900Context *caller)
 
 void announce()
 {
-    toast(g_selected + 1, static_cast<int>(g_points.size()));
+    if (g_points.empty())
+    {
+        toast(0, 0);
+    }
+    publish(true);
 }
 
 // The warp record the transporter menu fills for a Teleport choice
@@ -303,6 +401,7 @@ void travel(uint8_t *rdram, const R5900Context *caller, const Point &p)
     callGuest(rdram, caller, kGameReqQueuePushWarp, site, 0x320, 0, -1);
     callGuest(rdram, caller, kGameReqQueuePushBack, 5, -1);
     callGuest(rdram, caller, kGameReqQueuePushWarp, site, 0x321, 0, -1);
+    publish(false);
     g_arrivalPending = true;
     g_departOverride = true;
     g_lastFieldFrame = std::chrono::steady_clock::now();
@@ -414,6 +513,10 @@ void padIsTriggered(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     }
     if (returnPc == kFieldSelectReturn)
     {
+        if (g_open)
+        {
+            publish(false);
+        }
         g_open = false; // the field is running: the map is closed
         const auto now = std::chrono::steady_clock::now();
         if (g_arrivalPending && now - g_lastFieldFrame > std::chrono::milliseconds(300))
@@ -456,6 +559,12 @@ void setEnabled(bool on)
 bool enabled()
 {
     return g_enabled.load(std::memory_order_relaxed);
+}
+
+List list()
+{
+    std::lock_guard<std::mutex> lock(g_listMutex);
+    return g_list;
 }
 
 bool takeToast(Toast &toast)

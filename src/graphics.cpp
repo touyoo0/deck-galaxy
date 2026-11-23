@@ -799,14 +799,13 @@ bool pump(void *userData)
         g_menu->notify(text, toast.earned ? dq8::ui::Icon::Check : dq8::ui::Icon::Info,
                        toast.earned ? 6.0 : 4.0, toast.badge);
     }
-    // Fast travel from the full map: the selection, as a toast.
+    // Fast travel from the full map: when no transporter is activated, a notice
+    // (the choices are the menu's own list, travelList).
     for (rg::fasttravel::Toast toast; rg::fasttravel::takeToast(toast);)
     {
-        if (g_menu)
+        if (g_menu && toast.count == 0)
         {
-            g_menu->notify(toast.count > 0 ? dq8::ui::Lf("Fast travel %d/%d: confirm to go", toast.index, toast.count)
-                                           : std::string("Fast travel: no transporter activated here"),
-                           dq8::ui::Icon::Info, 2.0);
+            g_menu->notify("Fast travel: no transporter activated here", dq8::ui::Icon::Info, 2.0);
         }
     }
     // The free camera turned on or off, by F6, either menu or Start: a toast.
@@ -965,6 +964,14 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
         return dq8::ui::HostServices::SaveSlot{info.used, info.when, {}};
     };
     host.continueGame = [&runtime] { rg::savestate::requestAutoLoad(runtime); };
+    host.travelList = [] {
+        const rg::fasttravel::List list = rg::fasttravel::list();
+        dq8::ui::TravelList out;
+        out.open = list.open;
+        out.selected = list.selected;
+        out.names = list.names;
+        return out;
+    };
     // RG_MUTE=1 keeps the game silent whatever the menu's volume says.
     const bool mute = env("RG_MUTE", "0") != "0";
     host.setVolume = [mute](float volume) { ps2_native_iop::setVolume(mute ? 0.0f : volume); };
