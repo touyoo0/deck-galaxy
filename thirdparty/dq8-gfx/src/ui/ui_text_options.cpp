@@ -122,6 +122,20 @@ const TextEntry kTextsOptions[] = {
      "Los cofres aún sin abrir aparecen en los mapas en las partes exploradas, como los muestra el juego cuando se activan todos los puntos de guardado de un planeta. Solo cambia el mapa: nada se guarda en tu partida, y activar todos los puntos de guardado cuenta como antes.",
      "I forzieri non ancora aperti compaiono sulle mappe nelle parti esplorate, come li mostra il gioco una volta attivati tutti i punti di salvataggio di un pianeta. Cambia solo la mappa: nulla entra nel tuo salvataggio, e attivare tutti i punti di salvataggio conta come prima."},
 
+    {"Fast travel from the map", "Voyage rapide depuis la carte", "Schnellreise von der Karte",
+     "Viaje rápido desde el mapa", "Viaggio rapido dalla mappa"},
+    {"With the map open (Select), the d-pad chooses among the transporters you have activated on the planet and the "
+     "confirm button travels to the one chosen, as the transporter's Teleport does. Nothing goes into your save.",
+     "La carte ouverte (Select), la croix directionnelle choisit parmi les transporteurs que vous avez activés sur la planète et le bouton de confirmation voyage vers celui choisi, comme le Teleport du transporteur. Rien n'entre dans votre sauvegarde.",
+     "Bei geöffneter Karte (Select) wählt das Steuerkreuz unter den auf dem Planeten aktivierten Transportern, und die Bestätigungstaste reist zum gewählten, wie der Teleport des Transporters. Nichts gelangt in deinen Spielstand.",
+     "Con el mapa abierto (Select), la cruceta elige entre los transportadores que has activado en el planeta y el botón de confirmar viaja al elegido, como el Teleport del transportador. Nada se guarda en tu partida.",
+     "Con la mappa aperta (Select), la croce direzionale sceglie tra i trasportatori attivati sul pianeta e il tasto di conferma viaggia verso quello scelto, come il Teleport del trasportatore. Nulla entra nel tuo salvataggio."},
+
+    {"Fast travel", "Voyage rapide", "Schnellreise", "Viaje rápido", "Viaggio rapido"},
+    {"Fast travel: no transporter activated here", "Voyage rapide : aucun transporteur activé ici",
+     "Schnellreise: Hier ist kein Transporter aktiviert", "Viaje rápido: no hay transportador activado aquí",
+     "Viaggio rapido: nessun trasportatore attivato qui"},
+
     {"Checks the game's 130 RetroAchievements as you play and shows a notice when one is earned. Turn it on, "
      "then sign in; nothing is sent but your unlocks.",
      "Vérifie les 130 RetroAchievements du jeu pendant que vous jouez et affiche un avis quand l'un est obtenu. Activez-le, puis connectez-vous ; rien n'est envoyé hormis vos déblocages.",

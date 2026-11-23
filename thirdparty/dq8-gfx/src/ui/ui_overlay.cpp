@@ -836,6 +836,7 @@ void Overlay::drawFrame() {
     m_toastTop = 0.0f;
     drawSpeedBadge();
     drawPauseBanner();
+    drawTravelList();
     drawToasts();
     drawIconSheet();
     updateCursor();
@@ -1896,6 +1897,72 @@ void Overlay::drawPauseBanner() {
                                                       : "Press F5 to resume"));
         ImGui::EndGroup();
         drawIconBeside(room, Icon::Pause, palette::kGold);
+    }
+    ImGui::End();
+    ImGui::PopStyleVar();
+}
+
+// The fast travel's choices, in the corner over the game's map: the
+// transporters activated on the planet, the one chosen in gold on a soft
+// plate, a few rows around it when there are many.
+void Overlay::drawTravelList() {
+    if (!m_host.travelList || m_menuOpen || m_homeOpen)
+        return;
+    const TravelList list = m_host.travelList();
+    if (!list.open || list.names.empty())
+        return;
+    ImVec2 min, max;
+    windowBounds(min, max);
+    if (list.selected >= 0) {
+        // The chosen transporter is at the middle of the map: a gold ring
+        // there, flattened like the circles the map draws on the ground, and
+        // a second that swells and fades, so it stands out from the other
+        // icons.
+        const ImVec2 centre((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+        const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(now()) * 4.5f);
+        constexpr float kFlatten = 0.55f;
+        ImDrawList *front = ImGui::GetForegroundDrawList();
+        const float radius = em(1.5f);
+        front->AddEllipse(centre, ImVec2(radius, radius * kFlatten), withAlpha(palette::kGold, 0.95f), 0, 0,
+                          em(0.18f));
+        const float swell = radius + em(1.2f) * pulse;
+        front->AddEllipse(centre, ImVec2(swell, swell * kFlatten), withAlpha(palette::kGold, 0.75f * (1.0f - pulse)),
+                          0, 0, em(0.14f));
+    }
+    const float margin = em(0.8f);
+    ImGui::SetNextWindowPos(ImVec2(min.x + margin, min.y + margin + (m_fastForward ? em(2.6f) : 0.0f)),
+                            ImGuiCond_Always);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(em(15.0f), 0.0f), ImVec2(FLT_MAX, FLT_MAX));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(0.9f), em(0.7f)));
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                                   ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing |
+                                   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings;
+    if (beginWindow("##travel", nullptr, flags)) {
+        ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+        const int count = static_cast<int>(list.names.size());
+        const int selected = std::min(list.selected, count - 1); // -1: none chosen
+        constexpr int kVisible = 8;
+        const int first = std::clamp(std::max(selected, 0) - kVisible / 2, 0, std::max(0, count - kVisible));
+        const int last = std::min(count, first + kVisible);
+        ImGui::PushStyleColor(ImGuiCol_Text, palette::kGold);
+        ImGui::TextUnformatted(L("Fast travel"));
+        ImGui::PopStyleColor();
+        ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
+        ImDrawList *draw = ImGui::GetWindowDrawList();
+        for (int index = first; index < last; ++index) {
+            const bool chosen = index == selected;
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            const float width = ImGui::GetContentRegionAvail().x;
+            const float height = ImGui::GetTextLineHeight() + em(0.3f);
+            if (chosen)
+                draw->AddRectFilled(ImVec2(at.x - em(0.3f), at.y - em(0.1f)),
+                                    ImVec2(at.x + width + em(0.3f), at.y - em(0.1f) + height), palette::kGoldSoft,
+                                    em(0.3f));
+            ImGui::PushStyleColor(ImGuiCol_Text, chosen ? palette::kGold : palette::kText);
+            ImGui::Text("%s%s", chosen ? "> " : "  ", list.names[static_cast<size_t>(index)].c_str());
+            ImGui::PopStyleColor();
+            ImGui::Dummy(ImVec2(0.0f, em(0.1f)));
+        }
     }
     ImGui::End();
     ImGui::PopStyleVar();

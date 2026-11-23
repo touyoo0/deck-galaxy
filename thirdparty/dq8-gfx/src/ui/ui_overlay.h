@@ -91,6 +91,14 @@ struct AchievementList {
     std::vector<AchievementRow> rows;
 };
 
+// The list the host asks the menu to draw over the game (Rogue Galaxy: added):
+// the transporters a fast travel can go to, the one chosen marked.
+struct TravelList {
+    bool open = false;
+    int selected = 0;
+    std::vector<std::string> names;
+};
+
 struct HostServices {
     std::string version;
     // The commit it was built from, beside the version in the About window
@@ -177,6 +185,9 @@ struct HostServices {
     std::function<SaveSlot()> autoSlot;
     std::function<void()> autoSave;
     std::function<void()> continueGame;
+    // The fast travel's list, drawn in the corner while `open` (Rogue Galaxy:
+    // added). Empty when the host has none.
+    std::function<TravelList()> travelList;
 };
 
 // Game: Rogue Galaxy's own switches (added).
@@ -339,6 +350,7 @@ private:
     void windowBounds(ImVec2 &min, ImVec2 &max) const;
     void drawSpeedBadge();
     void drawPauseBanner();
+    void drawTravelList();
     void drawToasts();
     void drawIconSheet();
     void updateCursor();
