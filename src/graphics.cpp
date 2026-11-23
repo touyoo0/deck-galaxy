@@ -1200,7 +1200,7 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
         out.summary = rg::achievements::enabled() ? rg::achievements::status() : "RetroAchievements is off";
         for (rg::achievements::Row &row : rg::achievements::list())
             out.rows.push_back(
-                {std::move(row.title), std::move(row.description), row.points, row.earned, std::move(row.badge)});
+                {std::move(row.title), std::move(row.description), row.points, row.earned, std::move(row.badge), std::move(row.progress)});
         return out;
     };
     host.achievementAccount = [] {

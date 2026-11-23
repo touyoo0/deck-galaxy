@@ -428,7 +428,11 @@ void refreshList()
                     continue; // RetroAchievements' own warning, not one of the set
                 }
                 const bool isEarned = a->state == RC_CLIENT_ACHIEVEMENT_STATE_UNLOCKED;
-                Row row{a->title ? a->title : "", a->description ? a->description : "", a->points, isEarned, {}};
+                Row row{a->title ? a->title : "", a->description ? a->description : "", a->points, isEarned, {}, {}};
+                if (!isEarned && a->measured_progress[0])
+                {
+                    row.progress = a->measured_progress;
+                }
                 // The colour badge once earned, the grey one before.
                 row.badge = badgeFile(isEarned ? a->badge_url : a->badge_locked_url);
                 (isEarned ? earned : others).push_back(std::move(row));
@@ -736,6 +740,13 @@ void frame(const uint8_t *rdram)
     if (g_state == State::Running)
     {
         rc_client_do_frame(g_client);
+        // The counts ("3/9") change as the game is played: copy them about
+        // once a second, for the Achievements page.
+        static uint32_t frames = 0;
+        if (++frames % 60 == 0)
+        {
+            refreshList();
+        }
     }
     else
     {
