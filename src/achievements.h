@@ -60,6 +60,7 @@ struct Row
     std::string description;
     uint32_t points = 0;
     bool earned = false;
+    std::string progress; // "3/9" for a counted achievement not yet earned, else empty
     std::string badge; // the badge's PNG once downloaded, else empty
 };
 std::vector<Row> list();

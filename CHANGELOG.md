@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The Achievements page shows the count of a counted achievement (for example 3/9 transporters) while it is under way.
+
 ## 0.12.4 - 2026-11-23
 
 - The item limit option now goes up to 999 per item instead of 99.

@@ -77,6 +77,7 @@ struct AchievementRow {
     uint32_t points = 0;
     bool earned = false;
     std::string badge; // a PNG on disk, empty while there is none yet
+    std::string progress; // "3/9" while a counted achievement is under way, else empty
 };
 // The signed-in account, and what the last sign-in attempt said.
 struct AchievementAccount {
