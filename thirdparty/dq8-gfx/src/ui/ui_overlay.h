@@ -189,6 +189,10 @@ struct HostServices {
     // The fast travel's list, drawn in the corner while `open` (Rogue Galaxy:
     // added). Empty when the host has none.
     std::function<TravelList()> travelList;
+    // A short burst over the picture (a flash, light streaks from the centre,
+    // dark corners): how far along it is, 0 to 1, or below 0 when there is none
+    // (Rogue Galaxy: added). Empty when the host has none.
+    std::function<float()> screenBurst;
 };
 
 // Game: Rogue Galaxy's own switches (added).
@@ -322,6 +326,7 @@ private:
     // loading screen that lifts once it is drawing (Steam Deck fork: added).
     void startLaunch(bool resume = false);
     void drawLoadingVeil();
+    void drawScreenBurst();
 
     // Frame side.
     void updateScale();

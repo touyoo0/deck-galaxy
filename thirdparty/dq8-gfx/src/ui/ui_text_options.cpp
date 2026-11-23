@@ -104,6 +104,13 @@ const TextEntry kTextsOptions[] = {
      "Al cargar una partida, la historia hasta ahora aparece entera en vez de línea a línea, y «Press X» aparece en cuanto termina la carga.",
      "Quando si carica una partita, la storia finora appare tutta insieme invece che riga per riga, e «Press X» compare appena terminato il caricamento."},
 
+    {"Skip spell animations", "Sauter les animations de sorts", "Zauberanimationen überspringen", "Saltar animaciones de hechizos", "Salta le animazioni degli incantesimi"},
+    {"The scene of a spell or a special move is skipped as soon as the game lets it be skipped, as if you pressed its skip button; what the move does is unchanged.",
+     "La scène d'un sort ou d'une technique spéciale est passée dès que le jeu le permet, comme si tu appuyais sur sa touche de saut ; l'effet de la technique ne change pas.",
+     "Die Szene eines Zaubers oder einer Spezialattacke wird übersprungen, sobald das Spiel es erlaubt, als hättest du die Überspringen-Taste gedrückt; die Wirkung bleibt gleich.",
+     "La escena de un hechizo o ataque especial se salta en cuanto el juego lo permite, como si pulsaras su botón de salto; el efecto no cambia.",
+     "La scena di un incantesimo o di una mossa speciale viene saltata appena il gioco lo permette, come se premessi il tasto di salto; l'effetto non cambia."},
+
     {"Instant text", "Texte instantané", "Sofortiger Text", "Texto instantáneo", "Testo istantaneo"},
     {"Dialogue and messages appear a page at a time instead of letter by letter, as the game itself does where a "
      "scene asks for it; the pauses written into the text stay.",

@@ -27,6 +27,7 @@
 #include "free_camera.h"
 #include "mouse_camera.h"
 #include "instant_text.h"
+#include "skip_ability_scene.h"
 #include "text_language.h"
 #include "voice_language.h"
 #include "achievements.h"
@@ -403,6 +404,8 @@ void applyGameOption(const std::string &key, bool on)
         rg::loading::setInstantRecap(on);
     else if (key == "instant_text")
         rg::instanttext::setEnabled(on);
+    else if (key == "skip_ability_scene")
+        rg::skipabilityscene::setEnabled(on);
     else if (key == "japanese_voices")
         rg::voicelanguage::setEnabled(on);
     else if (key == "director_cut_balance")
@@ -964,6 +967,7 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
         return dq8::ui::HostServices::SaveSlot{info.used, info.when, {}};
     };
     host.continueGame = [&runtime] { rg::savestate::requestAutoLoad(runtime); };
+    host.screenBurst = [] { return rg::skipabilityscene::burstProgress(); };
     host.travelList = [] {
         const rg::fasttravel::List list = rg::fasttravel::list();
         dq8::ui::TravelList out;
@@ -1087,6 +1091,10 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
         {"instant_text", "Instant text",
          "Dialogue and messages appear a page at a time instead of letter by letter, as the game itself does "
          "where a scene asks for it; the pauses written into the text stay.",
+         false},
+        {"skip_ability_scene", "Skip spell animations",
+         "The scene of a spell or a special move is skipped as soon as the game lets it be skipped, as if you "
+         "pressed its skip button; what the move does is unchanged.",
          false},
         {"map_chests", "Chests on the map",
          "The chests not yet opened show on the maps in the parts you have explored, as the game shows them once "

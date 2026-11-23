@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- New option "Skip spell animations": the scene of a spell or special move is skipped by itself, with no button to press.
+
 ## 0.12.5 - 2026-11-23
 
 - The Achievements page shows the count of a counted achievement (for example 3/9 transporters) while it is under way.

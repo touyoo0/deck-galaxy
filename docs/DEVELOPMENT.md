@@ -58,6 +58,7 @@ Most of these set an option of the F1 menu for one run, without saving it.
 | `RG_DIRECTOR_CUT_PARTY_AI=1` | The same release's party AI scripts (`chara\spt\c001.stb` to `c009`); `0` off (the menu's "Director's Cut party AI"), logged the same way |
 | `RG_FREE_CAMERA=1` | Starts with the free camera on (the menu's "Free camera"; `src/free_camera.h`) |
 | `RG_INSTANT_TEXT=1` | Text in the message windows a page at a time (the menu's "Instant text"; `src/instant_text.h`) |
+| `RG_SKIP_ABILITY_SCENE=1` | The scene of a spell or special move skipped as soon as the game allows it (the menu's "Skip spell animations"; `src/skip_ability_scene.h`) |
 | `RG_INSTANT_RECAP=1` | The loading screen's story so far appears whole at once, then Press X (the menu's "Quick loading recap") |
 | `RG_VOICE_LANG=JA` | Voices (and the movies that differ) from `disc/JA`, whatever the menu's "Undub (Japanese voices)" says; any language of the game's table works for the voice token (`src/voice_language.h`). Logs `[rg] voice <path>` for each voice asked |
 | `RG_TEXT_LANG=FR` | The text in that language (FR, DE, ES, IT; EN for the game's), whatever the menu's "Text" says; needs `disc/EU/<LANG>.idx` from `setup.py extract-european` (`src/text_language.h`). Logs `[rg] text in FR`, and `[rg] in English: <path>` for a file the language has none of |
