@@ -5,6 +5,10 @@ mostra in questa lingua. I titoli (`## versione - data`) restano come in
 `CHANGELOG.md`: sono loro a collegare una versione alla sua traduzione. Una
 versione che manca in questo file viene mostrata in inglese.
 
+## 0.12.6 - 2026-11-23
+
+- Nuova opzione «Salta le animazioni degli incantesimi»: la scena di un incantesimo o di una mossa speciale viene saltata da sola, senza premere alcun tasto.
+
 ## 0.12.5 - 2026-11-23
 
 - La pagina dei traguardi mostra il progresso di un traguardo a contatore (ad esempio 3/9 trasportatori) finché è in corso.
