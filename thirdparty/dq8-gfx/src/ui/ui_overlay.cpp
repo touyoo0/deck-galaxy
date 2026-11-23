@@ -1913,6 +1913,22 @@ void Overlay::drawTravelList() {
         return;
     ImVec2 min, max;
     windowBounds(min, max);
+    {
+        // The chosen transporter is at the middle of the map: a gold ring
+        // there, flattened like the circles the map draws on the ground, and
+        // a second that swells and fades, so it stands out from the other
+        // icons.
+        const ImVec2 centre((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+        const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(now()) * 4.5f);
+        constexpr float kFlatten = 0.55f;
+        ImDrawList *front = ImGui::GetForegroundDrawList();
+        const float radius = em(1.5f);
+        front->AddEllipse(centre, ImVec2(radius, radius * kFlatten), withAlpha(palette::kGold, 0.95f), 0, 0,
+                          em(0.18f));
+        const float swell = radius + em(1.2f) * pulse;
+        front->AddEllipse(centre, ImVec2(swell, swell * kFlatten), withAlpha(palette::kGold, 0.75f * (1.0f - pulse)),
+                          0, 0, em(0.14f));
+    }
     const float margin = em(0.8f);
     ImGui::SetNextWindowPos(ImVec2(min.x + margin, min.y + margin + (m_fastForward ? em(2.6f) : 0.0f)),
                             ImGuiCond_Always);
@@ -1931,8 +1947,6 @@ void Overlay::drawTravelList() {
         ImGui::PushStyleColor(ImGuiCol_Text, palette::kGold);
         ImGui::TextUnformatted(L("Fast travel"));
         ImGui::PopStyleColor();
-        ImGui::SameLine();
-        mutedText("%d/%d", selected + 1, count);
         ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
         ImDrawList *draw = ImGui::GetWindowDrawList();
         for (int index = first; index < last; ++index) {

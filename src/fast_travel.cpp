@@ -58,6 +58,12 @@ constexpr uint32_t kButtonRight = 0x2000u;
 constexpr uint32_t kButtonDown = 0x4000u;
 constexpr uint32_t kButtonLeft = 0x8000u;
 
+// The full map's view is the leader's position plus an offset in the map
+// manager (MapMgrMinimapUpdate, 0x1E2860: x at +0x22A0, z at +0x22A8), which
+// the left stick moves.
+constexpr uint32_t kMapOffsetX = 0x22A0u;
+constexpr uint32_t kMapOffsetZ = 0x22A8u;
+
 // The warp record the transporter menu fills, and the float it adds to the
 // destination's angle (gp-0x7F74).
 constexpr uint32_t kWarpRecord = 0x004D7E00u;
@@ -348,6 +354,31 @@ void buildPoints(uint8_t *rdram, const R5900Context *caller)
     std::fprintf(stderr, "[fast-travel] area %d: %zu activated\n", area, g_points.size());
 }
 
+// Puts the full map's view on the chosen transporter: the offset from the
+// leader that reaches it. The map follows, as the Teleport page's does.
+void centerMap(uint8_t *rdram, const R5900Context *caller, const Point &p)
+{
+    const uint32_t gameData = callGuest(rdram, caller, kGetGameData);
+    if (!gameData || !g_scratch)
+    {
+        return;
+    }
+    const uint32_t actionMgr = callGuest(rdram, caller, kGetActionMgr);
+    const uint32_t leaderId = static_cast<uint32_t>(read16s(rdram, read32(rdram, gameData + 0x18u) + 0x18Eu));
+    const uint32_t leader =
+        callGuest(rdram, caller, kActionMgrFindById, static_cast<int32_t>(actionMgr), static_cast<int32_t>(leaderId));
+    const uint32_t mapMgr = callGuest(rdram, caller, kGetMapMgr);
+    if (!leader || !mapMgr)
+    {
+        return;
+    }
+    const uint32_t vec = g_scratch + 0xE0u;
+    callGuest(rdram, caller, kCharaGetPos, static_cast<int32_t>(leader), static_cast<int32_t>(vec));
+    writeFloat(rdram, mapMgr + kMapOffsetX, readFloat(rdram, p.record + kRecPos) - readFloat(rdram, vec));
+    writeFloat(rdram, mapMgr + kMapOffsetZ,
+               readFloat(rdram, p.record + kRecPos + 8u) - readFloat(rdram, vec + 8u));
+}
+
 void announce()
 {
     if (g_points.empty())
@@ -417,6 +448,10 @@ bool onFullMapFrame(uint8_t *rdram, R5900Context *ctx, bool selectPressed)
         g_open = true;
         buildPoints(rdram, ctx);
         announce();
+        if (!g_points.empty())
+        {
+            centerMap(rdram, ctx, g_points[static_cast<size_t>(g_selected)]);
+        }
     }
     const uint32_t held = read32(rdram, kPad1 + 4u);
     const uint32_t before = read32(rdram, kPad1 + 0x5Cu);
@@ -431,11 +466,13 @@ bool onFullMapFrame(uint8_t *rdram, R5900Context *ctx, bool selectPressed)
     {
         g_selected = (g_selected + 1) % count;
         announce();
+        centerMap(rdram, ctx, g_points[static_cast<size_t>(g_selected)]);
     }
     else if (pressed & (kButtonLeft | kButtonUp))
     {
         g_selected = (g_selected + count - 1) % count;
         announce();
+        centerMap(rdram, ctx, g_points[static_cast<size_t>(g_selected)]);
     }
     else if (pressed & kButtonCross)
     {
