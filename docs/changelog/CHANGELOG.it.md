@@ -5,6 +5,11 @@ mostra in questa lingua. I titoli (`## versione - data`) restano come in
 `CHANGELOG.md`: sono loro a collegare una versione alla sua traduzione. Una
 versione che manca in questo file viene mostrata in inglese.
 
+## 0.12.4 - 2026-11-23
+
+- L'opzione del limite di oggetti arriva ora fino a 999 per oggetto invece di 99.
+- Nuova opzione «Viaggio rapido dalla mappa»: con la mappa aperta, scegli con la croce direzionale un trasportatore attivato e viaggia fino a lì.
+
 ## 0.12.3 - 2026-11-22
 
 - L'avviso di RetroAchievements non compare più a ogni avvio del gioco.
