@@ -5,6 +5,10 @@ zeigt sie in dieser Sprache. Die Überschriften (`## Version - Datum`) bleiben
 wie in `CHANGELOG.md`: Über sie wird eine Version ihrer Übersetzung
 zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf Englisch.
 
+## 0.12.6 - 2026-11-23
+
+- Neue Option „Zauberanimationen überspringen“: Die Szene eines Zaubers oder einer Spezialattacke wird von selbst übersprungen, ohne dass eine Taste gedrückt werden muss.
+
 ## 0.12.5 - 2026-11-23
 
 - Die Erfolgsseite zeigt den Fortschritt eines Zähl-Erfolgs (zum Beispiel 3/9 Transporter) an, solange er läuft.
