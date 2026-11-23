@@ -5,6 +5,11 @@ les affiche dans cette langue. Les titres (`## version - date`) restent comme
 dans `CHANGELOG.md` : ce sont eux qui relient une version à sa traduction. Une
 version absente de ce fichier s'affiche en anglais.
 
+## 0.12.5 - 2026-11-23
+
+- L'écran des succès affiche la progression d'un succès à compteur (par exemple 3/9 transporteurs) tant qu'il est en cours.
+- La barre de défilement de la liste de sorts en combat reste dans sa fenêtre quand la liste est courte.
+
 ## 0.12.4 - 2026-11-23
 
 - L'option de limite d'objets va maintenant jusqu'à 999 par objet au lieu de 99.
