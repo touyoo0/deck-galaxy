@@ -1,0 +1,12 @@
+diff --git a/ps2xRecomp/src/lib/fpu_translator.cpp b/ps2xRecomp/src/lib/fpu_translator.cpp
+--- a/ps2xRecomp/src/lib/fpu_translator.cpp
++++ b/ps2xRecomp/src/lib/fpu_translator.cpp
+@@ -54,7 +54,7 @@
+                 return fmt::format("ctx->f[{}] = FPU_MUL_S(ctx->f[{}], ctx->f[{}]);", fd, fs, ft);
+             case COP1_S_DIV:
+                 return fmt::format("if (ctx->f[{}] == 0.0f) {{ ctx->fcr31 |= 0x100000; /* DZ flag */ "
+-                                   "ctx->f[{}] = copysignf(INFINITY, ctx->f[{}] * 0.0f); }} "
++                                   "ctx->f[{}] = copysignf(__FLT_MAX__, ctx->f[{}] * 0.0f); }} "
+                                    "else ctx->f[{}] = ctx->f[{}] / ctx->f[{}];",
+                                    ft, fd, fs, fd, fs, ft);
+             case COP1_S_SQRT:

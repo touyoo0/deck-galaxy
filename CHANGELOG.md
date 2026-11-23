@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The scrollbar of the spell list in battle stays in its window when the list is short.
+
 ## 0.12.4 - 2026-11-23
 
 - The item limit option now goes up to 999 per item instead of 99.
