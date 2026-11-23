@@ -1302,6 +1302,10 @@ void Overlay::drawAchievementsPage() {
         ImGui::TextColored(row.earned ? gold : ImGui::GetStyleColorVec4(ImGuiCol_Text), "%s", row.title.c_str());
         ImGui::SameLine();
         ImGui::TextColored(muted, "(%u)", row.points);
+        if (!row.progress.empty()) {
+            ImGui::SameLine();
+            ImGui::TextColored(gold, "%s", row.progress.c_str());
+        }
         ImGui::TextColored(muted, "%s", row.description.c_str());
         ImGui::PopTextWrapPos();
         ImGui::EndGroup();

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The Achievements page shows the count of a counted achievement (for example 3/9 transporters) while it is under way.
 - The scrollbar of the spell list in battle stays in its window when the list is short.
 
 ## 0.12.4 - 2026-11-23
