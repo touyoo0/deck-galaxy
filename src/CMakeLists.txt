@@ -102,6 +102,7 @@ add_executable(roguegalaxy
     savestate.cpp
     return_hook.cpp
     instant_text.cpp
+    skip_ability_scene.cpp
     libc_rand.cpp
     loading_screen.cpp
     map_chests.cpp

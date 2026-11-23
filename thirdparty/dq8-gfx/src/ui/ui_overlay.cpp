@@ -821,6 +821,7 @@ void Overlay::drawFrame() {
     if (m_homeOpen)
         drawHome();
     drawLoadingVeil();
+    drawScreenBurst();
     if (m_settingsOpen)
         drawSettingsWindow();
     if (m_aboutOpen)
@@ -1657,6 +1658,74 @@ void Overlay::drawHome() {
 // The loading screen: the night and its stars, the logo breathing, a bar that
 // follows the game's first frames. It lifts, the stars leaping forward, once
 // the game is drawing; a failsafe lifts it anyway.
+// Rogue Galaxy: added. The host's burst (a skipped spell's transition): a
+// white-blue flash that blooms from the centre, light streaks that shoot out
+// and thin away, and dark corners that open again.
+void Overlay::drawScreenBurst() {
+    if (!m_host.screenBurst)
+        return;
+    const float p = m_host.screenBurst();
+    if (p < 0.0f || p >= 1.0f)
+        return;
+    const ImGuiViewport *viewport = ImGui::GetMainViewport();
+    const ImVec2 origin = viewport->Pos, view = viewport->Size;
+    const ImVec2 corner(origin.x + view.x, origin.y + view.y);
+    const ImVec2 centre(origin.x + view.x * 0.5f, origin.y + view.y * 0.5f);
+    const float reach = std::sqrt(view.x * view.x + view.y * view.y) * 0.5f;
+    const float unit = view.y / 720.0f;
+    ImDrawList *list = ImGui::GetBackgroundDrawList();
+    constexpr float kPi = 3.14159265f;
+
+    // The flash: quick up (to p = 0.14), then a long smooth fall.
+    const float rise = smooth(p / 0.14f);
+    const float fall = 1.0f - smooth((p - 0.14f) / 0.86f);
+    const float flash = std::min(rise, fall);
+    const ImU32 white = IM_COL32(225, 240, 255, 255);
+    list->AddRectFilled(origin, corner, withAlpha(white, 0.34f * flash));
+
+    // The bloom: rings from the centre, brightest in the middle, growing.
+    const float grow = 0.25f + 0.95f * (1.0f - (1.0f - std::min(1.0f, p * 1.8f)) * (1.0f - std::min(1.0f, p * 1.8f)));
+    constexpr int kRings = 14;
+    for (int ring = kRings; ring >= 1; --ring) {
+        const float k = static_cast<float>(ring) / kRings;
+        list->AddCircleFilled(centre, reach * grow * k, withAlpha(IM_COL32(255, 255, 255, 255), 0.045f * flash * (1.0f - k * 0.4f)), 48);
+    }
+
+    // The streaks: thin triangles, tip outwards, shot out in the first third
+    // and then thinning away.
+    constexpr int kStreaks = 16;
+    const float shoot = 1.0f - (1.0f - std::min(1.0f, p / 0.35f)) * (1.0f - std::min(1.0f, p / 0.35f));
+    const float streakAlpha = (1.0f - smooth((p - 0.2f) / 0.6f)) * std::min(1.0f, p / 0.05f);
+    for (int i = 0; i < kStreaks; ++i) {
+        // A fixed scatter from the index: neither random nor repeating.
+        const float a = static_cast<float>((i * 2654435761u) % 1000u) / 1000.0f;
+        const float b = static_cast<float>((i * 40503u + 17u) % 1000u) / 1000.0f;
+        const float angle = (static_cast<float>(i) + (a - 0.5f) * 0.8f) * (2.0f * kPi / kStreaks);
+        const float inner = reach * (0.06f + 0.10f * b + 0.55f * (1.0f - streakAlpha) * 0.5f) ;
+        const float outer = reach * (0.25f + 0.45f * (0.4f + 0.6f * a)) * shoot;
+        if (outer <= inner + 2.0f)
+            continue;
+        const float width = (1.0f + 2.0f * b) * unit * (1.0f - 0.6f * p);
+        const ImVec2 dir(std::cos(angle), std::sin(angle));
+        const ImVec2 side(-dir.y, dir.x);
+        const ImVec2 base(centre.x + dir.x * inner, centre.y + dir.y * inner);
+        const ImVec2 tip(centre.x + dir.x * outer, centre.y + dir.y * outer);
+        list->AddTriangleFilled(ImVec2(base.x + side.x * width, base.y + side.y * width),
+                                ImVec2(base.x - side.x * width, base.y - side.y * width), tip,
+                                withAlpha(IM_COL32(255, 255, 255, 255), streakAlpha * (0.30f + 0.25f * a)));
+    }
+
+    // The dark corners: in as the flash peaks, open again after.
+    const float dark = 0.32f * std::min(smooth(p / 0.3f), 1.0f - smooth((p - 0.3f) / 0.7f));
+    const ImU32 edge = withAlpha(IM_COL32(0, 4, 16, 255), dark);
+    const ImU32 none = withAlpha(IM_COL32(0, 4, 16, 255), 0.0f);
+    const float bandX = view.x * 0.28f, bandY = view.y * 0.30f;
+    list->AddRectFilledMultiColor(origin, ImVec2(origin.x + bandX, corner.y), edge, none, none, edge);
+    list->AddRectFilledMultiColor(ImVec2(corner.x - bandX, origin.y), corner, none, edge, edge, none);
+    list->AddRectFilledMultiColor(origin, ImVec2(corner.x, origin.y + bandY), edge, edge, none, none);
+    list->AddRectFilledMultiColor(ImVec2(origin.x, corner.y - bandY), corner, none, none, edge, edge);
+}
+
 void Overlay::drawLoadingVeil() {
     if (m_veilAt < 0.0)
         return;

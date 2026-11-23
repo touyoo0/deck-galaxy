@@ -36,6 +36,7 @@
 #include "draw_distance.h"
 #include "free_camera.h"
 #include "instant_text.h"
+#include "skip_ability_scene.h"
 #include "text_language.h"
 #include "voice_language.h"
 #include "achievements.h"
@@ -182,6 +183,7 @@ int run(int argc, char **argv)
     rg::dcbalance::install(runtime);
     rg::shopprices::install(runtime);
     rg::instanttext::install(runtime);
+    rg::skipabilityscene::install(runtime);
     rg::voicelanguage::install(runtime);
     rg::textlanguage::install(runtime);
     rg::mapchests::install(runtime);
