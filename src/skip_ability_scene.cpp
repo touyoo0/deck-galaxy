@@ -149,7 +149,7 @@ void install(PS2Runtime &runtime)
 
 float burstProgress()
 {
-    constexpr double kSeconds = 0.8;
+    constexpr double kSeconds = 0.55;
     const int64_t at = g_leftOutAt.load(std::memory_order_relaxed);
     if (at == 0)
     {

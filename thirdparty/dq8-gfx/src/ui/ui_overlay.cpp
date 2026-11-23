@@ -1681,19 +1681,19 @@ void Overlay::drawScreenBurst() {
     const float fall = 1.0f - smooth((p - 0.14f) / 0.86f);
     const float flash = std::min(rise, fall);
     const ImU32 white = IM_COL32(225, 240, 255, 255);
-    list->AddRectFilled(origin, corner, withAlpha(white, 0.78f * flash));
+    list->AddRectFilled(origin, corner, withAlpha(white, 0.34f * flash));
 
     // The bloom: rings from the centre, brightest in the middle, growing.
     const float grow = 0.25f + 0.95f * (1.0f - (1.0f - std::min(1.0f, p * 1.8f)) * (1.0f - std::min(1.0f, p * 1.8f)));
     constexpr int kRings = 14;
     for (int ring = kRings; ring >= 1; --ring) {
         const float k = static_cast<float>(ring) / kRings;
-        list->AddCircleFilled(centre, reach * grow * k, withAlpha(IM_COL32(255, 255, 255, 255), 0.07f * flash * (1.0f - k * 0.4f)), 48);
+        list->AddCircleFilled(centre, reach * grow * k, withAlpha(IM_COL32(255, 255, 255, 255), 0.045f * flash * (1.0f - k * 0.4f)), 48);
     }
 
     // The streaks: thin triangles, tip outwards, shot out in the first third
     // and then thinning away.
-    constexpr int kStreaks = 40;
+    constexpr int kStreaks = 16;
     const float shoot = 1.0f - (1.0f - std::min(1.0f, p / 0.35f)) * (1.0f - std::min(1.0f, p / 0.35f));
     const float streakAlpha = (1.0f - smooth((p - 0.2f) / 0.6f)) * std::min(1.0f, p / 0.05f);
     for (int i = 0; i < kStreaks; ++i) {
@@ -1702,21 +1702,21 @@ void Overlay::drawScreenBurst() {
         const float b = static_cast<float>((i * 40503u + 17u) % 1000u) / 1000.0f;
         const float angle = (static_cast<float>(i) + (a - 0.5f) * 0.8f) * (2.0f * kPi / kStreaks);
         const float inner = reach * (0.06f + 0.10f * b + 0.55f * (1.0f - streakAlpha) * 0.5f) ;
-        const float outer = reach * (0.25f + 0.85f * (0.4f + 0.6f * a)) * shoot;
+        const float outer = reach * (0.25f + 0.45f * (0.4f + 0.6f * a)) * shoot;
         if (outer <= inner + 2.0f)
             continue;
-        const float width = (2.0f + 5.0f * b) * unit * (1.0f - 0.6f * p);
+        const float width = (1.0f + 2.0f * b) * unit * (1.0f - 0.6f * p);
         const ImVec2 dir(std::cos(angle), std::sin(angle));
         const ImVec2 side(-dir.y, dir.x);
         const ImVec2 base(centre.x + dir.x * inner, centre.y + dir.y * inner);
         const ImVec2 tip(centre.x + dir.x * outer, centre.y + dir.y * outer);
         list->AddTriangleFilled(ImVec2(base.x + side.x * width, base.y + side.y * width),
                                 ImVec2(base.x - side.x * width, base.y - side.y * width), tip,
-                                withAlpha(IM_COL32(255, 255, 255, 255), streakAlpha * (0.55f + 0.4f * a)));
+                                withAlpha(IM_COL32(255, 255, 255, 255), streakAlpha * (0.30f + 0.25f * a)));
     }
 
     // The dark corners: in as the flash peaks, open again after.
-    const float dark = 0.62f * std::min(smooth(p / 0.3f), 1.0f - smooth((p - 0.3f) / 0.7f));
+    const float dark = 0.32f * std::min(smooth(p / 0.3f), 1.0f - smooth((p - 0.3f) / 0.7f));
     const ImU32 edge = withAlpha(IM_COL32(0, 4, 16, 255), dark);
     const ImU32 none = withAlpha(IM_COL32(0, 4, 16, 255), 0.0f);
     const float bandX = view.x * 0.28f, bandY = view.y * 0.30f;
