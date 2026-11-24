@@ -14,7 +14,7 @@
 # the tree, DeckGalaxy) with a settings file, memory card and states of its
 # own in $BENCH_HOME. The scenarios are in scenarios.conf.
 #
-# Environment: GAME_DIR, BENCH_HOME, RG_GS_SCALE (settings.ini's `scale` unless
+# Environment: GAME_DIR, GAME_BIN (another binary of the same build, see ab.sh), BENCH_HOME, RG_GS_SCALE (settings.ini's `scale` unless
 # set), BENCH_SHOTS=N (a screenshot, PPM, every N frames in
 # $BENCH_HOME/runs/LABEL/SCENARIO.n.shots, to see what a scenario does), BENCH_UNPACED=1 (no 60 fps cap: the frame rate is the machine's capacity),
 # BENCH_PERF=1 (perf record of the run, SCENARIO.n.perf: `perf report -i FILE --sort comm,sym`),
@@ -33,7 +33,8 @@ reads=$(echo "$line" | awk -F'|' '{print $3}')
 input=$(echo "$line" | awk -F'|' '{print $4}')
 state="$BENCH_HOME/states/$(echo "$line" | awk -F'|' '{print $2}')"
 [ -f "$state" ] || { echo "missing state $state"; exit 2; }
-[ -x "$GAME_DIR/build/game/src/roguegalaxy" ] || { echo "no game built in $GAME_DIR"; exit 2; }
+GAME_BIN=${GAME_BIN:-$GAME_DIR/build/game/src/roguegalaxy}
+[ -x "$GAME_BIN" ] || { echo "no game built: $GAME_BIN"; exit 2; }
 if pgrep -x roguegalaxy >/dev/null; then echo "a game is running; not starting"; exit 2; fi
 
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
@@ -64,7 +65,7 @@ while [ "$n" -le "$repeat" ]; do
         DQ8_GFX_STATS_EVERY=10 DQ8_GFX_PRESENT_LOG="$csv" \
         ${BENCH_SHOTS:+DQ8_GFX_SCREENSHOT_DIR="$out/$scenario.$n.shots" DQ8_GFX_SCREENSHOT_EVERY=$BENCH_SHOTS} \
         ${BENCH_PERF:+perf record -q -F 499 ${BENCH_PERF_ARGS} -o "$out/$scenario.$n.perf" --}\
-        "$GAME_DIR/build/game/src/roguegalaxy" "$GAME_DIR/disc/SCUS_974.90" >"$log" 2>&1 </dev/null &
+        "$GAME_BIN" "$GAME_DIR/disc/SCUS_974.90" >"$log" 2>&1 </dev/null &
     pid=$!
     # The game ends with its script; a generous wall-clock limit guards a hang.
     limit=$(( reads / 20 + 180 )); t=0

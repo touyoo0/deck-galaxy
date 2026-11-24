@@ -40,6 +40,12 @@ def spread(runs, key):
     return max(values) - min(values)
 
 
+def paired(b, n, key):
+    """Run i of one side against run i of the other (ab.sh alternates them, so a pair saw the same machine)."""
+    deltas = [y[key] - x[key] for x, y in zip(b, n)]
+    return deltas
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("base")
@@ -66,6 +72,11 @@ def main():
             delta = mn - mb
             verdict = "within noise" if abs(delta) <= noise else ("better" if delta * better > 0 else "WORSE")
             print(f"  {label:15s} {mb:8.2f} -> {mn:8.2f}  ({delta:+.2f}; runs spread {noise:.2f})  {verdict}")
+        if len(b) == len(n) and len(b) > 1:
+            d = paired(b, n, "fps")
+            favour = sum(x > 0 for x in d)
+            print(f"  paired fps deltas {', '.join(f'{x:+.2f}' for x in d)}: mean {statistics.mean(d):+.2f}, "
+                  f"the new side ahead in {favour} of {len(d)} pairs (only meaningful for runs alternated by ab.sh)")
 
 
 if __name__ == "__main__":

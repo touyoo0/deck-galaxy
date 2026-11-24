@@ -81,3 +81,8 @@ the time by thread (GameThread = the EE and the game, VIF1, the main thread); a 
 against 57.8), so read shares, not fps. `field_idle`, 2026-11-24: GameThread 46%, VIF1 38%, main 16% of the
 samples; of VIF1's own time `runVu1` 66% (`buildMesh` 15%, `readChunk` 10%), `deliverPacket` 39% (`mesh` 16%,
 `native2d::build` 16%, `unpackPlain` 11%) and `operator new` 11%, a flat profile with no single hot spot.
+
+**Compare two builds with `ab.sh`, not with two labels measured an hour apart**: the machine drifts (the
+same binary gave 57.8 fps and, forty minutes later, 56.6: heat or background load), more than most changes
+gain. `ab.sh SCENARIO BASE NEW 3` alternates the two binaries (copies kept in `$BENCH_HOME/bin/`), and
+`compare.py` prints the paired deltas: a change is real when the new side is ahead in every pair.
