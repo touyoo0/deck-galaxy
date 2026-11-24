@@ -59,7 +59,7 @@ while [ "$n" -le "$repeat" ]; do
     cd "$work" || exit 1
     env RG_SETTINGS_FILE="$work/settings.ini" RG_MC0_DIR="$work/mc0" \
         RG_MUTE=1 ${hidden:+DQ8_GFX_HIDDEN_WINDOW=1} RG_HOME=0 \
-        RG_FPS=60 RG_TIME_SCALE=fixed ${BENCH_UNPACED:+RG_SPEED=0} \
+        RG_FPS=${RG_FPS:-60} RG_TIME_SCALE=fixed ${BENCH_UNPACED:+RG_SPEED=0} \
         RG_STATE_SCRIPT="load 0@1" \
         RG_INPUT="$input${input:+,}$reads:SELECT:1" RG_INPUT_CLOCK=pad RG_INPUT_FROM_LOAD=1 RG_INPUT_QUIT=1 \
         DQ8_GFX_STATS_EVERY=10 DQ8_GFX_PRESENT_LOG="$csv" \
@@ -67,14 +67,16 @@ while [ "$n" -le "$repeat" ]; do
         ${BENCH_PERF:+perf record -q -F 499 ${BENCH_PERF_ARGS} -o "$out/$scenario.$n.perf" --}\
         "$GAME_BIN" "$GAME_DIR/disc/SCUS_974.90" >"$log" 2>&1 </dev/null &
     pid=$!
+    python3 -I "$here/sample.py" $pid "$out/$scenario.$n.sample" >/dev/null 2>&1 &
+    sampler=$!
     # The game ends with its script; a generous wall-clock limit guards a hang.
     limit=$(( reads / 20 + 180 )); t=0
     while kill -0 $pid 2>/dev/null; do
         [ "$t" -ge "$limit" ] && { echo "timeout: killed after ${limit}s"; kill $pid; break; }
         sleep 1; t=$((t + 1))
     done
-    sleep 1; kill -9 $pid 2>/dev/null; wait $pid 2>/dev/null
+    sleep 1; kill -9 $pid 2>/dev/null; wait $pid 2>/dev/null; wait $sampler 2>/dev/null
     cd "$here" || exit 1
-    python3 -I "$here/analyze.py" "$log" "$csv" | tee "$out/$scenario.$n.txt"
+    python3 -I "$here/analyze.py" "$log" "$csv" --sample "$out/$scenario.$n.sample" | tee "$out/$scenario.$n.txt"
     n=$((n + 1))
 done

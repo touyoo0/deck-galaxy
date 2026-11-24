@@ -18,6 +18,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import re
 import statistics
 import sys
@@ -72,12 +73,39 @@ def parse_csv(path):
     return [b - a for a, b in zip(times, times[1:])]
 
 
+def power(path, seconds):
+    """The machine over the last `seconds` of the run (the measured window ends with the game)."""
+    try:
+        samples = [json.loads(line) for line in open(path) if line.strip()]
+    except OSError:
+        return {}
+    if len(samples) < 4:
+        return {}
+    samples = samples[:-1]  # the last sample may be taken as the threads end
+    end = samples[-1]["t"]
+    window = [s for s in samples if s["t"] >= end - seconds]
+    if len(window) < 3:
+        return {}
+    mean = lambda key: statistics.mean(s[key] for s in window if s.get(key) is not None) if any(s.get(key) is not None for s in window) else 0.0
+    span = window[-1]["t"] - window[0]["t"] or 1.0
+    cores = {}
+    # A thread can end before the run does (the game's own at the quit): its last sample counts.
+    for name in {n for s in window for n in s["cpu_ticks"]}:
+        have = [s for s in window if name in s["cpu_ticks"]]
+        used = have[-1]["cpu_ticks"][name] - have[0]["cpu_ticks"][name]
+        cores[name] = round(used / os.sysconf("SC_CLK_TCK") / max(have[-1]["t"] - have[0]["t"], 1.0), 2)
+    return {"watts": round(mean("watts"), 2), "tctl": round(mean("tctl"), 1), "edge": round(mean("edge"), 1),
+            "tctl_end": window[-1].get("tctl") or 0.0, "gpu_busy": round(mean("gpu_busy"), 1), "gpu_mhz": round(mean("gpu_mhz")),
+            "cpu_mhz": round(mean("cpu_mhz")), "cores": cores, "cores_total": round(sum(cores.values()), 2)}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     ap.add_argument("log")
     ap.add_argument("csv")
     ap.add_argument("--skip", type=int, default=120)
     ap.add_argument("--json")
+    ap.add_argument("--sample", help="sample.py's file: power, temperatures, clocks and CPU time by thread")
     args = ap.parse_args()
     loaded, quit_at, intervals = parse_log(args.log)
     if loaded is None:
@@ -114,12 +142,18 @@ def main():
     result["fingerprint"] = hashlib.sha1(",".join(map(str, meshes)).encode()).hexdigest()[:10]
     result["meshes_mean"] = round(statistics.mean(meshes)) if meshes else 0
     result["intervals"] = steady_intervals
+    if args.sample:
+        result.update(power(args.sample, sum(steady) / 1000.0))
     result["window"] = [loaded, quit_at]
     print(f"{args.log.rsplit('/', 1)[-1]}: {len(steady)} frames after {args.skip} of warm-up (pad reads {loaded} to {quit_at})")
     print(f"  fps {result['fps']:6.2f}   frame time ms: p50 {result['ft_p50']:5.2f}  p95 {result['ft_p95']:5.2f}  p99 {result['ft_p99']:5.2f}  max {result['ft_max']:6.2f}   1% low {result['low1_fps']:5.1f} fps")
     print(f"  frames over 20 / 25 / 33 ms: {result['over20']} / {result['over25']} / {result['over33']}   longest in the warm-up: {result['warmup_max']} ms")
     print(f"  GS backend {result['backend']}% of wall, VIF1 {result['vif1']}%, GIF {result['gif']}%, main stall {result['stall']} ms")
     print(f"  scene: fingerprint {result['fingerprint']}, {result['meshes_mean']} meshes per 10 frames")
+    if "watts" in result:
+        top = sorted(result["cores"].items(), key=lambda kv: -kv[1])[:5]
+        print(f"  APU {result['watts']} W, Tctl {result['tctl']} C (end {result['tctl_end']}), GPU {result['gpu_busy']}% at {result['gpu_mhz']} MHz, "
+              f"CPU {result['cpu_mhz']} MHz; cores used {result['cores_total']}: " + ", ".join(f"{k} {v}" for k, v in top))
     if args.json or True:
         with open(args.json or (args.log.rsplit(".", 1)[0] + ".json"), "w") as f:
             json.dump(result, f)

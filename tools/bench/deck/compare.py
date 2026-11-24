@@ -66,7 +66,10 @@ def main():
                                                else f"DIFFERENT ({worst:.0%} of the intervals within 2% at worst): not comparable")
         print(f"== {scenario}: {len(b)} run(s) vs {len(n)}; scene {verdict}")
         for key, label, better in (("fps", "fps", 1), ("low1_fps", "1% low fps", 1), ("ft_p99", "p99 frame ms", -1),
-                                   ("over25", "frames > 25 ms", -1), ("backend", "GS backend %", -1), ("vif1", "VIF1 %", -1)):
+                                   ("over25", "frames > 25 ms", -1), ("backend", "GS backend %", -1), ("vif1", "VIF1 %", -1),
+                                   ("watts", "APU watts", -1), ("tctl", "CPU Tctl C", -1)):
+            if key not in b[0] or key not in n[0]:
+                continue
             mb, mn = med(b, key), med(n, key)
             noise = max(spread(b, key), spread(n, key))
             delta = mn - mb

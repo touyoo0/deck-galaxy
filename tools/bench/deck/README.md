@@ -93,3 +93,22 @@ gain. `ab.sh SCENARIO BASE NEW 3` alternates the two binaries (copies kept in `$
 |---|---|
 | `native2d::build` keeps its A+D packets' storage from one call to the next (as it did for the meshes' vertices) | kept: +1.11, +0.91, +0.54 fps (mean +0.85, 3 of 3 pairs) |
 | `unpackPlain` (PS2Recomp, patch 0043): the 32-bit shapes with the component count fixed at compile time, V4 in one copy | dropped: -0.57, -0.24, -0.82 fps (0 of 3). Its time is the memory (cold stream data), not the call into `memcpy` |
+
+## Power and temperature (`sample.py`, run by `run.sh`)
+
+Each run samples the APU's power (amdgpu `power1_average`), its temperatures, the GPU's busy share and clock, the
+CPU clock and the CPU time of each thread, and `analyze.py` prints them for the measured window (the screen and the
+battery are not in the APU figure). `compare.py` adds watts and Tctl. 2026-11-24, hidden window, paced at 60:
+
+| What | `battle2` | `field_idle` |
+|---|---|---|
+| scale 2 (the settings), GPU forced at 1600 MHz by the system | 10.2-11.2 W, 59.5 fps | 14.6-14.8 W, 57.3 fps |
+| scale 1 / scale 3 | 8.8 W / 12.8 W (59.4 / 59.3 fps) | |
+| GPU clock 1000 MHz instead of 1600 (steamos-manager `ManualGpuClock`) | 8.9 W, 59.5 fps | 13.7 W, 56.6 fps |
+| GPU clock 700 MHz | 9.4 W (GPU 37% busy) | 13.8 W, 56.1 fps |
+| CPU scheduler `lavd` (steamos-manager `CpuScheduler`) instead of `none` | 60.0 fps, p95 18.2 against 19.6 ms, same watts | same |
+| whole process on one hardware thread a core (`taskset -c 0,2,4,6`), unpaced | | 58.3 against 57.0 fps (+1.08, 3 of 3 pairs) |
+| the three busy threads each pinned to their own core | | -0.3 fps (no gain) |
+
+The game uses about 2 cores (GameThread 0.8, VIF1 0.75-0.85, main 0.4): a flat profile, no thread idles, so
+power follows the work; the system keeps the GPU at its top clock (`ManualGpuClock` 1600) at 15-30% load.
