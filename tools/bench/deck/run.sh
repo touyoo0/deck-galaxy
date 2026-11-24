@@ -16,8 +16,8 @@
 #
 # Environment: GAME_DIR, BENCH_HOME, RG_GS_SCALE (settings.ini's `scale` unless
 # set), BENCH_SHOTS=N (a screenshot, PPM, every N frames in
-# $BENCH_HOME/runs/LABEL/SCENARIO.n.shots, to see what a scenario does), BENCH_VISIBLE=1 (a visible window, so the compositor is in the
-# measure; the default window is hidden: GS, VIF1 and the frame pacing only).
+# $BENCH_HOME/runs/LABEL/SCENARIO.n.shots, to see what a scenario does), BENCH_HIDDEN=1 (a hidden window: GS, VIF1 and the frame pacing only; the
+# default window is visible, as in play, so the compositor is in the measure).
 here=$(dirname "$(readlink -f "$0")")
 GAME_DIR=${GAME_DIR:-/run/media/deck/SD/Recomp/DeckGalaxy}
 BENCH_HOME=${BENCH_HOME:-/run/media/deck/SD/Recomp/RogueBench}
@@ -51,7 +51,7 @@ while [ "$n" -le "$repeat" ]; do
     # The script ends with one press of Select at the last measured read; the
     # game then quits itself (RG_INPUT_QUIT), so the present log stops there.
     log="$out/$scenario.$n.log"; csv="$out/$scenario.$n.csv"
-    hidden=1; [ -n "$BENCH_VISIBLE" ] && hidden=
+    hidden=; [ -n "$BENCH_HIDDEN" ] && hidden=1
     [ -n "$BENCH_SHOTS" ] && mkdir -p "$out/$scenario.$n.shots"
     cd "$work" || exit 1
     env RG_SETTINGS_FILE="$work/settings.ini" RG_MC0_DIR="$work/mc0" \

@@ -62,5 +62,9 @@ slowest 1% of the frames; `p99` the frame time they start at; `> 25 ms` the
 count of frames that miss a 40 fps pace. The GS backend, VIF1 and GIF shares
 say which thread limits.
 
-The window is hidden by default (`DQ8_GFX_HIDDEN_WINDOW`): the GS, the VU1 and
-the pacing are measured, the compositor is not. `BENCH_VISIBLE=1` shows it.
+The window is visible by default, as in play (gamescope composes it, the
+settings' `present` mode counts); `BENCH_HIDDEN=1` hides it (the GS, the VU1 and
+the pacing only; about a frame per second better). `RG_GS_SCALE=3` is the
+stress profile: with the settings' scale 2 the scenarios hold 56-60 fps, which
+leaves little to improve; at 3 `field_idle` falls to 47-51 fps (single runs,
+2026-11-24), a drop a change can be measured against.
