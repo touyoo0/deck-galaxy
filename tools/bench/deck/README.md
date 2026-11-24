@@ -68,3 +68,9 @@ the pacing only; about a frame per second better). `RG_GS_SCALE=3` is the
 stress profile: with the settings' scale 2 the scenarios hold 56-60 fps, which
 leaves little to improve; at 3 `field_idle` falls to 47-51 fps (single runs,
 2026-11-24), a drop a change can be measured against.
+
+`BENCH_UNPACED=1` runs without the 60 fps cap (`RG_SPEED=0`): the frame rate is
+then what the machine can do, so a change shows even where the paced run holds
+60. The scene stays the same (the steps are fixed and the input counts pad
+reads). 2026-11-24, scale 2, hidden window: `battle2` 80 fps (45.6 for the 1%
+low), `field_idle` 57 fps: it never reaches 60, VIF1 at 92%.

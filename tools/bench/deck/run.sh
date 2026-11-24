@@ -16,7 +16,8 @@
 #
 # Environment: GAME_DIR, BENCH_HOME, RG_GS_SCALE (settings.ini's `scale` unless
 # set), BENCH_SHOTS=N (a screenshot, PPM, every N frames in
-# $BENCH_HOME/runs/LABEL/SCENARIO.n.shots, to see what a scenario does), BENCH_HIDDEN=1 (a hidden window: GS, VIF1 and the frame pacing only; the
+# $BENCH_HOME/runs/LABEL/SCENARIO.n.shots, to see what a scenario does), BENCH_UNPACED=1 (no 60 fps cap: the frame rate is the machine's capacity),
+# BENCH_HIDDEN=1 (a hidden window: GS, VIF1 and the frame pacing only; the
 # default window is visible, as in play, so the compositor is in the measure).
 here=$(dirname "$(readlink -f "$0")")
 GAME_DIR=${GAME_DIR:-/run/media/deck/SD/Recomp/DeckGalaxy}
@@ -56,7 +57,7 @@ while [ "$n" -le "$repeat" ]; do
     cd "$work" || exit 1
     env RG_SETTINGS_FILE="$work/settings.ini" RG_MC0_DIR="$work/mc0" \
         RG_MUTE=1 ${hidden:+DQ8_GFX_HIDDEN_WINDOW=1} RG_HOME=0 \
-        RG_FPS=60 RG_TIME_SCALE=fixed \
+        RG_FPS=60 RG_TIME_SCALE=fixed ${BENCH_UNPACED:+RG_SPEED=0} \
         RG_STATE_SCRIPT="load 0@1" \
         RG_INPUT="$input${input:+,}$reads:SELECT:1" RG_INPUT_CLOCK=pad RG_INPUT_FROM_LOAD=1 RG_INPUT_QUIT=1 \
         DQ8_GFX_STATS_EVERY=10 DQ8_GFX_PRESENT_LOG="$csv" \
