@@ -13,6 +13,7 @@
 #include "return_hook.h"
 #include "runtime/gs/gs_backend.h"
 #include "scene_timing.h"
+#include "vif1_thread.h"
 
 #if defined(RG_HAS_SDLGPU)
 #include "gfx/backends/sdlgpu/sdlgpu_backend.h"
@@ -214,6 +215,10 @@ bool presentNative(uint64_t frame)
 
 void afterFlip(uint8_t *, R5900Context *, PS2Runtime *, uint32_t)
 {
+    // The frame's draws first: a list counts as done for the game when the VIF1 thread has handed its
+    // meshes on, not when the GIF stage has made them (RG_PRODUCER_THREAD), and the Present record
+    // closes the frame the renderer has been given.
+    rg::vif1::drainForSnapshot();
     rg::nativefx::endFlip();
     // Under the pipeline the presenting thread shows the frame the Present
     // record closed (graphics.cpp's presentHook, step 7d), not the GS's

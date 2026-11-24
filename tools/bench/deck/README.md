@@ -123,3 +123,20 @@ program reads, 1.5-3 KiB: 0.2-0.4 us), so even every chunk hitting would save 0.
 `native2d::build` (16%) cannot be cached that way: they read and change the draw state, the targets and the
 counters. What would move the VIF1 limit is running those two on another thread (35-40% of VIF1's time), which
 the effects, the composites and the draw-state mirror in `src/vif1_thread.cpp` make a redesign, not a patch.
+
+## The producer thread (RG_PRODUCER_THREAD, 2026-11-24)
+
+`nativeproducer::mesh` and `piece` (a third of the VIF1 thread's time) run on the GIF stage's thread, in the
+stage's order, so the VIF1 thread goes on to the next chunk. `field_idle` unpaced, alternated with
+`RG_PRODUCER_THREAD=0`, 3 pairs: +5.39, +4.22, +4.45 fps (56.7 to 61.4; 1% low 37.3 to 40.0, frames over 25 ms
+21 to 7), watts and Tctl unchanged within noise. `battle2` does not move (79 fps either way: the game thread
+is its limit). What it took to be right, found with `frames.py`: the producer calls the VIF1 thread makes through
+the `producer::` alias (`takeProduced`, `noteWithheld`) change what the meshes read and wait for the stage like
+the uploads and effects do; and the game thread drains the stage at each flip before the Present record.
+
+Checking it: two runs of one build give identical frames only while the guest does the same thing (battle2 30 of
+30), and the game's logic follows the timing of the host (a field walk drifted in one run of three before this
+change): a run with the producer thread diverges from one without within a few hundred frames (an animation phase,
+the outcome of a fight), so frames differ for that reason, not for the renderer's. Where the guest agrees,
+the frames are identical to the pixel (`field_idle` flips 300, 900, 1500: 0.00% of the pixels). Not proven: a
+long play with every kind of scene.

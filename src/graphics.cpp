@@ -632,13 +632,51 @@ void writeNativeScreenshot(const PresentationFrame &frame)
     const uint32_t pitch = frame.rowPitchBytes ? frame.rowPitchBytes : frame.width * 4u;
     if (frame.pixels.size() < static_cast<size_t>(pitch) * frame.height)
         return;
-    const uint64_t tick = ps2PadCurrentGuestFrame();
-    static uint64_t lastWritten = UINT64_MAX;
-    if (lastWritten != UINT64_MAX && tick < lastWritten + every)
-        return;
-    lastWritten = tick;
+    // RG_SHOT_FLIPS=A-B[,C-D...]: every frame shown while the guest's flip count since the loaded save
+    // state is in a range, as flip_<n>.ppm: the same frames of the same scene whatever the boot took
+    // (the bench compares builds by them). Nothing until a state is loaded.
+    static const std::vector<std::pair<uint64_t, uint64_t>> ranges = [] {
+        std::vector<std::pair<uint64_t, uint64_t>> out;
+        const char *value = std::getenv("RG_SHOT_FLIPS");
+        for (const char *p = value; p && *p;)
+        {
+            char *end = nullptr;
+            const uint64_t a = std::strtoull(p, &end, 10);
+            if (end == p || *end != '-')
+                break;
+            const uint64_t b = std::strtoull(end + 1, &end, 10);
+            out.emplace_back(a, b);
+            p = *end == ',' ? end + 1 : end;
+        }
+        return out;
+    }();
     char path[512];
-    std::snprintf(path, sizeof(path), "%s/frame_%06llu.ppm", directory, static_cast<unsigned long long>(tick));
+    if (!ranges.empty())
+    {
+        uint32_t read = 0u;
+        uint64_t loadFlip = 0u;
+        if (!rg::savestate::loadedAt(read, &loadFlip))
+            return;
+        const uint64_t since = rg::graphics::guestFlips() - loadFlip;
+        const bool inside = std::any_of(ranges.begin(), ranges.end(),
+                                        [&](const auto &r) { return since >= r.first && since < r.second; });
+        if (!inside)
+            return;
+        static uint64_t lastShot = UINT64_MAX;
+        if (since == lastShot)
+            return;
+        lastShot = since;
+        std::snprintf(path, sizeof(path), "%s/flip_%06llu.ppm", directory, static_cast<unsigned long long>(since));
+    }
+    else
+    {
+        const uint64_t tick = ps2PadCurrentGuestFrame();
+        static uint64_t lastWritten = UINT64_MAX;
+        if (lastWritten != UINT64_MAX && tick < lastWritten + every)
+            return;
+        lastWritten = tick;
+        std::snprintf(path, sizeof(path), "%s/frame_%06llu.ppm", directory, static_cast<unsigned long long>(tick));
+    }
     FILE *out = std::fopen(path, "wb");
     if (!out)
         return;

@@ -4,6 +4,7 @@
 #include "ps2_runtime.h"
 #include "Stubs/CD.h"
 #include "draw_state_mirror.h"
+#include "flip_pacing.h"
 #include "native_producer.h"
 #include "scene_timing.h"
 #include "text_language.h"
@@ -39,6 +40,7 @@ namespace
 
 std::atomic<uint32_t> g_loadPadRead{0};
 std::atomic<uint32_t> g_loadCount{0};
+std::atomic<uint64_t> g_loadFlip{0};
 using ps2_savestate::Reader;
 using ps2_savestate::SaveStateError;
 using ps2_savestate::Writer;
@@ -658,6 +660,7 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
     // starts from a load (RG_INPUT_FROM_LOAD) counts from, exact since the guest
     // is stopped here.
     g_loadPadRead.store(ps2_stubs::getPadDebugSnapshot().ports[0][0].readCount);
+    g_loadFlip.store(rg::graphics::guestFlips());
     g_loadCount.fetch_add(1);
     std::fprintf(stderr, "[savestate] loaded: the guest continues from pad read %u\n", g_loadPadRead.load());
     if (slot != g_continueSlot)
@@ -843,11 +846,13 @@ std::vector<SlotInfo> slots()
     return result;
 }
 
-bool loadedAt(uint32_t &padRead)
+bool loadedAt(uint32_t &padRead, uint64_t *flip)
 {
     if (g_loadCount.load() == 0)
         return false;
     padRead = g_loadPadRead.load();
+    if (flip)
+        *flip = g_loadFlip.load();
     return true;
 }
 

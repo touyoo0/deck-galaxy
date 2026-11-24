@@ -27,8 +27,9 @@ constexpr int kSlots = 5;
 constexpr int kAutoSlot = 0;
 
 // Whether a state has been loaded in this run and the pad read count it
-// continued from (RG_INPUT_FROM_LOAD starts a scripted input from there).
-bool loadedAt(uint32_t &padRead);
+// continued from (RG_INPUT_FROM_LOAD starts a scripted input from there), and the guest's flip count then
+// (RG_SHOT_FLIPS counts the frames to capture from it).
+bool loadedAt(uint32_t &padRead, uint64_t *flip = nullptr);
 
 // After the runtime is set up: starts RG_STATE_SCRIPT, when set.
 void install(PS2Runtime &runtime);

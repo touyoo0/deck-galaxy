@@ -55,7 +55,7 @@ while [ "$n" -le "$repeat" ]; do
     # game then quits itself (RG_INPUT_QUIT), so the present log stops there.
     log="$out/$scenario.$n.log"; csv="$out/$scenario.$n.csv"
     hidden=; [ -n "$BENCH_HIDDEN" ] && hidden=1
-    [ -n "$BENCH_SHOTS" ] && mkdir -p "$out/$scenario.$n.shots"
+    [ -n "$BENCH_SHOTS$BENCH_SHOT_FLIPS" ] && mkdir -p "$out/$scenario.$n.shots"
     cd "$work" || exit 1
     env RG_SETTINGS_FILE="$work/settings.ini" RG_MC0_DIR="$work/mc0" \
         RG_MUTE=1 ${hidden:+DQ8_GFX_HIDDEN_WINDOW=1} RG_HOME=0 \
@@ -64,6 +64,7 @@ while [ "$n" -le "$repeat" ]; do
         RG_INPUT="$input${input:+,}$reads:SELECT:1" RG_INPUT_CLOCK=pad RG_INPUT_FROM_LOAD=1 RG_INPUT_QUIT=1 \
         DQ8_GFX_STATS_EVERY=10 DQ8_GFX_PRESENT_LOG="$csv" \
         ${BENCH_SHOTS:+DQ8_GFX_SCREENSHOT_DIR="$out/$scenario.$n.shots" DQ8_GFX_SCREENSHOT_EVERY=$BENCH_SHOTS} \
+        ${BENCH_SHOT_FLIPS:+DQ8_GFX_SCREENSHOT_DIR="$out/$scenario.$n.shots" RG_SHOT_FLIPS=$BENCH_SHOT_FLIPS} \
         ${BENCH_PERF:+perf record -q -F 499 ${BENCH_PERF_ARGS} -o "$out/$scenario.$n.perf" --}\
         "$GAME_BIN" "$GAME_DIR/disc/SCUS_974.90" >"$log" 2>&1 </dev/null &
     pid=$!
