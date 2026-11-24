@@ -86,3 +86,10 @@ samples; of VIF1's own time `runVu1` 66% (`buildMesh` 15%, `readChunk` 10%), `de
 same binary gave 57.8 fps and, forty minutes later, 56.6: heat or background load), more than most changes
 gain. `ab.sh SCENARIO BASE NEW 3` alternates the two binaries (copies kept in `$BENCH_HOME/bin/`), and
 `compare.py` prints the paired deltas: a change is real when the new side is ahead in every pair.
+
+## Optimisations tried (field_idle, unpaced, alternated with the build before, 3 pairs)
+
+| Change | Result |
+|---|---|
+| `native2d::build` keeps its A+D packets' storage from one call to the next (as it did for the meshes' vertices) | kept: +1.11, +0.91, +0.54 fps (mean +0.85, 3 of 3 pairs) |
+| `unpackPlain` (PS2Recomp, patch 0043): the 32-bit shapes with the component count fixed at compile time, V4 in one copy | dropped: -0.57, -0.24, -0.82 fps (0 of 3). Its time is the memory (cold stream data), not the call into `memcpy` |
