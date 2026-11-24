@@ -74,3 +74,10 @@ then what the machine can do, so a change shows even where the paced run holds
 60. The scene stays the same (the steps are fixed and the input counts pad
 reads). 2026-11-24, scale 2, hidden window: `battle2` 80 fps (45.6 for the 1%
 low), `field_idle` 57 fps: it never reaches 60, VIF1 at 92%.
+
+`BENCH_PERF=1` records the run with `perf` (`SCENARIO.n.perf`; `BENCH_PERF_ARGS="--call-graph dwarf,16384"` for
+call chains, a 650 MB file for 35 s: delete it after). `perf report -i FILE --no-children --sort comm,sym` splits
+the time by thread (GameThread = the EE and the game, VIF1, the main thread); a profiled run is slower (54 fps
+against 57.8), so read shares, not fps. `field_idle`, 2026-11-24: GameThread 46%, VIF1 38%, main 16% of the
+samples; of VIF1's own time `runVu1` 66% (`buildMesh` 15%, `readChunk` 10%), `deliverPacket` 39% (`mesh` 16%,
+`native2d::build` 16%, `unpackPlain` 11%) and `operator new` 11%, a flat profile with no single hot spot.

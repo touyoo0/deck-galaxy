@@ -17,6 +17,7 @@
 # Environment: GAME_DIR, BENCH_HOME, RG_GS_SCALE (settings.ini's `scale` unless
 # set), BENCH_SHOTS=N (a screenshot, PPM, every N frames in
 # $BENCH_HOME/runs/LABEL/SCENARIO.n.shots, to see what a scenario does), BENCH_UNPACED=1 (no 60 fps cap: the frame rate is the machine's capacity),
+# BENCH_PERF=1 (perf record of the run, SCENARIO.n.perf: `perf report -i FILE --sort comm,sym`),
 # BENCH_HIDDEN=1 (a hidden window: GS, VIF1 and the frame pacing only; the
 # default window is visible, as in play, so the compositor is in the measure).
 here=$(dirname "$(readlink -f "$0")")
@@ -62,6 +63,7 @@ while [ "$n" -le "$repeat" ]; do
         RG_INPUT="$input${input:+,}$reads:SELECT:1" RG_INPUT_CLOCK=pad RG_INPUT_FROM_LOAD=1 RG_INPUT_QUIT=1 \
         DQ8_GFX_STATS_EVERY=10 DQ8_GFX_PRESENT_LOG="$csv" \
         ${BENCH_SHOTS:+DQ8_GFX_SCREENSHOT_DIR="$out/$scenario.$n.shots" DQ8_GFX_SCREENSHOT_EVERY=$BENCH_SHOTS} \
+        ${BENCH_PERF:+perf record -q -F 499 ${BENCH_PERF_ARGS} -o "$out/$scenario.$n.perf" --}\
         "$GAME_DIR/build/game/src/roguegalaxy" "$GAME_DIR/disc/SCUS_974.90" >"$log" 2>&1 </dev/null &
     pid=$!
     # The game ends with its script; a generous wall-clock limit guards a hang.
