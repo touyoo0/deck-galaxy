@@ -112,3 +112,14 @@ battery are not in the APU figure). `compare.py` adds watts and Tctl. 2026-11-24
 
 The game uses about 2 cores (GameThread 0.8, VIF1 0.75-0.85, main 0.4): a flat profile, no thread idles, so
 power follows the work; the system keeps the GPU at its top clock (`ManualGpuClock` 1600) at 15-30% load.
+
+## Why a cache of the VU1 chunks does not pay (2026-11-24, `field_idle`, ~3000 meshes a frame)
+
+The idea: the forest's scenery is the same every frame, so build each chunk once. The profile says what it
+could save: `buildMesh` (with `readChunk`) is 14.8% of the VIF1 thread, about 2.6 ms a frame, 0.9 us a chunk.
+To know a chunk is unchanged its inputs have to be hashed (its section of VU data memory and the quads the
+program reads, 1.5-3 KiB: 0.2-0.4 us), so even every chunk hitting would save 0.5 us of the 0.9, 1.5 ms a frame
+(+4 fps at the very most); the characters move and miss. And `nativeproducer::mesh` (16%) and
+`native2d::build` (16%) cannot be cached that way: they read and change the draw state, the targets and the
+counters. What would move the VIF1 limit is running those two on another thread (35-40% of VIF1's time), which
+the effects, the composites and the draw-state mirror in `src/vif1_thread.cpp` make a redesign, not a patch.
