@@ -33,9 +33,14 @@ log, `.txt` the summary, `.json` for `compare.py`).
   `settings.ini` there or set `RG_GS_SCALE`.
 
 `analyze.py` prints a fingerprint of the scene (the meshes drawn each stats
-interval). Two runs of a scenario with different fingerprints played different
-scenes: `compare.py` says so and refuses to compare them. Run each side
-several times: a difference smaller than the runs' own spread is noise.
+interval). Battles replay exactly (same fingerprint every run). A walk in the
+field can still drift in one stretch (a run in three left the others' meshes by
+up to 11% for a while, then came back: something in the field still follows the
+host's timing, not found yet), so `compare.py` calls scenes "alike" when 90% of
+the intervals agree within 2%, and says "not comparable" below that. Run each
+side three times: a difference smaller than the runs' own spread is noise.
+`BENCH_SHOTS` (screenshots) changes the scene's cost and its fingerprint: use
+it to look at a scenario, never in a run that is measured.
 
 ## Scenarios (`scenarios.conf`)
 
@@ -44,6 +49,10 @@ from `~/.local/share/RogueGalaxy/states/slotN.rgs`; take a new one in the game
 with F2 and copy it, never point the bench at the player's folder), how many
 pad reads to measure, and the pad input (`RG_INPUT`'s syntax, reads counted
 from the load).
+
+`field1.rgs` (the forest, no fight) is made by `make-field-state.sh`, which
+navigates the title menu by scripted input and saves a state in the field;
+the other states are quick saves of the player's.
 
 ## What the numbers are
 

@@ -15,7 +15,8 @@
 # own in $BENCH_HOME. The scenarios are in scenarios.conf.
 #
 # Environment: GAME_DIR, BENCH_HOME, RG_GS_SCALE (settings.ini's `scale` unless
-# set), BENCH_VISIBLE=1 (a visible window, so the compositor is in the
+# set), BENCH_SHOTS=N (a screenshot, PPM, every N frames in
+# $BENCH_HOME/runs/LABEL/SCENARIO.n.shots, to see what a scenario does), BENCH_VISIBLE=1 (a visible window, so the compositor is in the
 # measure; the default window is hidden: GS, VIF1 and the frame pacing only).
 here=$(dirname "$(readlink -f "$0")")
 GAME_DIR=${GAME_DIR:-/run/media/deck/SD/Recomp/DeckGalaxy}
@@ -51,6 +52,7 @@ while [ "$n" -le "$repeat" ]; do
     # game then quits itself (RG_INPUT_QUIT), so the present log stops there.
     log="$out/$scenario.$n.log"; csv="$out/$scenario.$n.csv"
     hidden=1; [ -n "$BENCH_VISIBLE" ] && hidden=
+    [ -n "$BENCH_SHOTS" ] && mkdir -p "$out/$scenario.$n.shots"
     cd "$work" || exit 1
     env RG_SETTINGS_FILE="$work/settings.ini" RG_MC0_DIR="$work/mc0" \
         RG_MUTE=1 ${hidden:+DQ8_GFX_HIDDEN_WINDOW=1} RG_HOME=0 \
@@ -58,6 +60,7 @@ while [ "$n" -le "$repeat" ]; do
         RG_STATE_SCRIPT="load 0@1" \
         RG_INPUT="$input${input:+,}$reads:SELECT:1" RG_INPUT_CLOCK=pad RG_INPUT_FROM_LOAD=1 RG_INPUT_QUIT=1 \
         DQ8_GFX_STATS_EVERY=10 DQ8_GFX_PRESENT_LOG="$csv" \
+        ${BENCH_SHOTS:+DQ8_GFX_SCREENSHOT_DIR="$out/$scenario.$n.shots" DQ8_GFX_SCREENSHOT_EVERY=$BENCH_SHOTS} \
         "$GAME_DIR/build/game/src/roguegalaxy" "$GAME_DIR/disc/SCUS_974.90" >"$log" 2>&1 </dev/null &
     pid=$!
     # The game ends with its script; a generous wall-clock limit guards a hang.

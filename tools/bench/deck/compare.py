@@ -23,6 +23,14 @@ def load(directory):
     return runs
 
 
+def similarity(a, b, tolerance=0.02):
+    """Share of the stats intervals whose meshes drawn agree within a tolerance, two runs' scenes
+    being the same when almost all do (a field scene can differ by a few per cent in one stretch
+    from one run to the next: something in the game still follows the host's timing)."""
+    pairs = list(zip((i["meshes"] for i in a["intervals"]), (i["meshes"] for i in b["intervals"])))
+    return sum(abs(x - y) <= tolerance * max(x, y, 1) for x, y in pairs) / max(len(pairs), 1)
+
+
 def med(runs, key):
     return statistics.median(r[key] for r in runs)
 
@@ -45,8 +53,12 @@ def main():
             print(f"{scenario}: missing on one side")
             continue
         b, n = base[scenario], new[scenario]
-        same = {r["fingerprint"] for r in b} | {r["fingerprint"] for r in n}
-        print(f"== {scenario}: {len(b)} run(s) vs {len(n)}; scene {'identical' if len(same) == 1 else 'DIFFERENT (' + ', '.join(sorted(same)) + '): not comparable'}")
+        every = b + n
+        worst = min(similarity(every[0], r) for r in every)
+        exact = len({r["fingerprint"] for r in every}) == 1
+        verdict = "identical" if exact else (f"alike ({worst:.0%} of the intervals within 2% at worst)" if worst >= 0.9
+                                               else f"DIFFERENT ({worst:.0%} of the intervals within 2% at worst): not comparable")
+        print(f"== {scenario}: {len(b)} run(s) vs {len(n)}; scene {verdict}")
         for key, label, better in (("fps", "fps", 1), ("low1_fps", "1% low fps", 1), ("ft_p99", "p99 frame ms", -1),
                                    ("over25", "frames > 25 ms", -1), ("backend", "GS backend %", -1), ("vif1", "VIF1 %", -1)):
             mb, mn = med(b, key), med(n, key)
