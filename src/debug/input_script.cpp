@@ -10,7 +10,10 @@
 #include <thread>
 #include <vector>
 
+#include <SDL3/SDL.h>
+
 #include "Stubs/Pad.h"
+#include "savestate.h"
 
 namespace rg::debug
 {
@@ -112,8 +115,12 @@ void startInputScript()
     std::vector<Step> steps = parse(script);
     const char *clock = std::getenv("RG_INPUT_CLOCK");
     const bool padClock = clock && std::strcmp(clock, "pad") == 0;
+    // RG_INPUT_FROM_LOAD=1 (with the pad clock): the script's reads count from the
+    // pad read a loaded save state continues from, not from the start of the run.
+    const char *fromLoad = std::getenv("RG_INPUT_FROM_LOAD");
+    const bool afterLoad = padClock && fromLoad && *fromLoad && std::strcmp(fromLoad, "0") != 0;
     const auto start = std::chrono::steady_clock::now();
-    std::thread([steps, start, padClock]() {
+    std::thread([steps, start, padClock, afterLoad]() {
         constexpr uint8_t kCenter = 0x80;
         // Polled: the game reads the pad once a frame, far slower than this.
         const auto waitForReads = [](uint32_t target) {
@@ -122,11 +129,17 @@ void startInputScript()
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         };
+        uint32_t base = 0;
+        if (afterLoad)
+        {
+            while (!rg::savestate::loadedAt(base))
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
         for (const Step &step : steps)
         {
             if (padClock)
             {
-                waitForReads(static_cast<uint32_t>(step.seconds));
+                waitForReads(base + static_cast<uint32_t>(step.seconds));
             }
             else
             {
@@ -149,6 +162,16 @@ void startInputScript()
             ps2_stubs::setPadOverrideState(0xFFFFu, kCenter, kCenter, kCenter, kCenter);
         }
         ps2_stubs::clearPadOverrideState();
+        // RG_INPUT_QUIT=1: the run ends with its script (a bench run measures a
+        // fixed stretch of pad reads, and the present log stops there).
+        if (const char *quit = std::getenv("RG_INPUT_QUIT"); quit && *quit && std::strcmp(quit, "0") != 0)
+        {
+            std::printf("[input] script over: quit at pad read %u\n", padReads());
+            std::fflush(stdout);
+            SDL_Event event{};
+            event.type = SDL_EVENT_QUIT;
+            SDL_PushEvent(&event);
+        }
     }).detach();
 }
 

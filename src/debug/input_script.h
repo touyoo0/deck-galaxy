@@ -12,6 +12,10 @@ namespace rg::debug
 // With RG_INPUT_CLOCK=pad, SECONDS and MS count the game's pad reads (one a
 // frame) instead, so a script replays alike on a slower host (RG_GS=sw, the
 // VU interpreter); each [input] line logs the read count to convert with.
+// RG_INPUT_QUIT=1 quits the game when the script is over.
+// RG_INPUT_FROM_LOAD=1 (with the pad clock) counts the script from the pad read a
+// loaded save state (RG_STATE_SCRIPT) continues from: a scene replayed from a
+// state then gets the same input at the same frame whatever the boot took.
 void startInputScript();
 
 } // namespace rg::debug

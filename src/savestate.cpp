@@ -36,6 +36,9 @@ namespace rg::savestate
 {
 namespace
 {
+
+std::atomic<uint32_t> g_loadPadRead{0};
+std::atomic<uint32_t> g_loadCount{0};
 using ps2_savestate::Reader;
 using ps2_savestate::SaveStateError;
 using ps2_savestate::Writer;
@@ -651,6 +654,12 @@ void doLoad(PS2Runtime &runtime, int slot, bool &done)
         say("Load failed: %s", error.what());
         return;
     }
+    // The pad read the machine continues from: the clock a scripted run that
+    // starts from a load (RG_INPUT_FROM_LOAD) counts from, exact since the guest
+    // is stopped here.
+    g_loadPadRead.store(ps2_stubs::getPadDebugSnapshot().ports[0][0].readCount);
+    g_loadCount.fetch_add(1);
+    std::fprintf(stderr, "[savestate] loaded: the guest continues from pad read %u\n", g_loadPadRead.load());
     if (slot != g_continueSlot)
         say("Loaded slot %s", std::to_string(slot));
 }
@@ -832,6 +841,14 @@ std::vector<SlotInfo> slots()
                 entry.picture = file.path().string();
     }
     return result;
+}
+
+bool loadedAt(uint32_t &padRead)
+{
+    if (g_loadCount.load() == 0)
+        return false;
+    padRead = g_loadPadRead.load();
+    return true;
 }
 
 void install(PS2Runtime &runtime)

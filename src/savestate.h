@@ -26,6 +26,10 @@ constexpr int kSlots = 5;
 // RG_STATE_SCRIPT's slot 0: Continue's load (the slot saved last).
 constexpr int kAutoSlot = 0;
 
+// Whether a state has been loaded in this run and the pad read count it
+// continued from (RG_INPUT_FROM_LOAD starts a scripted input from there).
+bool loadedAt(uint32_t &padRead);
+
 // After the runtime is set up: starts RG_STATE_SCRIPT, when set.
 void install(PS2Runtime &runtime);
 
