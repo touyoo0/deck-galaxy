@@ -5669,7 +5669,12 @@ PresentationFrame SdlGpuBackend::DisplayPreparedPresentation(const GSPresentatio
             times.flipped = note.flipped;
             times.taken = note.taken;
         }
-        if (slot.prepared && !SDL_WaitForGPUFences(m_impl->device.handle(), true, &slot.prepared, 1))
+        static const bool syncPresent = [] {
+            const char *v = std::getenv("DQ8_GFX_SYNC_PRESENT");
+            return v && *v && std::strcmp(v, "0") != 0;
+        }();
+        if (slot.prepared && (syncPresent || prepared->download) &&
+            !SDL_WaitForGPUFences(m_impl->device.handle(), true, &slot.prepared, 1))
             throw std::runtime_error(std::string("SDL_WaitForGPUFences(snapshot): ") + SDL_GetError());
         times.fence = std::chrono::steady_clock::now() - times.begin;
         std::string error;

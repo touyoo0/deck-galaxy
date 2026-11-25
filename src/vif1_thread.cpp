@@ -319,6 +319,22 @@ void gatherChain(PS2Memory &memory, uint32_t tadr, bool tte, bool tie, std::vect
 // Only the GS state lock is shared: the front end calls nothing back on the
 // game's side (SIGNAL and FINISH set CSR bits, which are atomic), so waiting
 // for this stage cannot deadlock a thread that does not hold that lock.
+bool absorbing();
+std::atomic<uint64_t> g_packetsConverted{0u}, g_packetsRefused{0u}, g_piecesMade{0u}, g_piecesToGs{0u},
+    g_piecesDropped{0u};
+
+// Offload nativeproducer::mesh/piece (and ordered resident texture updates)
+// from VIF1 to the otherwise-idle GifStage thread. RG_PRODUCER_THREAD=0
+// restores synchronous execution on VIF1.
+bool producerThreadEnabled()
+{
+    static const bool on = [] {
+        const char *v = std::getenv("RG_PRODUCER_THREAD");
+        return !(v && std::strcmp(v, "0") == 0);
+    }();
+    return on;
+}
+
 class GifStage
 {
 public:
@@ -346,6 +362,59 @@ public:
                         mesh.vertices.size() * sizeof(GSNativeMesh::Vertex));
         }
         append(Kind::Mesh, m_meshBytes.data(), static_cast<uint32_t>(m_meshBytes.size()));
+    }
+
+    // Native pipeline producer work offloaded from VIF1 to the GIF thread:
+    // NativeMesh carries GSDrawState + 64 VU1 quads (1024 B) + header + vertices;
+    // NativePiece carries GSDrawState + texelUvs flag + header + vertices;
+    // ApplyProduced updates resident texture/palette bindings in exact FIFO order.
+    static constexpr size_t kVu1MatrixBytes = 64u * 16u;
+    void nativeMesh(const GSNativeMesh &mesh, const GSDrawState &state, const uint8_t *vu1Data)
+    {
+        const size_t vertBytes = mesh.vertices.size() * sizeof(GSNativeMesh::Vertex);
+        const size_t total = sizeof(GSDrawState) + kVu1MatrixBytes + sizeof(GSNativeMesh::Header) + vertBytes;
+        m_meshBytes.resize(total);
+        uint8_t *p = m_meshBytes.data();
+        std::memcpy(p, &state, sizeof(state));
+        p += sizeof(state);
+        std::memcpy(p, vu1Data, kVu1MatrixBytes);
+        p += kVu1MatrixBytes;
+        std::memcpy(p, &mesh.header, sizeof(mesh.header));
+        p += sizeof(mesh.header);
+        if (vertBytes != 0u)
+            std::memcpy(p, mesh.vertices.data(), vertBytes);
+        append(Kind::NativeMesh, m_meshBytes.data(), static_cast<uint32_t>(total));
+    }
+
+    void nativePiece(const GSNativeMesh &mesh, const GSDrawState &state, bool texelUvs)
+    {
+        const uint32_t flags = texelUvs ? 1u : 0u;
+        const size_t vertBytes = mesh.vertices.size() * sizeof(GSNativeMesh::Vertex);
+        const size_t total = sizeof(GSDrawState) + sizeof(flags) + sizeof(GSNativeMesh::Header) + vertBytes;
+        m_meshBytes.resize(total);
+        uint8_t *p = m_meshBytes.data();
+        std::memcpy(p, &state, sizeof(state));
+        p += sizeof(state);
+        std::memcpy(p, &flags, sizeof(flags));
+        p += sizeof(flags);
+        std::memcpy(p, &mesh.header, sizeof(mesh.header));
+        p += sizeof(mesh.header);
+        if (vertBytes != 0u)
+            std::memcpy(p, mesh.vertices.data(), vertBytes);
+        append(Kind::NativePiece, m_meshBytes.data(), static_cast<uint32_t>(total));
+    }
+
+    void applyProduced(const rg::nativeproducer::TakenProduced &taken)
+    {
+        append(Kind::ApplyProduced, reinterpret_cast<const uint8_t *>(&taken),
+               static_cast<uint32_t>(sizeof(taken)));
+    }
+
+    void barrier()
+    {
+        if (!m_staged.empty())
+            publish();
+        drain();
     }
 
     // From the VIF1 thread, at the end of each list and as a list fills a
@@ -413,6 +482,9 @@ private:
         Packet,
         Image,
         Mesh,
+        NativeMesh,
+        NativePiece,
+        ApplyProduced,
     };
     // A multiple of sixteen bytes, so the data after it stays quadword aligned.
     struct Header
@@ -498,6 +570,54 @@ private:
                         }
                         m_gs.submitNativeMesh(m_mesh);
                     }
+                    else if (header.kind == Kind::NativeMesh)
+                    {
+                        GSDrawState drawState;
+                        const uint8_t *p = data;
+                        std::memcpy(&drawState, p, sizeof(drawState));
+                        p += sizeof(drawState);
+                        const uint8_t *vu1 = p;
+                        p += kVu1MatrixBytes;
+                        std::memcpy(&m_mesh.header, p, sizeof(m_mesh.header));
+                        p += sizeof(m_mesh.header);
+                        const size_t vertBytes = header.size - (sizeof(drawState) + kVu1MatrixBytes + sizeof(m_mesh.header));
+                        m_mesh.vertices.resize(vertBytes / sizeof(GSNativeMesh::Vertex));
+                        if (vertBytes != 0u)
+                            std::memcpy(m_mesh.vertices.data(), p, vertBytes);
+                        if (!rg::nativeproducer::mesh(m_mesh, &drawState, vu1, 0u) && !absorbing())
+                            m_gs.submitNativeMesh(m_mesh);
+                    }
+                    else if (header.kind == Kind::NativePiece)
+                    {
+                        GSDrawState drawState;
+                        uint32_t flags = 0u;
+                        const uint8_t *p = data;
+                        std::memcpy(&drawState, p, sizeof(drawState));
+                        p += sizeof(drawState);
+                        std::memcpy(&flags, p, sizeof(flags));
+                        p += sizeof(flags);
+                        std::memcpy(&m_mesh.header, p, sizeof(m_mesh.header));
+                        p += sizeof(m_mesh.header);
+                        const size_t vertBytes = header.size - (sizeof(drawState) + sizeof(flags) + sizeof(m_mesh.header));
+                        m_mesh.vertices.resize(vertBytes / sizeof(GSNativeMesh::Vertex));
+                        if (vertBytes != 0u)
+                            std::memcpy(m_mesh.vertices.data(), p, vertBytes);
+                        if (rg::nativeproducer::piece(m_mesh, &drawState, flags != 0u))
+                            ++g_piecesMade;
+                        else if (absorbing())
+                            ++g_piecesDropped;
+                        else
+                        {
+                            ++g_piecesToGs;
+                            m_gs.submitNativeMesh(m_mesh);
+                        }
+                    }
+                    else if (header.kind == Kind::ApplyProduced)
+                    {
+                        rg::nativeproducer::TakenProduced taken;
+                        std::memcpy(&taken, data, sizeof(taken));
+                        rg::nativeproducer::applyProduced(taken);
+                    }
                     else
                     {
                         m_gs.processImageContinuation(data, header.size);
@@ -532,7 +652,7 @@ private:
 
     // A buffer goes over once it holds this much: a frame is several
     // megabytes, so the stage works beside the list, not after it.
-    static constexpr size_t kPublishBytes = 128u * 1024u;
+    static constexpr size_t kPublishBytes = 64u * 1024u;
     static constexpr size_t kCapacity = 64u * 1024u * 1024u;
     static constexpr size_t kPoolSize = 16u;
     static constexpr uint32_t kMxcsrFlags = 0x3Fu;
@@ -554,6 +674,11 @@ private:
 };
 
 GifStage *g_stage = nullptr;
+void producerBarrier()
+{
+    if (g_stage && t_onVif1Thread && producerThreadEnabled())
+        g_stage->barrier();
+}
 // A GS packet on its way, as the memory's GIF callback sends it (below).
 void deliverPacket(GS &gs, const uint8_t *data, uint32_t size);
 // A native strip likewise, in order with the packets. `vu1Data`: the VU1
@@ -1166,6 +1291,7 @@ void seeWithheld(const uint8_t *data, uint32_t size)
                          "[native-upload] stale record: DBP %04x DPSM %02x %ux%u%s, %u bytes (sent differs from the "
                          "record's guest memory): made again from what was sent\n",
                          u.dbp, u.dpsm, u.width, u.height, u.palette ? " (palette)" : "", u.expectBytes);
+        producerBarrier();
         rg::nativeproducer::replaceUpload(u.palette, u.dbp, u.dpsm, u.width, u.height, u.seen.data(),
                                           u.expectBytes);
     }
@@ -1249,11 +1375,28 @@ bool withholdUploads(const uint8_t *data, uint32_t size, std::vector<uint8_t> &k
                 bool palette = false;
                 uint64_t hash = 0u;
                 uint32_t hashedBytes = 0u;
+                bool took = false;
                 if ((trxdir & 3u) != 0u || bits == 0u)
                     ; // not an upload this takes
+                else if (g_stage && t_onVif1Thread && producerThreadEnabled())
+                {
+                    producer::TakenProduced taken;
+                    if (producer::popProduced(dbp, dbw, dpsm, rrw, rrh, taken))
+                    {
+                        g_stage->applyProduced(taken);
+                        palette = taken.palette;
+                        hash = taken.hash;
+                        hashedBytes = taken.bytes;
+                        took = true;
+                    }
+                    else
+                        producer::notePassed(producer::Passed::NotProduced);
+                }
                 else if (!producer::takeProduced(dbp, dbw, dpsm, rrw, rrh, palette, hash, hashedBytes))
                     producer::notePassed(producer::Passed::NotProduced);
                 else
+                    took = true;
+                if (took)
                 {
                     t_upload.transferBytes = (rrw * rrh * bits / 8u + 15u) & ~15u;
                     t_upload.palette = palette;
@@ -1368,6 +1511,7 @@ void feedCapture(const uint8_t *data, uint32_t size)
     if (c.data.size() < c.need)
         return;
     c.active = false;
+    producerBarrier();
     const uint64_t b = c.bitbltbuf;
     rg::nativeproducer::hostUpload(
         static_cast<uint32_t>((b >> 32) & 0x3FFFu), static_cast<uint32_t>((b >> 48) & 0x3Fu),
@@ -1391,6 +1535,7 @@ void transferRegister(uint8_t reg, uint64_t value)
             t_capture.active = false;
         if ((value & 3u) == 2u)
         {
+            producerBarrier();
             const uint64_t b = t_bitbltbuf;
             rg::nativeproducer::noteLocalCopy(
                 unsigned(b & 0x3FFFu), unsigned((b >> 16) & 0x3Fu), unsigned((b >> 24) & 0x3Fu),
@@ -1590,8 +1735,6 @@ bool native2D()
     static const bool on = rg::native2d::enabled();
     return on;
 }
-std::atomic<uint64_t> g_packetsConverted{0u}, g_packetsRefused{0u}, g_piecesMade{0u}, g_piecesToGs{0u},
-    g_piecesDropped{0u};
 
 // Step 5b: a converter mesh as the producer's window-space draw, under the
 // draw state the packets before it left (the PRIM write just before it
@@ -1604,6 +1747,11 @@ void deliverPiece(GS &gs, const rg::native2d::Piece &piece)
         g_thread->drain(); // the lists in flight first, as for the GS
     }
     const GSDrawState state = rg::drawstate::current();
+    if (g_stage && t_onVif1Thread && producerThreadEnabled())
+    {
+        g_stage->nativePiece(piece.mesh, state, piece.texelUvs);
+        return;
+    }
     if (rg::nativeproducer::piece(piece.mesh, &state, piece.texelUvs))
     {
         ++g_piecesMade;
@@ -1616,6 +1764,26 @@ void deliverPiece(GS &gs, const rg::native2d::Piece &piece)
     }
     ++g_piecesToGs;
     meshToGs(gs, piece.mesh);
+}
+
+// Direct non-transfer register writes produced by native2d::build: when
+// absorbing and no host upload is mid-stream, apply them straight to the
+// draw-state mirror without encoding/decoding an A+D GIF packet.
+void sendWrites(GS &gs, const std::vector<std::pair<uint8_t, uint64_t>> &writes)
+{
+    if (writes.empty())
+        return;
+    if (uploadsTaken() && absorbing() && t_upload.transferBytes == 0u && t_upload.imageBytes == 0u && !t_capture.active)
+    {
+        rg::drawstate::writeRegisters(writes.data(), writes.size());
+        g_absorbedPackets.fetch_add(1u, std::memory_order_relaxed);
+        for (const auto &[reg, value] : writes)
+            if (reg >= 0x60u && reg <= 0x62u)
+                absorbRegister(reg, value);
+        return;
+    }
+    const std::vector<uint8_t> packet = rg::native2d::registerPacket(writes);
+    sendRaw(gs, packet.data(), static_cast<uint32_t>(packet.size()));
 }
 
 // A packet on to the GS. Under the native pipeline's 2D its primitives
@@ -1633,12 +1801,25 @@ void sendPacket(GS &gs, const uint8_t *data, uint32_t size)
                                              [](const rg::native2d::Piece &p) { return !p.isPacket(); });
             if (!anyMesh)
             {
+                const bool directWrites =
+                    uploadsTaken() && absorbing() && t_upload.transferBytes == 0u && t_upload.imageBytes == 0u &&
+                    !t_capture.active &&
+                    std::all_of(pieces.begin(), pieces.end(),
+                                [](const rg::native2d::Piece &p) { return p.isWrites(); });
+                if (directWrites)
+                {
+                    for (const rg::native2d::Piece &piece : pieces)
+                        sendWrites(gs, piece.writes);
+                    return;
+                }
                 sendRaw(gs, data, size); // the converter has seen it
                 return;
             }
             for (const rg::native2d::Piece &piece : pieces)
             {
-                if (piece.isPacket())
+                if (piece.isWrites())
+                    sendWrites(gs, piece.writes);
+                else if (piece.isPacket())
                     sendRaw(gs, piece.bytes(), piece.size());
                 else
                     deliverPiece(gs, piece);
@@ -1710,6 +1891,7 @@ bool drawEffect(rg::nativefx::Effect kind, const std::vector<std::vector<uint8_t
     thread_local std::vector<std::vector<uint8_t>> withheld;
     if (!rg::nativefx::build(kind, packets, effect, withheld, why, unit))
         return false;
+    producerBarrier();
     rg::nativeproducer::noteEffect(effect);
     if (!rg::nativeproducer::effect(effect))
     {
@@ -1809,6 +1991,7 @@ std::atomic<uint64_t> g_compositeUnits{0u}, g_compositeRouted{0u}, g_compositeRu
 // A layer command or a tail to the producer; false when it refused it.
 bool sendEffect(GS &, const GSNativeEffect &effect)
 {
+    producerBarrier();
     rg::nativeproducer::noteEffect(effect);
     return rg::nativeproducer::effect(effect);
 }
@@ -2112,9 +2295,10 @@ void deliverPacket(GS &gs, const uint8_t *data, uint32_t size)
     rg::nativefx::Effect effect = rg::nativefx::Effect::None;
     uint32_t unit = 0u;
     const bool effects = nativeEffects() && t_onVif1Thread;
+    const bool comp = composites() && t_onVif1Thread;
+    const uint32_t address = (effects || comp) ? listAddress(data) : ~0u;
     if (effects)
     {
-        const uint32_t address = listAddress(data);
         const rg::nativefx::Place place = address == ~0u ? rg::nativefx::Place{} : rg::nativefx::placeAt(address);
         effect = place.effect;
         unit = effect == rg::nativefx::Effect::ColorFilter ? place.unit : 0u;
@@ -2123,7 +2307,7 @@ void deliverPacket(GS &gs, const uint8_t *data, uint32_t size)
             flushEffect();
         }
     }
-    if (composites() && t_onVif1Thread && compositePacket(gs, data, size, listAddress(data)))
+    if (comp && compositePacket(gs, data, size, address))
     {
         return;
     }
@@ -2200,6 +2384,11 @@ void deliverMesh(GS &gs, const GSNativeMesh &mesh, const uint8_t *vu1Data)
         if (g_stage && !t_onVif1Thread)
             g_thread->drain();
         const GSDrawState state = rg::drawstate::current();
+        if (g_stage && t_onVif1Thread && producerThreadEnabled())
+        {
+            g_stage->nativeMesh(mesh, state, vu1Data);
+            return;
+        }
         if (rg::nativeproducer::mesh(mesh, &state, vu1Data, 0u))
             return;
         // Refused here only for a buffer the game never named (counted as a

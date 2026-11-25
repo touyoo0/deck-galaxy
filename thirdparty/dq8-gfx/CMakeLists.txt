@@ -73,6 +73,9 @@ foreach(shader IN ITEMS
         SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/native/shaders/${file}"
         STAGE ${stage} SYMBOL ${symbol})
 endforeach()
+dq8_add_shader(dq8_gfx_native
+    SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/native/shaders/native_mesh.frag"
+    STAGE frag SYMBOL kNativeMeshOpaqueFragSpirv NO_DISCARD)
 
 add_library(dq8_gfx_sdlgpu STATIC
     src/gfx/backends/sdlgpu/sdlgpu_backend.cpp

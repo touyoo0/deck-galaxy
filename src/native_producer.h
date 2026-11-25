@@ -101,8 +101,22 @@ bool effect(const GSNativeEffect &effect);
 // when it did: the upload is withheld, and `palette` says which it was.
 // `hash` and `bytes`: the record's imageHash of the guest memory it was
 // made from (what the upload sends, when the game has not changed it since).
+struct TakenProduced
+{
+    bool palette = false;
+    uint32_t key = 0u;
+    uint32_t psm = 0u;
+    uint32_t id = 0u;
+    uint64_t hash = 0u;
+    uint32_t bytes = 0u;
+};
 bool takeProduced(uint32_t dbp, uint32_t dbw, uint32_t dpsm, uint32_t width, uint32_t height, bool &palette,
                   uint64_t &hash, uint32_t &bytes);
+// Split form for the producer thread: popProduced pops the queued upload on
+// VIF1 without touching residentTexture/residentPalette, and applyProduced
+// applies it on the GIF stage thread in exact FIFO order with queued draws.
+bool popProduced(uint32_t dbp, uint32_t dbw, uint32_t dpsm, uint32_t width, uint32_t height, TakenProduced &out);
+void applyProduced(const TakenProduced &taken);
 
 enum class Passed
 {

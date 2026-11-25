@@ -92,23 +92,43 @@ void observe(const uint8_t *data, uint32_t size)
 
 bool build(const Span *packets, size_t count, std::vector<Piece> &out, std::string &why)
 {
-    // The last call's meshes' vertex storage, for this call's meshes: a
-    // packet's meshes would otherwise allocate and free it each time.
+    // The last call's meshes' vertex storage and register buffers, for this call:
+    // a packet's pieces would otherwise allocate and free them each time.
     thread_local std::vector<std::vector<GSNativeMesh::Vertex>> spare;
+    thread_local std::vector<std::vector<std::pair<uint8_t, uint64_t>>> spareWrites;
+    thread_local std::vector<std::vector<uint8_t>> sparePackets;
     for (Piece &old : out)
+    {
         if (old.mesh.vertices.capacity() != 0u && spare.size() < 64u)
         {
             old.mesh.vertices.clear();
             spare.push_back(std::move(old.mesh.vertices));
         }
+        if (old.writes.capacity() != 0u && spareWrites.size() < 64u)
+        {
+            old.writes.clear();
+            spareWrites.push_back(std::move(old.writes));
+        }
+        if (old.packet.capacity() != 0u && sparePackets.size() < 64u)
+        {
+            old.packet.clear();
+            sparePackets.push_back(std::move(old.packet));
+        }
+    }
     out.clear();
     Carried &carried = t_carried;
     rg::gif::GifState &state = carried.state;
     std::vector<rg::gif::GifEvent> &queue = carried.queue;
     uint16_t &queuePrim = carried.queuePrim;
     thread_local std::vector<rg::gif::GifEvent> events;
-    std::vector<std::pair<uint8_t, uint64_t>> writes;
+    thread_local std::vector<std::pair<uint8_t, uint64_t>> writes;
+    writes.clear();
     Piece mesh;
+    if (!spare.empty())
+    {
+        mesh.mesh.vertices = std::move(spare.back());
+        spare.pop_back();
+    }
     uint16_t meshPrim = 0xFFFFu;
 
     const auto closeMesh = [&] {
@@ -157,7 +177,41 @@ bool build(const Span *packets, size_t count, std::vector<Piece> &out, std::stri
         {
             closeMesh();
             Piece piece;
-            piece.packet = adPacket(writes);
+            bool hasTransfer = false;
+            for (const auto &[reg, val] : writes)
+            {
+                if (reg >= 0x50u && reg <= 0x53u)
+                {
+                    hasTransfer = true;
+                    break;
+                }
+            }
+            if (hasTransfer)
+            {
+                if (!sparePackets.empty())
+                {
+                    piece.packet = std::move(sparePackets.back());
+                    sparePackets.pop_back();
+                }
+                const size_t bytes = 16u + writes.size() * 16u;
+                piece.packet.resize(bytes);
+                const uint64_t tag[2] = {static_cast<uint64_t>(writes.size()) | (1ull << 15) | (1ull << 60), 0xEull};
+                std::memcpy(piece.packet.data(), tag, sizeof(tag));
+                for (size_t i = 0; i < writes.size(); ++i)
+                {
+                    const uint64_t pair[2] = {writes[i].second, writes[i].first};
+                    std::memcpy(piece.packet.data() + 16u + i * 16u, pair, sizeof(pair));
+                }
+            }
+            else
+            {
+                if (!spareWrites.empty())
+                {
+                    piece.writes = std::move(spareWrites.back());
+                    spareWrites.pop_back();
+                }
+                piece.writes.assign(writes.begin(), writes.end());
+            }
             out.push_back(std::move(piece));
             writes.clear();
         }

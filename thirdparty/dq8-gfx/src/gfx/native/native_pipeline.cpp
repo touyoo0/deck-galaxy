@@ -26,7 +26,10 @@ struct Queue
 {
     std::mutex mutex;
     std::vector<Record> records;
+    std::vector<Vertex> meshVertices;
+    std::vector<uint32_t> meshIndices;
     std::vector<Id> evicted;
+    std::atomic<bool> evictedPending{false};
     std::function<std::string()> producerStats;
 };
 Queue &queue()
@@ -214,12 +217,38 @@ void push(Record &&record)
     q.records.push_back(std::move(record));
 }
 
+void pushMesh(MeshDraw &&draw, const Vertex *vertices, uint32_t vertexCount, const uint32_t *indices,
+              uint32_t indexCount)
+{
+    if (!enabled())
+        return;
+    Queue &q = queue();
+    std::lock_guard lock(q.mutex);
+    draw.firstVertex = static_cast<uint32_t>(q.meshVertices.size());
+    draw.vertexCount = vertexCount;
+    if (vertexCount != 0u)
+        q.meshVertices.insert(q.meshVertices.end(), vertices, vertices + vertexCount);
+    draw.firstIndex = static_cast<uint32_t>(q.meshIndices.size());
+    draw.indexCount = indexCount;
+    if (indexCount != 0u)
+        q.meshIndices.insert(q.meshIndices.end(), indices, indices + indexCount);
+    q.records.push_back(std::move(draw));
+}
+
+bool hasEvicted()
+{
+    return queue().evictedPending.load(std::memory_order_acquire);
+}
+
 std::vector<Id> takeEvicted()
 {
     Queue &q = queue();
+    if (!q.evictedPending.load(std::memory_order_acquire))
+        return {};
     std::lock_guard lock(q.mutex);
     std::vector<Id> out;
     out.swap(q.evicted);
+    q.evictedPending.store(false, std::memory_order_release);
     return out;
 }
 
@@ -264,7 +293,7 @@ SDL_GPUTexture *Renderer::createTexture(SDL_GPUDevice *device, SDL_GPUTextureFor
     return texture;
 }
 
-void Renderer::apply(SDL_GPUDevice *device, Record &record, std::string &error)
+void Renderer::apply(SDL_GPUDevice *device, Record &record, bool inPlaceMeshes, std::string &error)
 {
     ++m_records[record.index()];
     std::visit(
@@ -285,7 +314,17 @@ void Renderer::apply(SDL_GPUDevice *device, Record &record, std::string &error)
             }
             else if constexpr (std::is_same_v<T, Camera>)
             {
-                m_cameras[r.id] = r;
+                CachedCamera cached{};
+                cached.cam = r;
+                for (int i = 0; i < 4; ++i)
+                    for (int j = 0; j < 4; ++j)
+                    {
+                        double sum = 0.0;
+                        for (int k = 0; k < 4; ++k)
+                            sum += double(r.view[i * 4 + k]) * double(r.projection[k * 4 + j]);
+                        cached.viewProj[i * 4 + j] = sum;
+                    }
+                m_cameras[r.id] = cached;
                 // A moving camera is a new one every frame: keep the window
                 // the producer can still name, not the whole session.
                 m_newestCamera = std::max(m_newestCamera, r.id);
@@ -295,6 +334,37 @@ void Renderer::apply(SDL_GPUDevice *device, Record &record, std::string &error)
             else if constexpr (std::is_same_v<T, MeshDraw>)
             {
                 count(r);
+                if (inPlaceMeshes)
+                {
+                    if (r.indexCount != 0u && r.firstVertex != 0u)
+                    {
+                        uint32_t *dstI = m_meshIndices.data() + r.firstIndex;
+                        const uint32_t baseV = r.firstVertex;
+                        for (uint32_t k = 0; k < r.indexCount; ++k)
+                            dstI[k] += baseV;
+                    }
+                }
+                else
+                {
+                    const uint32_t baseVertex = static_cast<uint32_t>(m_meshVerts.size());
+                    const uint32_t baseIndex = static_cast<uint32_t>(m_meshIndices.size());
+                    if (r.vertexCount != 0u)
+                    {
+                        m_meshVerts.resize(baseVertex + r.vertexCount);
+                        std::memcpy(m_meshVerts.data() + baseVertex, m_drainedVerts.data() + r.firstVertex,
+                                    size_t(r.vertexCount) * sizeof(Vertex));
+                    }
+                    if (r.indexCount != 0u)
+                    {
+                        const uint32_t *srcI = m_drainedIndices.data() + r.firstIndex;
+                        m_meshIndices.resize(baseIndex + r.indexCount);
+                        uint32_t *dstI = m_meshIndices.data() + baseIndex;
+                        for (uint32_t k = 0; k < r.indexCount; ++k)
+                            dstI[k] = srcI[k] + baseVertex;
+                    }
+                    r.firstVertex = baseVertex;
+                    r.firstIndex = baseIndex;
+                }
                 // Any target (step 5a); one not declared is counted when drawn.
                 m_meshes.push_back(std::move(r));
             }
@@ -303,7 +373,11 @@ void Renderer::apply(SDL_GPUDevice *device, Record &record, std::string &error)
                 // The draws since the last one are a frame; a frame not yet
                 // drawn when the next closes is dropped (the newest shows).
                 m_frameMeshes.swap(m_meshes);
+                m_frameVerts.swap(m_meshVerts);
+                m_frameIndices.swap(m_meshIndices);
                 m_meshes.clear();
+                m_meshVerts.clear();
+                m_meshIndices.clear();
                 m_frameReady = true;
                 ++m_meshCounts.frames;
             }
@@ -434,6 +508,7 @@ void Renderer::evict(SDL_GPUDevice *device)
     Queue &q = queue();
     std::lock_guard lock(q.mutex);
     q.evicted.insert(q.evicted.end(), gone.begin(), gone.end());
+    q.evictedPending.store(true, std::memory_order_release);
 }
 
 bool Renderer::ensureView(SDL_GPUDevice *device, std::string &error)
@@ -559,13 +634,43 @@ bool Renderer::render(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, uin
         Queue &q = queue();
         std::lock_guard lock(q.mutex);
         m_drained.swap(q.records);
+        m_drainedVerts.swap(q.meshVertices);
+        m_drainedIndices.swap(q.meshIndices);
+    }
+    // Fast path: when m_meshes is empty and no MeshDraw appears after a Present
+    // in this batch (the steady-state 1-frame-per-render case), swap vertex and
+    // index staging buffers directly into m_meshVerts/m_meshIndices (zero copy).
+    bool inPlaceMeshes = m_meshes.empty() && m_meshVerts.empty() && m_meshIndices.empty();
+    if (inPlaceMeshes)
+    {
+        bool seenPresent = false;
+        for (const Record &rec : m_drained)
+        {
+            if (std::holds_alternative<Present>(rec))
+                seenPresent = true;
+            else if (seenPresent && std::holds_alternative<MeshDraw>(rec))
+            {
+                inPlaceMeshes = false;
+                break;
+            }
+        }
+    }
+    if (inPlaceMeshes)
+    {
+        m_meshVerts.swap(m_drainedVerts);
+        m_meshIndices.swap(m_drainedIndices);
+    }
+    else
+    {
+        m_meshVerts.reserve(m_meshVerts.size() + m_drainedVerts.size());
+        m_meshIndices.reserve(m_meshIndices.size() + m_drainedIndices.size());
     }
     // A texture the GPU refuses is counted and left out, not the frame lost.
     static bool told = false;
     for (Record &record : m_drained)
     {
         std::string refused;
-        apply(device, record, refused);
+        apply(device, record, inPlaceMeshes, refused);
         if (!refused.empty())
         {
             ++m_refused;
@@ -575,6 +680,8 @@ bool Renderer::render(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, uin
         }
     }
     m_drained.clear();
+    m_drainedVerts.clear();
+    m_drainedIndices.clear();
     std::string meshError;
     const bool meshes = ensureMeshes(device, meshError);
     static bool toldMeshes = false;
@@ -613,7 +720,8 @@ bool Renderer::render(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, uin
         const uint32_t s = std::max(scale, 1u);
         bool fresh = false;
         std::string failed;
-        SDL_GPUTexture *target = targetTexture(device, fill.id, false, fill.width * s, fill.height * s, fresh, failed);
+        SDL_GPUTexture *target =
+            targetTexture(device, fill.id, false, fill.width * s, fill.height * s, s, fresh, failed);
         if (target)
         {
             SDL_GPUBlitInfo blit{};
@@ -743,7 +851,8 @@ std::string Renderer::statsLine()
             ", R3 scene float depth " + d(now.sceneFloatDepth, was.sceneFloatDepth) + ", R4 material " +
             d(now.materialKnown, was.materialKnown) + ", R5 normals " + d(now.normals, was.normals);
     const MeshCounts &mc = m_meshCounts, &mr = m_meshReported;
-    line += " | meshes drawn " + d(mc.drawn, mr.drawn) + " (offscreen " + d(mc.offscreen, mr.offscreen) + ") over " +
+    line += " | meshes drawn " + d(mc.drawn, mr.drawn) + " (merged " + d(mc.merged, mr.merged) + ", offscreen " +
+            d(mc.offscreen, mr.offscreen) + ") over " +
             d(mc.frames, mr.frames) + " frames in " + d(mc.passes, mr.passes) +
             " passes; not drawn: target not declared " + d(mc.noTarget, mr.noTarget) + ", a depth buffer as color " +
             d(mc.depthAsColor, mr.depthAsColor) + ", no camera " + d(mc.noCamera, mr.noCamera) +
@@ -1004,12 +1113,13 @@ void Renderer::serveColorReads(SDL_GPUDevice *device)
         e->second.width = answerW;
         e->second.height = answerH;
     };
-    const uint32_t s = std::max<uint32_t>(m_frameScale, 1u);
+    const uint32_t frameScale = std::max<uint32_t>(m_frameScale, 1u);
     for (const auto &[id, read] : waiting)
     {
         // The scene, or an offscreen target, as the last frame left it.
         SDL_GPUTexture *texture = nullptr;
         uint32_t texW = 0, texH = 0;
+        uint32_t s = frameScale;
         if (read.target == m_sceneTarget || read.target == 0u)
         {
             texture = m_scene;
@@ -1021,6 +1131,8 @@ void Renderer::serveColorReads(SDL_GPUDevice *device)
             texture = t->second.texture;
             texW = t->second.width;
             texH = t->second.height;
+            if (t->second.scale != 0u)
+                s = t->second.scale;
         }
         Rect r = read.rect;
         if (read.whole)
@@ -1159,7 +1271,13 @@ void Renderer::release(SDL_GPUDevice *device)
     releaseMeshes(device);
     releaseDepth(device);
     m_meshes.clear();
+    m_meshVerts.clear();
+    m_meshIndices.clear();
     m_frameMeshes.clear();
+    m_frameVerts.clear();
+    m_frameIndices.clear();
+    m_drainedVerts.clear();
+    m_drainedIndices.clear();
     if (m_scene)
         SDL_ReleaseGPUTexture(device, m_scene);
     for (auto &[id, image] : m_images)

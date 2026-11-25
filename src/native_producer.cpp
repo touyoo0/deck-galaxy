@@ -15,6 +15,8 @@
 #include <vector>
 
 #include "gfx/native/native_pipeline.h"
+#define XXH_INLINE_ALL
+#include "gfx/backends/sdlgpu/xxhash.h"
 #include "runtime/gs/ps2_gs_psmct32.h"
 #include "runtime/gs/ps2_gs_psmt8.h"
 #include "runtime/gs/gs_types.h"
@@ -228,35 +230,10 @@ State &state()
     return instance;
 }
 
-// The identity of an image's bytes, never 0 (as the GS path's named
-// textures hashed them; one pass of four lanes, 32 bytes a step).
+// The identity of an image's bytes, never 0 (XXH3-64, SIMD-accelerated).
 uint64_t imageHash(const uint8_t *at, size_t size)
 {
-    constexpr uint64_t k = 0x9E3779B97F4A7C15ull;
-    uint64_t lane[4] = {k, k ^ 1u, k ^ 2u, k ^ 3u};
-    size_t left = size;
-    while (left >= 32u)
-    {
-        for (int i = 0; i < 4; ++i)
-        {
-            uint64_t word;
-            std::memcpy(&word, at + i * 8, 8);
-            lane[i] = (lane[i] ^ word) * k;
-            lane[i] ^= lane[i] >> 29;
-        }
-        at += 32;
-        left -= 32u;
-    }
-    uint64_t tail = 0u;
-    if (left)
-        std::memcpy(&tail, at, left);
-    uint64_t h = size;
-    for (uint64_t v : {lane[0], lane[1], lane[2], lane[3], tail})
-    {
-        h = (h ^ v) * k;
-        h ^= h >> 31;
-    }
-    return h | 1u;
+    return XXH3_64bits(at, size) | 1u;
 }
 
 uint64_t keyOf(uint64_t hash, uint32_t a, uint32_t b, uint32_t c)
@@ -381,6 +358,8 @@ bool textureNamed(const State &s, native::Id id)
 // 4 MiB. The rest are forgotten here, so they are made again when uploaded.
 void forgetEvicted(State &s)
 {
+    if (!native::hasEvicted())
+        return;
     for (const native::Id id : native::takeEvicted())
     {
         const auto key = s.textureKeys.find(id);
@@ -471,10 +450,6 @@ void texture(const TextureLevel &l)
 {
     if (!native::enabled())
         return;
-    State &s = state();
-    std::lock_guard lock(s.mutex);
-    forgetEvicted(s);
-    ++s.counts.levels;
     const uint32_t psm = l.psm & 0x3Fu;
     const size_t texels = size_t(l.width) * l.height;
     // What it occupies in EE memory, as sent.
@@ -493,6 +468,10 @@ void texture(const TextureLevel &l)
         bytes = (texels + 1u) / 2u;
     else
     {
+        State &s = state();
+        std::lock_guard lock(s.mutex);
+        forgetEvicted(s);
+        ++s.counts.levels;
         ++s.counts.refusedFormat;
         // First sight of each (format, size): which texture the producer drops.
         static std::set<uint64_t> seenRefused;
@@ -503,12 +482,21 @@ void texture(const TextureLevel &l)
     }
     if (texels == 0u || bytes == 0u || !l.ram || l.ramBytes < bytes || l.width > 4096u || l.height > 4096u)
     {
+        State &s = state();
+        std::lock_guard lock(s.mutex);
+        forgetEvicted(s);
+        ++s.counts.levels;
         ++s.counts.refusedBytes;
         return;
     }
+    // Hash outside s.mutex so VIF1 does not stall waiting on GameThread.
     const uint64_t hash = imageHash(l.ram, bytes);
-    s.counts.bytesHashed += bytes;
     const uint64_t key = keyOf(hash, psm | (l.preSwizzled ? 0x100u : 0u), l.width, l.height);
+    State &s = state();
+    std::lock_guard lock(s.mutex);
+    forgetEvicted(s);
+    ++s.counts.levels;
+    s.counts.bytesHashed += bytes;
     const native::Id palette = (psm == kT8 || psm == kT4) ? (s.paletteAt.count(l.cbp) ? s.paletteAt[l.cbp] : 0u) : 0u;
     if (const auto known = s.textureIds.find(key); known != s.textureIds.end())
     {
@@ -591,20 +579,23 @@ void palette(const uint8_t *ram, uint32_t ramBytes, uint32_t cbp, uint32_t cpsm,
 {
     if (!native::enabled())
         return;
-    State &s = state();
-    std::lock_guard lock(s.mutex);
-    forgetEvicted(s);
     cpsm &= 0x3Fu;
     const bool is16 = cpsm == kCT16 || cpsm == kCT16S;
     const uint32_t bytes = entries * (is16 ? 2u : 4u);
     if (!ram || (entries != 16u && entries != 256u) || (cpsm != kCT32 && !is16) || ramBytes < bytes)
     {
+        State &s = state();
+        std::lock_guard lock(s.mutex);
+        forgetEvicted(s);
         ++s.counts.palettesRefused;
         return;
     }
     const uint64_t hash = imageHash(ram, bytes);
-    s.counts.bytesHashed += bytes;
     const uint64_t key = keyOf(hash, cpsm, entries, 0u);
+    State &s = state();
+    std::lock_guard lock(s.mutex);
+    forgetEvicted(s);
+    s.counts.bytesHashed += bytes;
     if (const auto known = s.paletteIds.find(key); known != s.paletteIds.end())
     {
         ++s.counts.palettesKnown;
@@ -805,8 +796,7 @@ void target(uint32_t base, uint32_t bufferWidth, uint32_t width, uint32_t height
     declare(s, base, width, height, psm, kind);
 }
 
-bool takeProduced(uint32_t dbp, uint32_t dbw, uint32_t dpsm, uint32_t width, uint32_t height, bool &palette,
-                  uint64_t &hash, uint32_t &bytes)
+bool popProduced(uint32_t dbp, uint32_t dbw, uint32_t dpsm, uint32_t width, uint32_t height, TakenProduced &out)
 {
     if (!native::enabled())
         return false;
@@ -820,19 +810,12 @@ bool takeProduced(uint32_t dbp, uint32_t dbw, uint32_t dpsm, uint32_t width, uin
         if (p.dbp == (dbp & 0x3FFFu) && p.dbw == std::max(dbw, 1u) && p.dpsm == (dpsm & 0x3Fu) && p.width == width &&
             p.height == height)
         {
-            palette = p.palette;
-            hash = p.hash;
-            bytes = p.bytes;
-            if (p.palette)
-            {
-                s.residentPalette[p.key] = p.id;
-                s.takenPaletteSeq[p.key] = ++s.sequence;
-            }
-            else
-            {
-                s.residentTexture[p.key] = {p.psm, p.id};
-                s.uploadedSeq[p.key] = s.takenSeq[p.key] = ++s.sequence;
-            }
+            out.palette = p.palette;
+            out.key = p.key;
+            out.psm = p.psm;
+            out.id = p.id;
+            out.hash = p.hash;
+            out.bytes = p.bytes;
             // The ones before it were never sent (docs/NATIVE-PIPELINE.md
             // step 6, "produced levels never taken"): the first few, by shape.
             static uint32_t told = 0u;
@@ -850,6 +833,37 @@ bool takeProduced(uint32_t dbp, uint32_t dbw, uint32_t dpsm, uint32_t width, uin
         }
     }
     return false;
+}
+
+void applyProduced(const TakenProduced &taken)
+{
+    if (!native::enabled())
+        return;
+    State &s = state();
+    std::lock_guard lock(s.mutex);
+    if (taken.palette)
+    {
+        s.residentPalette[taken.key] = taken.id;
+        s.takenPaletteSeq[taken.key] = ++s.sequence;
+    }
+    else
+    {
+        s.residentTexture[taken.key] = {taken.psm, taken.id};
+        s.uploadedSeq[taken.key] = s.takenSeq[taken.key] = ++s.sequence;
+    }
+}
+
+bool takeProduced(uint32_t dbp, uint32_t dbw, uint32_t dpsm, uint32_t width, uint32_t height, bool &palette,
+                  uint64_t &hash, uint32_t &bytes)
+{
+    TakenProduced taken;
+    if (!popProduced(dbp, dbw, dpsm, width, height, taken))
+        return false;
+    applyProduced(taken);
+    palette = taken.palette;
+    hash = taken.hash;
+    bytes = taken.bytes;
+    return true;
 }
 
 void replaceUpload(bool palette, uint32_t dbp, uint32_t dpsm, uint32_t width, uint32_t height, const uint8_t *data,
@@ -1379,7 +1393,9 @@ bool mesh(const GSNativeMesh &mesh, const GSDrawState *drawState, const uint8_t 
     const bool listCull = lists && h.backface;
     float winding = listCull ? -h.winding : h.winding;
     uint64_t skipped = 0u;
-    draw.indices.reserve(count >= 2u ? (count - 2u) * 3u : 0u);
+    thread_local std::vector<uint32_t> tmpIndices;
+    tmpIndices.clear();
+    tmpIndices.reserve(count >= 2u ? (count - 2u) * 3u : 0u);
     for (uint32_t k = 1; k < count; ++k)
     {
         const bool judged = !listCull || k % 3u == 2u;
@@ -1411,16 +1427,17 @@ bool mesh(const GSNativeMesh &mesh, const GSDrawState *drawState, const uint8_t 
             ++skipped;
             continue;
         }
-        draw.indices.push_back(k - 2u);
-        draw.indices.push_back(k - 1u);
-        draw.indices.push_back(k);
+        tmpIndices.push_back(k - 2u);
+        tmpIndices.push_back(k - 1u);
+        tmpIndices.push_back(k);
     }
 
-    draw.vertices.resize(count);
+    thread_local std::vector<native::Vertex> tmpVertices;
+    tmpVertices.resize(count);
     for (uint32_t k = 0; k < count; ++k)
     {
         const GSNativeMesh::Vertex &in = mesh.vertices[k];
-        native::Vertex &out = draw.vertices[k];
+        native::Vertex &out = tmpVertices[k];
         out.position[0] = in.x;
         out.position[1] = in.y;
         out.position[2] = in.z;
@@ -1430,6 +1447,7 @@ bool mesh(const GSNativeMesh &mesh, const GSDrawState *drawState, const uint8_t 
         out.color[1] = std::fmin(in.g, h.colorMax[1]);
         out.color[2] = std::fmin(in.b, h.colorMax[2]);
         out.color[3] = std::fmin(in.a, h.colorMax[3]);
+        out.fog = 255.0f;
     }
     std::memcpy(draw.fog, h.fog, sizeof(draw.fog));
 
@@ -1443,19 +1461,51 @@ bool mesh(const GSNativeMesh &mesh, const GSDrawState *drawState, const uint8_t 
     // the screen's scale and offset), not a viewport after 8-11: the
     // program's matrix is model x view x (4-7). The camera keeps 8-11 as
     // its clip space and the rest, inverse(8-11) x (4-7), as its viewport.
-    float toWindow[16], inverse[16];
-    std::memcpy(toWindow, viewport, sizeof(toWindow));
-    multiply(model, view, whole);
-    multiply(whole, toWindow, whole);
-    const bool split = sameMatrix(whole, h.matrix) && invert(projection, inverse);
+    // Cache view*toWindow and inverse(projection)*toWindow across meshes
+    // sharing the same camera (almost every chunk in a frame).
+    struct CamCache
+    {
+        bool valid = false;
+        float view[16] = {};
+        float projection[16] = {};
+        float toWindow[16] = {};
+        float viewToWindow[16] = {};
+        bool invOk = false;
+        float viewport[16] = {};
+    };
+    thread_local CamCache t_cam;
+    const bool sameViewToWin = t_cam.valid && std::memcmp(t_cam.view, view, sizeof(view)) == 0 &&
+                               std::memcmp(t_cam.toWindow, viewport, sizeof(viewport)) == 0;
+    const bool sameProjToWin = t_cam.valid && std::memcmp(t_cam.projection, projection, sizeof(projection)) == 0 &&
+                               std::memcmp(t_cam.toWindow, viewport, sizeof(viewport)) == 0;
+    if (!sameViewToWin)
+    {
+        multiply(view, viewport, t_cam.viewToWindow);
+        std::memcpy(t_cam.view, view, sizeof(view));
+    }
+    if (!sameProjToWin)
+    {
+        float inverse[16];
+        t_cam.invOk = invert(projection, inverse);
+        if (t_cam.invOk)
+            multiply(inverse, viewport, t_cam.viewport);
+        std::memcpy(t_cam.projection, projection, sizeof(projection));
+    }
+    if (!sameViewToWin || !sameProjToWin)
+    {
+        std::memcpy(t_cam.toWindow, viewport, sizeof(viewport));
+        t_cam.valid = true;
+    }
+    multiply(model, t_cam.viewToWindow, whole);
+    const bool split = t_cam.invOk && sameMatrix(whole, h.matrix);
     if (split)
-        multiply(inverse, toWindow, viewport);
+        std::memcpy(viewport, t_cam.viewport, sizeof(viewport));
 
     State &s = state();
     std::lock_guard lock(s.mutex);
     forgetEvicted(s);
     ++s.counts.meshes;
-    s.counts.triangles += draw.indices.size() / 3u;
+    s.counts.triangles += tmpIndices.size() / 3u;
     s.counts.trianglesSkipped += skipped;
     if (!drawState)
     {
@@ -1545,10 +1595,11 @@ bool mesh(const GSNativeMesh &mesh, const GSDrawState *drawState, const uint8_t 
                      c.tex0.tbp0, c.tex0.tbw, c.tex0.psm & 0x3Fu, 1u << c.tex0.tw, 1u << c.tex0.th, c.tex0.cbp,
                      c.tex0.csa, c.tex0.tfx, c.tex0.tcc, m.sourceTarget ? "target" : "texture",
                      m.sourceTarget ? m.sourceTarget : m.texture, m.palette, (unsigned long long)c.alpha,
-                     (unsigned long long)c.test, (unsigned long long)c.clamp, draw.vertices.size(),
+                     (unsigned long long)c.test, (unsigned long long)c.clamp, tmpVertices.size(),
                      m.known ? "" : " (unknown)");
     }
-    native::push(native::MeshDraw(std::move(draw)));
+    native::pushMesh(std::move(draw), tmpVertices.data(), static_cast<uint32_t>(tmpVertices.size()),
+                     tmpIndices.data(), static_cast<uint32_t>(tmpIndices.size()));
     return true;
 }
 
@@ -2133,22 +2184,22 @@ bool piece(const GSNativeMesh &mesh, const GSDrawState *drawState, bool texels)
         const float x1 = float(std::min<uint32_t>(std::max(c.frame.fbw, 1u) * 64u, c.scissor.x1 + 1u));
         const float y1 = float((c.scissor.y1 + 1u) / 2u); // the CT16 view is twice the 32-bit rows
         const float corners[4][2] = {{0.0f, 0.0f}, {x1, 0.0f}, {0.0f, y1}, {x1, y1}};
-        draw.vertices.resize(4);
+        native::Vertex quadVerts[4];
         for (int v = 0; v < 4; ++v)
         {
-            native::Vertex &out = draw.vertices[v];
+            native::Vertex &out = quadVerts[v];
             out.position[0] = out.uv[0] = corners[v][0];
             out.position[1] = out.uv[1] = corners[v][1];
             for (int ch = 0; ch < 4; ++ch)
                 out.color[ch] = 128.0f;
         }
-        draw.indices = {0u, 1u, 2u, 1u, 3u, 2u};
+        static constexpr uint32_t kQuadIndices[6] = {0u, 1u, 2u, 1u, 3u, 2u};
         draw.scissor = {0, 0, int32_t(x1), int32_t(y1)};
         draw.fog[0] = draw.fog[1] = 255.0f;
         ++s.counts.piecesMade;
         ++s.counts.opsGreenToAlpha;
         s.drawnSeq[seqKey] = ++s.sequence;
-        native::push(native::MeshDraw(std::move(draw)));
+        native::pushMesh(std::move(draw), quadVerts, 4u, kQuadIndices, 6u);
         return true;
     }
     native::Material &m = draw.material;
@@ -2264,11 +2315,13 @@ bool piece(const GSNativeMesh &mesh, const GSDrawState *drawState, bool texels)
     }
     const float ofx = static_cast<float>(c.xyoffset.ofx) / 16.0f;
     const float ofy = static_cast<float>(c.xyoffset.ofy) / 16.0f;
-    draw.vertices.resize(mesh.vertices.size());
-    for (size_t k = 0; k < mesh.vertices.size(); ++k)
+    thread_local std::vector<native::Vertex> pieceVerts;
+    const size_t vcount = mesh.vertices.size();
+    pieceVerts.resize(vcount);
+    for (size_t k = 0; k < vcount; ++k)
     {
         const GSNativeMesh::Vertex &in = mesh.vertices[k];
-        native::Vertex &out = draw.vertices[k];
+        native::Vertex &out = pieceVerts[k];
         const float w = fogged && in.z != 0.0f ? in.z : 1.0f;
         out.position[0] = in.x / w - ofx;
         out.position[1] = in.y / w - ofy;
@@ -2280,13 +2333,17 @@ bool piece(const GSNativeMesh &mesh, const GSDrawState *drawState, bool texels)
         out.color[2] = in.b;
         out.color[3] = in.a;
         // build2D's fogged form: w = 1 + (F + 0.25) / 255.
-        if (fogged)
-            out.fog = std::clamp((w - 1.0f) * 255.0f - 0.25f, 0.0f, 255.0f);
+        out.fog = fogged ? std::clamp((w - 1.0f) * 255.0f - 0.25f, 0.0f, 255.0f) : 255.0f;
     }
-    const uint32_t count = static_cast<uint32_t>(draw.vertices.size()) / 3u * 3u;
-    draw.indices.resize(count);
-    for (uint32_t k = 0; k < count; ++k)
-        draw.indices[k] = k;
+    const uint32_t count = static_cast<uint32_t>(vcount) / 3u * 3u;
+    thread_local std::vector<uint32_t> pieceIndices;
+    if (pieceIndices.size() < count)
+    {
+        const uint32_t prev = static_cast<uint32_t>(pieceIndices.size());
+        pieceIndices.resize(count);
+        for (uint32_t k = prev; k < count; ++k)
+            pieceIndices[k] = k;
+    }
     draw.scissor = {c.scissor.x0, c.scissor.y0, c.scissor.x1 + 1, c.scissor.y1 + 1};
     draw.fog[0] = draw.fog[1] = 255.0f; // a model's F: none (the vertices carry theirs)
     m.fog = fogged;
@@ -2294,7 +2351,8 @@ bool piece(const GSNativeMesh &mesh, const GSDrawState *drawState, bool texels)
     draw.fogColor[1] = drawState->fogG;
     draw.fogColor[2] = drawState->fogB;
     m.known = known;
-    if (why && std::getenv("RG_NATIVE_UNKNOWN_LOG"))
+    static const bool logUnknown = std::getenv("RG_NATIVE_UNKNOWN_LOG") != nullptr;
+    if (why && logUnknown)
     {
         static uint64_t seen = 0u;
         if (!(seen & (1ull << why)))
@@ -2312,7 +2370,7 @@ bool piece(const GSNativeMesh &mesh, const GSDrawState *drawState, bool texels)
     ++s.counts.piecesMade;
     if (draw.target != s.layer || s.layer == 0u) // a routed draw leaves the buffer as it was
         s.drawnSeq[seqKey] = ++s.sequence;
-    native::push(native::MeshDraw(std::move(draw)));
+    native::pushMesh(std::move(draw), pieceVerts.data(), static_cast<uint32_t>(vcount), pieceIndices.data(), count);
     return true;
 }
 
@@ -2365,7 +2423,7 @@ namespace
 {
 // Locked. A window-space rectangle into `target` (x1, y1 exclusive): a clear
 // to transparent black, or, with `source`, that target's same pixels copied.
-native::MeshDraw rectDraw(native::Id target, const int32_t box[4], native::Id source)
+void pushRectDraw(native::Id target, const int32_t box[4], native::Id source)
 {
     native::MeshDraw draw;
     draw.target = target;
@@ -2381,19 +2439,19 @@ native::MeshDraw rectDraw(native::Id target, const int32_t box[4], native::Id so
     m.known = true;
     const float x0 = float(box[0]), y0 = float(box[1]), x1 = float(box[2]), y1 = float(box[3]);
     const float corners[4][2] = {{x0, y0}, {x1, y0}, {x0, y1}, {x1, y1}};
-    draw.vertices.resize(4);
+    native::Vertex verts[4];
     for (int v = 0; v < 4; ++v)
     {
-        native::Vertex &out = draw.vertices[v];
+        native::Vertex &out = verts[v];
         out.position[0] = out.uv[0] = corners[v][0];
         out.position[1] = out.uv[1] = corners[v][1];
         for (float &c : out.color)
             c = source != 0u ? 128.0f : 0.0f;
     }
-    draw.indices = {0u, 1u, 2u, 1u, 3u, 2u};
+    static constexpr uint32_t kQuadIndices[6] = {0u, 1u, 2u, 1u, 3u, 2u};
     draw.scissor = {box[0], box[1], box[2], box[3]};
     draw.fog[0] = draw.fog[1] = 255.0f;
-    return draw;
+    native::pushMesh(std::move(draw), verts, 4u, kQuadIndices, 6u);
 }
 
 // Locked. Step 5c: the object layer commands (gs_types.h's kRouteLayer ...):
@@ -2420,7 +2478,7 @@ bool layerCommand(State &s, const GSNativeEffect &e)
         s.layerBox[2] = std::min<int32_t>(e.box[2], s.layerWidth);
         s.layerBox[3] = std::min<int32_t>(e.box[3], s.layerHeight);
         if (s.layerBox[2] > s.layerBox[0] && s.layerBox[3] > s.layerBox[1])
-            native::push(native::MeshDraw(rectDraw(layer, s.layerBox, 0u)));
+            pushRectDraw(layer, s.layerBox, 0u);
         s.routing = true;
         s.routeBase = base;
         ++s.counts.layersRouted;
@@ -2441,7 +2499,7 @@ bool layerCommand(State &s, const GSNativeEffect &e)
             const native::Id into = targetForUnrouted(s, base, s.layerWidth, s.layerHeight, 0u);
             if (into == 0u)
                 return false;
-            native::push(native::MeshDraw(rectDraw(into, s.layerBox, s.layer)));
+            pushRectDraw(into, s.layerBox, s.layer);
             s.drawnSeq[base] = ++s.sequence;
             ++s.counts.tailsBack;
         }
@@ -2462,7 +2520,7 @@ namespace
 // the character's own sprites follow and cover its inside, so only what sticks
 // out of it stays. (The game's glow mask is 64x64 for the whole frame: a texel
 // of it is 8 pixels, too coarse to be thin.)
-void outlineSprite(State &s, const native::MeshDraw &base)
+void outlineSprite(State &s, const native::MeshDraw &base, const std::array<native::Vertex, 4> &baseVerts)
 {
     static const float width = [] {
         const char *v = std::getenv("RG_NATIVE_AURA_PX");
@@ -2472,11 +2530,12 @@ void outlineSprite(State &s, const native::MeshDraw &base)
         const char *v = std::getenv("RG_NATIVE_AURA_GAIN");
         return std::clamp(v ? static_cast<float>(std::atof(v)) : 140.0f, 0.0f, 255.0f);
     }();
-    if (width <= 0.0f || gain <= 0.0f || base.vertices.size() != 4u || !base.material.sourceTarget)
+    if (width <= 0.0f || gain <= 0.0f || !base.material.sourceTarget)
         return;
     static const float dirs[8][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0.7f, 0.7f}, {-0.7f, 0.7f}, {0.7f, -0.7f}, {-0.7f, -0.7f}};
     // Four rings: bright close to the character, fainter and fainter further out.
     static const float rings[4][2] = {{0.7f, 1.0f}, {1.4f, 0.55f}, {2.2f, 0.3f}, {3.0f, 0.14f}};
+    static constexpr uint32_t kQuadIndices[6] = {0u, 1u, 2u, 1u, 3u, 2u};
     for (const auto &ring : rings)
     for (const auto &dir : dirs)
     {
@@ -2492,14 +2551,15 @@ void outlineSprite(State &s, const native::MeshDraw &base)
         m.alphaTest = native::Compare::Always;
         m.colorWrite = 0x7u;
         m.known = true;
-        for (native::Vertex &v : copy.vertices)
+        std::array<native::Vertex, 4> copyVerts = baseVerts;
+        for (native::Vertex &v : copyVerts)
         {
             v.position[0] += dir[0] * width * ring[0];
             v.position[1] += dir[1] * width * ring[0];
             v.color[0] = v.color[1] = v.color[2] = 0.0f;
             v.color[3] = gain * ring[1] / 5.0f; // the copies add up
         }
-        native::push(native::MeshDraw(std::move(copy)));
+        native::pushMesh(std::move(copy), copyVerts.data(), 4u, kQuadIndices, 6u);
     }
     ++s.counts.outlinesMade;
 }
@@ -2540,10 +2600,14 @@ bool effect(const GSNativeEffect &e)
     // Everything is resolved before anything is sent: an effect is the
     // renderer's or the GS's, never split between them.
     const uint32_t ops = std::min<uint32_t>(e.opCount, GSNativeEffect::kMaxOps);
-    thread_local std::vector<native::MeshDraw> made;
-    thread_local std::vector<uint32_t> bases;
+    struct MadeOp
+    {
+        native::MeshDraw draw;
+        std::array<native::Vertex, 4> verts;
+        uint32_t base = 0u;
+    };
+    thread_local std::vector<MadeOp> made;
     made.clear();
-    bases.clear();
     // An object tail that also copies its silhouette into the 64x64 glow mask
     // (buffer 03f80) is a boosted character: its main sprite, laid over the
     // frame, is outlined below.
@@ -2653,10 +2717,10 @@ bool effect(const GSNativeEffect &e)
                                      {x1, y0, z1, u1, v0},
                                      {x0, y1, z0, u0, v1},
                                      {x1, y1, z1, u1, v1}};
-        draw.vertices.resize(4);
+        std::array<native::Vertex, 4> opVerts;
         for (int v = 0; v < 4; ++v)
         {
-            native::Vertex &out = draw.vertices[v];
+            native::Vertex &out = opVerts[v];
             out.position[0] = corners[v][0];
             out.position[1] = corners[v][1];
             out.position[2] = corners[v][2];
@@ -2665,7 +2729,6 @@ bool effect(const GSNativeEffect &e)
             for (int ch = 0; ch < 4; ++ch)
                 out.color[ch] = op.rgba[ch];
         }
-        draw.indices = {0u, 1u, 2u, 1u, 3u, 2u};
         draw.scissor = {static_cast<int32_t>(op.scissor[0]), static_cast<int32_t>(op.scissor[1]),
                         static_cast<int32_t>(op.scissor[2]) + 1, static_cast<int32_t>(op.scissor[3]) + 1};
         draw.fog[0] = draw.fog[1] = 255.0f;
@@ -2677,16 +2740,19 @@ bool effect(const GSNativeEffect &e)
             else if (into.base == 0u && op.source >= 0)
                 mainSprite = static_cast<int>(made.size());
         }
-        made.push_back(std::move(draw));
-        bases.push_back(into.base);
+        made.push_back({std::move(draw), opVerts, into.base});
     }
     if (tail && glowMask && mainSprite >= 0 && static_cast<size_t>(mainSprite) < made.size())
-        outlineSprite(s, made[static_cast<size_t>(mainSprite)]);
+    {
+        const MadeOp &mainOp = made[static_cast<size_t>(mainSprite)];
+        outlineSprite(s, mainOp.draw, mainOp.verts);
+    }
+    static constexpr uint32_t kQuadIndices[6] = {0u, 1u, 2u, 1u, 3u, 2u};
     for (size_t k = 0; k < made.size(); ++k)
     {
-        if (made[k].target != s.layer || s.layer == 0u)
-            s.drawnSeq[bases[k]] = ++s.sequence;
-        native::push(native::MeshDraw(std::move(made[k])));
+        if (made[k].draw.target != s.layer || s.layer == 0u)
+            s.drawnSeq[made[k].base] = ++s.sequence;
+        native::pushMesh(std::move(made[k].draw), made[k].verts.data(), 4u, kQuadIndices, 6u);
     }
     ++s.counts.effectsMade;
     if (tail)
@@ -3357,6 +3423,8 @@ void target(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, int) {}
 void noteWithheld(bool, uint32_t) {}
 void notePassed(Passed) {}
 void noteSplit() {}
+bool popProduced(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, TakenProduced &) { return false; }
+void applyProduced(const TakenProduced &) {}
 bool takeProduced(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, bool &, uint64_t &, uint32_t &) { return false; }
 void noteContinuedInPacket() {}
 bool mesh(const GSNativeMesh &, const GSDrawState *, const uint8_t *, uint32_t) { return false; }
