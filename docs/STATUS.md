@@ -2744,3 +2744,105 @@ the arrival and the light around the party at the departure show. Not done:
 the map does not centre on the chosen point, the notice gives a number and
 not the name, and the choice goes through the list's order, not the map's
 directions.
+
+## Battle frame rate on the Deck: finding it, and a scripted A/B (2026-11-23)
+
+The player reported fps drops in battle and, now and then, a crash. This is
+the whole procedure, from the first log to the A/B on one fight, so that it
+can be redone; the scripts are in `tools/bench/`, their data stayed on the
+Deck (`~/rg-monitor`, not in git).
+
+**1. Record while playing.** `tools/bench/log_watch.sh` as a user service
+(`systemd-run --user --unit=rg-monitor ...`) copies the game's
+`build/last-run.log` every 2 s into `runs/<date_time>.log` (a new file per
+launch, so a crash's log survives the next start) and writes the time of each
+`[gfx]` line to `timeline.log`. It only reads the game's folder. The player
+says "it lagged around 21:18" and the line is found by the clock. A crash
+would show in the log as `crash_report`'s exception and call stack; none came
+in these sessions.
+
+**2. What the `[gfx]` lines said.** Field: 60 fps. A battle: 48-54, the VIF1
+thread 89-91% busy, the GS backend 50-58%, `gif busy` 0, the longest frame
+20-34 ms; texture levels per interval about 8,700 in the field and 14,820
+in the battle. The frames alternate 1 and 2 vblanks (mean 1.17): the picture
+judders more than a steady 50 would. One single frame of 759 ms (VIF1 at 47%,
+no new textures) at 21:18:36 is a wait, not load; its cause is not found. The
+F1 pause menu in a battle costs the same as the battle (`play clock +0`, 0
+logic frames, still about 50 fps, VIF1 90%): the frozen scene is redrawn every
+frame. `RG_TIME_TRACE=1` as a Steam launch option: a typo (`RG _TIME_TRACE=1`)
+makes the shell run a command `RG`, and the game does not start at all.
+
+**3. Profile the running game, no change to it.** `tools/bench/perf_game.sh`
+(`perf record -F 499 -s -p PID`, user space only, which the Deck's
+`perf_event_paranoid=2` allows; sort by `pid`, `tid` is not a key). Symbols
+are in the binary (the compiled VU1 routines are
+`ps2_vu_program::generated::r_<hash>_<n>`). `CALLS=1` records dwarf call
+stacks at 150 Hz (88 MB for 15 s). Heavy battle, 20 s: VIF1 40% of the
+samples, GameThread 39%, the main thread 18%. The compiled VU1 routines are
+now 0.3% of the VIF1 thread: the 53% of the 2026-10-20 profile ("The VU1
+programs again") went native. What is left of the VIF1 thread: 30% in libc
+(memcpy and memset 23%, malloc and free 5%, mutex 1%), inclusive:
+`runVu1` 66%, `deliverPacket` 39%, `native2d::build` 16%,
+`nativeproducer::mesh` 16%, `vu1native::buildMesh` 14% (`readChunk` 10%),
+`operator new` 12%, `unpackPlain` 9%. Per mesh the data is copied three
+times (the chunk's vertices, the draw's vertices and indices, the renderer's
+upload) with a few allocations each.
+
+**4. The mesh stage (branch `vif1-conversion-stage`).** With no GS behind the
+pipeline the VIF1 thread hands each VU1 mesh to a `MESH` thread
+(`nativeproducer::meshAsync`, `RG_MESH_STAGE=0` turns it off, `mesh busy=` in
+the `[gfx]` line). Inputs are copied on the VIF1 thread: the mesh, the draw
+state, the four matrices `mesh` reads from VU1 memory (`applyMemoryEffects`
+rewrites that memory right after), and the MXCSR (VU1 programs select a
+rounding mode). Order is kept by `state()` draining the stage: every other
+call into the producer, and a flip (`Vif1Thread::drain`), sees the meshes
+ahead of it made.
+
+**5. Build and run on the test copy, the safe way.** `RogueTest01`'s CMake
+cache points at the player's `RogueGalaxy` path, so a plain
+`cmake --build build/game` run there re-runs CMake in the player's build
+folder (it happened once, stopped before any compile: sources, binary and
+saves untouched, only generated build files rewritten). Build only through the
+private mount, from inside the container:
+`distrobox enter rg-build -- ~/rg-maptest/rgbuild.sh "cmake --build build/game"`
+(first `rgbuild.sh "cat REVISION"` must show the test copy's revision). The
+copy's sources are sent by `scp`; the three changed files were identical to
+`main`'s. Never start the game by SSH for a test the player plays: he launches
+"Rogue Galaxy TEST" from Steam.
+
+**6. The same fight every time.** The player's quick save at the start of a
+battle (slot 1 of `~/.local/share/RogueGalaxy/states`, read only) was copied
+as slot 3 of the test copy's `~/rg-maptest/states` (and `.rev`, set to the
+test build's revision: a state of another build only loads by hand). By hand:
+Play, then Save states, load slot 3. Scripted, `tools/bench/battle_ab.sh`:
+hidden window, `RG_MUTE=1`, `RG_HOME=0`, `RG_SKIP_OPENING=1`,
+`RG_STATE_SCRIPT="load 0@1"`. `load 3@15` fails with "Load failed: a movie is
+playing" (the logos): slot 0 waits for the boot, as Continue does. From SSH the
+run needs `systemd-run --user -E DISPLAY=:1 -E XDG_RUNTIME_DIR=/run/user/1000`
+(the user manager has no `DISPLAY`; gamescope's two X servers are `X0` and
+`X1`). `battle_ab_loop.sh "off:RG_MESH_STAGE=0" "on:RG_MESH_STAGE=1"` alternates
+the runs; `battle_summary.py LOG...` prints the fps, the VIF1 and mesh shares
+over the 40 intervals from the first with 9,000 texture levels or more. The
+texture count repeating for tens of intervals is a paused scene (an idle
+battle): read the `fps:` and `tex:` lines.
+
+**7. Results so far.** The player's first look (the test copy, stage on) read
+58-60 fps and VIF1 at 80%; the control run with the stage off read the same:
+the scene was lighter (11-13,000 texture levels), another build (0.12.4
+sources against 0.12.6), so that comparison proved nothing. Scripted, six runs
+of 70 s at the normal pace, three each: stage off 58.7, 59.0, 58.9 fps (mean),
+VIF1 median 76-78%; stage on 58.3, 58.8, 58.2, 58.1 fps, VIF1 71-82%, the
+`MESH` thread 11-14% of the wall. Both are held at the 60 fps cap, so the
+bench cannot show a gain; the stage costs nothing visible there, and does not
+lower the VIF1 share either. An unpaced run (`RG_SPEED=0`) of the same fight
+reads 71-76 fps, so it can: its six alternated runs were started and stopped
+before they ended.
+
+**Not done.** The unpaced A/B (`SPEED=0 battle_ab_loop.sh ...`, three rounds);
+a comparison of the frames with the stage on and off (shadows, blends, draw
+order: screenshots with `RG_UI_SCRIPT` and `tools/bench/cmpvram.py`); a save in
+the heaviest moment of a fight (14,000+ texture levels), the one the player
+sees at 48-54; reusing the chunk, draw and packet buffers per frame (the
+copies above); the pause menu's redraw of the frozen scene (last, as asked);
+and the 759 ms frame. The stage is on by default in the code and not
+validated: do not merge before the A/B and the frame comparison.
