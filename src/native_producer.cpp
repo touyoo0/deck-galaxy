@@ -6,11 +6,14 @@
 #include <array>
 #include <deque>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <map>
 #include <set>
 #include <string>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -22,6 +25,9 @@
 #include "draw_state_mirror.h"
 #include "flip_pacing.h"
 #include "runtime/ps2_savestate.h"
+#include "ThreadNaming.h"
+
+#include <xmmintrin.h>
 
 #include <cmath>
 #include <cstring>
@@ -201,6 +207,11 @@ bool dumpingTextures()
 // and meshes are logged; it also asks the renderer for its side of that
 // frame (build/run/dump-gpu). Checked once a flip.
 State &state();
+// Waits for the meshes the mesh stage has not made yet (any thread but its own).
+}
+void drainMeshStage();
+namespace
+{
 std::string holdingAt(State &s, uint32_t base);
 uint64_t triggeredDumpFlip()
 {
@@ -225,6 +236,8 @@ uint64_t triggeredDumpFlip()
 State &state()
 {
     static State instance;
+    // Whoever reads or changes the tables sees the meshes ahead of it made.
+    drainMeshStage();
     return instance;
 }
 
@@ -1313,9 +1326,33 @@ native::Id cameraOf(State &s, const float view[16], const float projection[16], 
 }
 } // namespace
 
+namespace
+{
+// The mesh draw, from the matrices it reads out of the VU1's data memory
+// (model, view, projection, viewport: quads 60, 24, 8 and 4), so that it can
+// run on the mesh stage, which has no VU1 memory to read.
+bool meshWith(const GSNativeMesh &mesh, const GSDrawState *drawState, const float modelIn[16], const float viewIn[16],
+              const float projectionIn[16], const float viewportIn[16], uint32_t source);
+} // namespace
+
 bool mesh(const GSNativeMesh &mesh, const GSDrawState *drawState, const uint8_t *vu1Data, uint32_t source)
 {
     if (!native::enabled() || !vu1Data)
+        return false;
+    float model[16], view[16], projection[16], viewport[16];
+    quadsMatrix(vu1Data, 60u, model);
+    quadsMatrix(vu1Data, 24u, view);
+    quadsMatrix(vu1Data, 8u, projection);
+    quadsMatrix(vu1Data, 4u, viewport);
+    return meshWith(mesh, drawState, model, view, projection, viewport, source);
+}
+
+namespace
+{
+bool meshWith(const GSNativeMesh &mesh, const GSDrawState *drawState, const float modelIn[16], const float viewIn[16],
+              const float projectionIn[16], const float viewportIn[16], uint32_t source)
+{
+    if (!native::enabled())
         return false;
     // A chunk the program clips (h.clips: its slot E clips at z = -w and
     // z = w) keeps the triangles crossing the guard band: the GS backend
@@ -1435,10 +1472,10 @@ bool mesh(const GSNativeMesh &mesh, const GSDrawState *drawState, const uint8_t 
 
     // The camera and the model, as the game keeps them in VU1 data memory.
     float model[16], view[16], projection[16], viewport[16], whole[16];
-    quadsMatrix(vu1Data, 60u, model);
-    quadsMatrix(vu1Data, 24u, view);
-    quadsMatrix(vu1Data, 8u, projection);
-    quadsMatrix(vu1Data, 4u, viewport);
+    std::memcpy(model, modelIn, sizeof(model));
+    std::memcpy(view, viewIn, sizeof(view));
+    std::memcpy(projection, projectionIn, sizeof(projection));
+    std::memcpy(viewport, viewportIn, sizeof(viewport));
     // Quads 4-7 are the projection all the way to the window (8-11 times
     // the screen's scale and offset), not a viewport after 8-11: the
     // program's matrix is model x view x (4-7). The camera keeps 8-11 as
@@ -1550,6 +1587,200 @@ bool mesh(const GSNativeMesh &mesh, const GSDrawState *drawState, const uint8_t 
     }
     native::push(native::MeshDraw(std::move(draw)));
     return true;
+}
+} // namespace
+
+namespace
+{
+// The mesh stage (RG_MESH_STAGE, on by default): the VIF1 thread hands the
+// meshes of VU1 programs to a thread of its own, which makes the draws, so
+// that the VIF1 thread goes on with the next list. The draws come out in the
+// order they went in, and everything else here waits for them first:
+// state() drains the stage, so a texture, an effect, an upload or a flip
+// never sees the producer's tables before the meshes ahead of it have
+// changed them. The stage's inputs are copies (the mesh, the draw state and
+// the four matrices the draw reads from the VU1's data memory) taken on the
+// VIF1 thread, under its MXCSR, since VU1 programs select a rounding mode.
+struct MeshJob
+{
+    GSNativeMesh mesh;
+    GSDrawState state;
+    float model[16], view[16], projection[16], viewport[16];
+    uint32_t source = 0u;
+    uint32_t mxcsr = 0u;
+};
+
+thread_local bool t_onMeshStage = false;
+
+class MeshStage
+{
+public:
+    MeshStage() { m_thread = std::thread([this] { run(); }); }
+
+    // The VIF1 thread's: a job to make, in order. Waits when too many are
+    // queued, so a slow stage holds the VIF1 thread back and copies do not
+    // pile up.
+    std::unique_ptr<MeshJob> take()
+    {
+        std::lock_guard lock(m_mutex);
+        if (m_pool.empty())
+            return std::make_unique<MeshJob>();
+        std::unique_ptr<MeshJob> job = std::move(m_pool.back());
+        m_pool.pop_back();
+        return job;
+    }
+    void submit(std::unique_ptr<MeshJob> job)
+    {
+        std::unique_lock lock(m_mutex);
+        m_space.wait(lock, [&] { return m_queue.size() < kQueued; });
+        m_queue.push_back(std::move(job));
+        m_submitted.fetch_add(1u, std::memory_order_release);
+        lock.unlock();
+        m_work.notify_one();
+    }
+
+    // Any other thread's: until every job submitted so far has run.
+    void drain()
+    {
+        const uint64_t target = m_submitted.load(std::memory_order_acquire);
+        if (m_done.load(std::memory_order_acquire) >= target)
+            return;
+        std::unique_lock lock(m_mutex);
+        m_idle.wait(lock, [&] { return m_done.load(std::memory_order_acquire) >= target; });
+    }
+    bool busy() const { return m_done.load(std::memory_order_acquire) < m_submitted.load(std::memory_order_acquire); }
+    uint64_t busyNanos() const { return m_busy.load(std::memory_order_relaxed); }
+
+    void stop()
+    {
+        drain();
+        {
+            std::lock_guard lock(m_mutex);
+            m_stop = true;
+        }
+        m_work.notify_all();
+        if (m_thread.joinable())
+            m_thread.join();
+    }
+
+private:
+    void run()
+    {
+        ThreadNaming::SetCurrentThreadName("MESH");
+        t_onMeshStage = true;
+        uint32_t mxcsr = _mm_getcsr() & ~0x3Fu;
+        for (;;)
+        {
+            std::unique_ptr<MeshJob> job;
+            {
+                std::unique_lock lock(m_mutex);
+                m_work.wait(lock, [&] { return !m_queue.empty() || m_stop; });
+                if (m_queue.empty())
+                    return;
+                job = std::move(m_queue.front());
+                m_queue.pop_front();
+            }
+            m_space.notify_one();
+            const auto started = std::chrono::steady_clock::now();
+            if (job->mxcsr != mxcsr)
+            {
+                _mm_setcsr(job->mxcsr);
+                mxcsr = job->mxcsr;
+            }
+            try
+            {
+                meshWith(job->mesh, &job->state, job->model, job->view, job->projection, job->viewport, job->source);
+            }
+            catch (const std::exception &error)
+            {
+                std::fprintf(stderr, "[mesh-stage] a draw failed: %s\n", error.what());
+            }
+            m_busy.fetch_add(static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                       std::chrono::steady_clock::now() - started)
+                                                       .count()),
+                             std::memory_order_relaxed);
+            {
+                std::lock_guard lock(m_mutex);
+                if (m_pool.size() < kQueued)
+                    m_pool.push_back(std::move(job));
+                m_done.fetch_add(1u, std::memory_order_release);
+            }
+            m_idle.notify_all();
+        }
+    }
+
+    static constexpr size_t kQueued = 512u;
+    std::thread m_thread;
+    std::mutex m_mutex;
+    std::condition_variable m_work, m_space, m_idle;
+    std::deque<std::unique_ptr<MeshJob>> m_queue;
+    std::vector<std::unique_ptr<MeshJob>> m_pool;
+    std::atomic<uint64_t> m_submitted{0u}, m_done{0u}, m_busy{0u};
+    bool m_stop = false;
+};
+
+std::atomic<MeshStage *> g_meshStage{nullptr};
+} // namespace
+
+void drainMeshStage()
+{
+    MeshStage *stage = g_meshStage.load(std::memory_order_acquire);
+    if (stage && !t_onMeshStage)
+        stage->drain();
+}
+
+bool meshStageBusy()
+{
+    MeshStage *stage = g_meshStage.load(std::memory_order_acquire);
+    return stage && stage->busy();
+}
+
+uint64_t meshStageBusyNanos()
+{
+    MeshStage *stage = g_meshStage.load(std::memory_order_acquire);
+    return stage ? stage->busyNanos() : 0u;
+}
+
+void stopMeshStage()
+{
+    MeshStage *stage = g_meshStage.exchange(nullptr, std::memory_order_acq_rel);
+    if (stage)
+    {
+        stage->stop();
+        delete stage;
+    }
+}
+
+bool meshStageOn()
+{
+    static const bool on = [] {
+        const char *value = std::getenv("RG_MESH_STAGE");
+        return native::enabled() && !(value && std::strcmp(value, "0") == 0);
+    }();
+    return on;
+}
+
+void meshAsync(const GSNativeMesh &mesh, const GSDrawState &state, const uint8_t *vu1Data, uint32_t source)
+{
+    if (!native::enabled() || !vu1Data)
+        return;
+    MeshStage *stage = g_meshStage.load(std::memory_order_acquire);
+    if (!stage)
+    {
+        stage = new MeshStage();
+        g_meshStage.store(stage, std::memory_order_release);
+    }
+    std::unique_ptr<MeshJob> job = stage->take();
+    job->mesh.header = mesh.header;
+    job->mesh.vertices.assign(mesh.vertices.begin(), mesh.vertices.end());
+    job->state = state;
+    quadsMatrix(vu1Data, 60u, job->model);
+    quadsMatrix(vu1Data, 24u, job->view);
+    quadsMatrix(vu1Data, 8u, job->projection);
+    quadsMatrix(vu1Data, 4u, job->viewport);
+    job->source = source;
+    job->mxcsr = _mm_getcsr() & ~0x3Fu;
+    stage->submit(std::move(job));
 }
 
 namespace
@@ -3360,6 +3591,12 @@ void noteSplit() {}
 bool takeProduced(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, bool &, uint64_t &, uint32_t &) { return false; }
 void noteContinuedInPacket() {}
 bool mesh(const GSNativeMesh &, const GSDrawState *, const uint8_t *, uint32_t) { return false; }
+bool meshStageOn() { return false; }
+void meshAsync(const GSNativeMesh &, const GSDrawState &, const uint8_t *, uint32_t) {}
+void drainMeshStage() {}
+bool meshStageBusy() { return false; }
+uint64_t meshStageBusyNanos() { return 0u; }
+void stopMeshStage() {}
 bool pipelineOn() { return false; }
 uint64_t uploadHash(const uint8_t *, size_t) { return 0u; }
 uint32_t captureTarget(uint32_t) { return 0u; }

@@ -74,6 +74,20 @@ uint32_t targetAt(uint32_t base);
 // was made: the mesh is then not sent to the GS (step 4c).
 bool mesh(const GSNativeMesh &mesh, const GSDrawState *state, const uint8_t *vu1Data, uint32_t source);
 
+// RG_MESH_STAGE (on unless 0): the same draw as mesh(), made on a thread of
+// its own, in order with every other call in this file (state() waits for the
+// stage's queue, so a call that reads or changes the tables sees the meshes
+// ahead of it made). For the VIF1 thread when nothing waits for the result:
+// the mesh, the draw state and the matrices mesh() reads from `vu1Data` are
+// copied at once, and `vu1Data` may change after the call.
+bool meshStageOn();
+void meshAsync(const GSNativeMesh &mesh, const GSDrawState &state, const uint8_t *vu1Data, uint32_t source);
+// Waits until the stage has made every mesh handed to it.
+void drainMeshStage();
+bool meshStageBusy();
+uint64_t meshStageBusyNanos(); // for the stats line
+void stopMeshStage();
+
 // Step 5a's survey (counts only): an effect on its way to be drawn (by
 // command; a sprite effect's ops by what they draw into and from).
 void noteEffect(const GSNativeEffect &effect);

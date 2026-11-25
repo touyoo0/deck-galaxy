@@ -945,6 +945,9 @@ public:
         {
             g_stage->drain();
         }
+        // The native pipeline's mesh stage: the draws of the meshes the
+        // lists made, before whoever waited goes on (a flip's frame end).
+        rg::nativeproducer::drainMeshStage();
     }
 
     bool busy()
@@ -956,7 +959,7 @@ public:
                 return true;
             }
         }
-        return g_stage && g_stage->busy();
+        return (g_stage && g_stage->busy()) || rg::nativeproducer::meshStageBusy();
     }
 
     // Lists that finished since the last call, for their DMAC completion.
@@ -2200,6 +2203,13 @@ void deliverMesh(GS &gs, const GSNativeMesh &mesh, const uint8_t *vu1Data)
         if (g_stage && !t_onVif1Thread)
             g_thread->drain();
         const GSDrawState state = rg::drawstate::current();
+        // On the VIF1 thread, with no GS behind the pipeline, nothing waits
+        // for the draw's result: the mesh stage makes it.
+        if (t_onVif1Thread && absorbing() && rg::nativeproducer::meshStageOn())
+        {
+            rg::nativeproducer::meshAsync(mesh, state, vu1Data, 0u);
+            return;
+        }
         if (rg::nativeproducer::mesh(mesh, &state, vu1Data, 0u))
             return;
         // Refused here only for a buffer the game never named (counted as a
@@ -2517,6 +2527,7 @@ void shutdown()
     {
         g_stage->stop();
     }
+    rg::nativeproducer::stopMeshStage();
 }
 
 std::string busyReport()
@@ -2528,19 +2539,23 @@ std::string busyReport()
     const uint64_t gif = g_gifBusyNanos.load(std::memory_order_relaxed);
     const double wall = std::chrono::duration<double>(now - lastTime).count();
     auto share = [&](uint64_t nanos) { return wall > 0.0 ? (static_cast<double>(nanos) * 1e-9) / wall * 100.0 : 0.0; };
-    char text[96];
+    static uint64_t lastMesh = 0u;
+    const uint64_t mesh = rg::nativeproducer::meshStageBusyNanos();
+    char text[128];
     if (g_stage)
     {
-        std::snprintf(text, sizeof(text), "vif1 busy=%.0f%% gif busy=%.0f%% of wall", share(busy - lastBusy),
-                      share(gif - lastGif));
+        std::snprintf(text, sizeof(text), "vif1 busy=%.0f%% gif busy=%.0f%% mesh busy=%.0f%% of wall",
+                      share(busy - lastBusy), share(gif - lastGif), share(mesh - lastMesh));
     }
     else
     {
-        std::snprintf(text, sizeof(text), "vif1 busy=%.0f%% of wall", share(busy - lastBusy));
+        std::snprintf(text, sizeof(text), "vif1 busy=%.0f%% mesh busy=%.0f%% of wall", share(busy - lastBusy),
+                      share(mesh - lastMesh));
     }
     lastTime = now;
     lastBusy = busy;
     lastGif = gif;
+    lastMesh = mesh;
     // VU1 pairs run on the interpreter since the last report: a program the
     // build has not compiled (several times slower), e.g. an effect's, shows
     // up here. Read unsynchronised from the VIF1 thread's counters; a stats
