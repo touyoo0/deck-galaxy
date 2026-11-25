@@ -29,6 +29,9 @@ bool enabled();
 struct Piece
 {
     std::vector<uint8_t> packet; // a packet the converter made, when not empty
+    // Direct (reg, value) register writes without transfer registers: applied
+    // straight to the draw-state mirror when absorbing, avoiding A+D encode+decode.
+    std::vector<std::pair<uint8_t, uint64_t>> writes;
     // Or a packet of the input as it is (an upload), in place: valid while
     // the input is.
     const uint8_t *view = nullptr;
@@ -36,7 +39,8 @@ struct Piece
     GSNativeMesh mesh; // otherwise
     // The mesh's UVs are texels (FST), not normalised coordinates.
     bool texelUvs = false;
-    bool isPacket() const { return view != nullptr || !packet.empty(); }
+    bool isWrites() const { return !writes.empty(); }
+    bool isPacket() const { return view != nullptr || !packet.empty() || !writes.empty(); }
     const uint8_t *bytes() const { return view ? view : packet.data(); }
     uint32_t size() const { return view ? viewSize : static_cast<uint32_t>(packet.size()); }
 };

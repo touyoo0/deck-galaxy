@@ -33,10 +33,15 @@ bool enabled();
 
 // Any thread. Dropped when the pipeline is off.
 void push(Record &&record);
+// Push a MeshDraw along with its vertices and indices into the queue's flat
+// staging arrays (avoids per-draw heap allocations).
+void pushMesh(MeshDraw &&draw, const Vertex *vertices, uint32_t vertexCount, const uint32_t *indices,
+              uint32_t indexCount);
 
 // Textures the renderer let go of (its memory budget): a producer that sends
 // a texture once and names it by id afterwards drains these and sends them
 // again when next used. Any thread.
+bool hasEvicted();
 std::vector<Id> takeEvicted();
 
 // Step 7b: depth reads (the game's lens flare tests the sun against the
@@ -144,7 +149,7 @@ private:
         Bytes bytes;
     };
 
-    void apply(SDL_GPUDevice *device, Record &record, std::string &error);
+    void apply(SDL_GPUDevice *device, Record &record, bool inPlaceMeshes, std::string &error);
     void count(const MeshDraw &draw);
     SDL_GPUTexture *createTexture(SDL_GPUDevice *device, SDL_GPUTextureFormat format, uint32_t width,
                                   uint32_t height, std::string &error);
@@ -163,14 +168,14 @@ private:
     // target (step 5a).
     bool drawFrame(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, uint32_t scale, std::string &error);
     void drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, SDL_GPURenderPass *pass, size_t first,
-                    size_t last, Id target, bool depthAttached, float targetW, float targetH, uint32_t scale,
-                    SDL_GPUTexture *copy, uint32_t copyW, uint32_t copyH);
+                    size_t last, Id target, bool depthAttached, float targetW, float targetH, uint32_t targetScale,
+                    uint32_t sceneScale, SDL_GPUTexture *copy, uint32_t copyW, uint32_t copyH);
     // m_gpuTargets' key for the copy a draw reading its own target reads.
     static constexpr Id kFeedbackCopy = 0xFFFFFFFFu;
     // A target's GPU texture (color, or depth), at least `minW` by `minH`
     // pixels: kept across frames, grown (and so cleared) when too small.
     SDL_GPUTexture *targetTexture(SDL_GPUDevice *device, Id id, bool depth, uint32_t minW, uint32_t minH,
-                                  bool &fresh, std::string &error);
+                                  uint32_t targetScale, bool &fresh, std::string &error);
     void releaseMeshes(SDL_GPUDevice *device);
     // Step 7b: publishes the depth blocks the GPU copied out, and copies out
     // the ones asked since (from the last frame drawn, before this one's
@@ -179,7 +184,7 @@ private:
     void releaseDepth(SDL_GPUDevice *device);
     struct MeshCounts
     {
-        uint64_t drawn = 0, offscreen = 0, noTarget = 0, depthAsColor = 0, depthMismatch = 0, passes = 0;
+        uint64_t drawn = 0, merged = 0, offscreen = 0, noTarget = 0, depthAsColor = 0, depthMismatch = 0, passes = 0;
         uint64_t noCamera = 0, noTexture = 0, noPipeline = 0, frames = 0;
         uint64_t window = 0, fromTarget = 0, sourceNotDrawn = 0, feedback = 0, copies = 0, destinationAlpha = 0;
     };
@@ -190,9 +195,16 @@ private:
         uint32_t scale = 0;
     };
 
+    struct CachedCamera
+    {
+        Camera cam;
+        double viewProj[16];
+    };
     std::vector<Record> m_drained;
+    std::vector<Vertex> m_drainedVerts;
+    std::vector<uint32_t> m_drainedIndices;
     std::unordered_map<Id, Target> m_targets;
-    std::unordered_map<Id, Camera> m_cameras; // the newest 2 * kCameraWindow ids at most
+    std::unordered_map<Id, CachedCamera> m_cameras; // the newest 2 * kCameraWindow ids at most
     Id m_newestCamera = 0;
     std::unordered_map<Id, Image> m_images;   // textures
     std::unordered_map<Id, Image> m_palettes; // as 16x1 or 256x1 RGBA
@@ -217,11 +229,16 @@ private:
     bool m_textureGrid = false; // RG_NATIVE_TEXTURE_GRID=1: step 3a's view over the scene
 
     std::vector<MeshDraw> m_meshes;      // drawn since the last Present record, any target
+    std::vector<Vertex> m_meshVerts;
+    std::vector<uint32_t> m_meshIndices; // already offset by each mesh's firstVertex
     std::vector<MeshDraw> m_frameMeshes; // the frame a Present record closed
+    std::vector<Vertex> m_frameVerts;
+    std::vector<uint32_t> m_frameIndices;
     bool m_frameReady = false;
     bool m_dumpTargets = false; // the triggered dump: write the targets out
     SDL_GPUShader *m_meshVertex = nullptr;
     SDL_GPUShader *m_meshFragment = nullptr;
+    SDL_GPUShader *m_meshFragmentOpaque = nullptr;
     bool m_meshFailed = false;
     SDL_GPUTextureFormat m_depthFormat = SDL_GPU_TEXTUREFORMAT_INVALID;
     std::unordered_map<Id, GpuTarget> m_gpuTargets; // offscreen colors, and every depth (by its id)
@@ -233,8 +250,6 @@ private:
     uint32_t m_vertexCapacity = 0, m_indexCapacity = 0;
     SDL_GPUTransferBuffer *m_meshTransfer = nullptr;
     uint32_t m_transferCapacity = 0;
-    std::vector<uint32_t> m_firstIndex; // per frame mesh, into the index buffer
-    std::vector<int32_t> m_vertexOffset;
     MeshCounts m_meshCounts, m_meshReported;
     // Step 7b's depth reads in flight (one copy at a time).
     SDL_GPUTransferBuffer *m_depthDownload = nullptr;

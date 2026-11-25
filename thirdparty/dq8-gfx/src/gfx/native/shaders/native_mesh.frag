@@ -64,12 +64,14 @@ bool passes(uint compare, float a, float ref) {
 }
 
 void main() {
+#ifndef DQ8_NO_DISCARD
     if (material.texa.z > 0.0) {
         // Stored as A / 0x80: bit 7 set is 1.0.
         bool high = texelFetch(palette, ivec2(gl_FragCoord.xy), 0).a >= 0.999;
         if (high != (material.texa.z > 1.5))
             discard;
     }
+#endif
     // The vertex color as the GS takes it: truncated to integers 0-255.
     vec4 f = clamp(floor(inColor), 0.0, 255.0);
     vec4 c = f;
@@ -117,8 +119,10 @@ void main() {
         }
         c = min(c, 255.0);
     }
+#ifndef DQ8_NO_DISCARD
     if (!passes(material.test.x, c.a, float(material.test.y)) && material.test.z != 0u)
         discard;
+#endif
     if (material.test.w != 0u) {
         float k = clamp(floor(inFog), 0.0, 255.0) / 255.0;
         c.rgb = mix(material.fogColor.rgb * 255.0, c.rgb, k);

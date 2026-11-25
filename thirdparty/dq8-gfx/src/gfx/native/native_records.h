@@ -205,11 +205,11 @@ struct Vertex
     float position[3] = {}; // object space
     float uv[2] = {};
     float color[4] = {};    // 0-255, before any clamp
-    float normal[3] = {};   // when MeshDraw::hasNormals
     // A window-space draw's fog factor, per vertex (255 none, toward
     // fogColor as it falls); a draw with a model has MeshDraw::fog instead.
     float fog = 255.0f;
 };
+static_assert(sizeof(Vertex) == 40u, "tightly packed for direct GPU upload");
 
 // With hasModel, vertices are in object space, through the model and the
 // camera. Without it, they are the target's pixels (x, y) and the game's
@@ -236,8 +236,11 @@ struct MeshDraw
     uint64_t object = 0;  // stable across frames for the same object; 0 unknown
     Material material;
     Rect scissor;
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices; // triangles; empty: vertices are a strip
+    // Slice into the pipeline's flat vertex/index arrays (pushed via pushMesh).
+    uint32_t firstVertex = 0;
+    uint32_t vertexCount = 0;
+    uint32_t firstIndex = 0;
+    uint32_t indexCount = 0;
     bool hasNormals = false;
     bool floatDepth = false; // depth written as float (linear or reversed), not the game's integers
     // With material.fog: the fog factor F = clamp(fog[0] + fog[3] * w, at

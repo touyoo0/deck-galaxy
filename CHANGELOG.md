@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Better frame rate stability at 60 fps and lower power draw / heat on the Steam Deck (pipelined presentation, draw-call batching, flat mesh buffers, offscreen effect scaling, opaque Early-Z shader, and offloading producer work to the GIF thread).
+
 ## 0.12.6 - 2026-11-23
 
 - New option "Skip spell animations": the scene of a spell or special move is skipped by itself, with no button to press.
