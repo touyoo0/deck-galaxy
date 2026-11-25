@@ -5,6 +5,10 @@ mostra in questa lingua. I titoli (`## versione - data`) restano come in
 `CHANGELOG.md`: sono loro a collegare una versione alla sua traduzione. Una
 versione che manca in questo file viene mostrata in inglese.
 
+## 0.12.7 - 2026-11-25
+
+- 60 fps più stabili e consumi e calore ridotti su Steam Deck sia in esplorazione che in battaglia.
+
 ## 0.12.6 - 2026-11-23
 
 - Nuova opzione «Salta le animazioni degli incantesimi»: la scena di un incantesimo o di una mossa speciale viene saltata da sola, senza premere alcun tasto.

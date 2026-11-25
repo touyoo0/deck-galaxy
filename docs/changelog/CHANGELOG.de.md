@@ -5,6 +5,10 @@ zeigt sie in dieser Sprache. Die Überschriften (`## Version - Datum`) bleiben
 wie in `CHANGELOG.md`: Über sie wird eine Version ihrer Übersetzung
 zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf Englisch.
 
+## 0.12.7 - 2026-11-25
+
+- Stabilere 60 FPS sowie geringerer Stromverbrauch und weniger Wärme auf dem Steam Deck beim Erkunden und im Kampf.
+
 ## 0.12.6 - 2026-11-23
 
 - Neue Option „Zauberanimationen überspringen“: Die Szene eines Zaubers oder einer Spezialattacke wird von selbst übersprungen, ohne dass eine Taste gedrückt werden muss.

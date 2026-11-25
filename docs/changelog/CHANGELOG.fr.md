@@ -5,6 +5,10 @@ les affiche dans cette langue. Les titres (`## version - date`) restent comme
 dans `CHANGELOG.md` : ce sont eux qui relient une version à sa traduction. Une
 version absente de ce fichier s'affiche en anglais.
 
+## 0.12.7 - 2026-11-25
+
+- 60 ips plus stables, consommation et chauffe réduites sur Steam Deck en exploration comme en combat.
+
 ## 0.12.6 - 2026-11-23
 
 - Nouvelle option « Sauter les animations de sorts » : la scène d'un sort ou d'une technique spéciale est passée toute seule, sans bouton à presser.
