@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- Better frame rate stability at 60 fps and lower power draw / heat on the Steam Deck (pipelined presentation, draw-call batching, flat mesh buffers, offscreen effect scaling, opaque Early-Z shader, and offloading producer work to the GIF thread).
+## 0.12.7 - 2026-11-25
+
+- Steadier 60 fps and lower power draw and heat on the Steam Deck across exploration and battles.
 
 ## 0.12.6 - 2026-11-23
 
