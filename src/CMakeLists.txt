@@ -6,6 +6,9 @@ set(RG_OVERLAYS title insmenu normal factory insect)
 # Generated code aliases memory across access widths and relies on wrapping
 # integer arithmetic; keep the optimizer from assuming otherwise.
 set(RG_GENERATED_FLAGS -O2 -g0 -fno-strict-aliasing -fwrapv)
+if(RG_STEAMDECK_ARCH AND (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU"))
+    list(APPEND RG_GENERATED_FLAGS -march=znver2 -ffp-contract=off)
+endif()
 
 # ee_fpu.h reaches the generated code only through its precompiled header;
 # without it the EE float conversions would quietly round again.

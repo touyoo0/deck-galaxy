@@ -733,21 +733,32 @@ bool pump(void *userData)
     // In the game's menus the right click and Esc (on Triangle) go back and
     // the wheel moves up and down; in play Esc opens the menu. Before the
     // events are read.
-    backend->padInput().setInMenus(g_runtime != nullptr &&
-                                     rg::mousecamera::inGameMenu(g_runtime->memory().getRDRAM()));
+    static uint64_t lastHousekeepingFlip = ~0ull;
+    static auto lastHousekeepingAt = std::chrono::steady_clock::time_point{};
+    const uint64_t currentFlips = rg::graphics::guestFlips();
+    const auto pumpNow = std::chrono::steady_clock::now();
+    const bool doHousekeeping =
+        currentFlips != lastHousekeepingFlip || (pumpNow - lastHousekeepingAt) >= std::chrono::milliseconds(16);
+    if (doHousekeeping)
+    {
+        lastHousekeepingFlip = currentFlips;
+        lastHousekeepingAt = pumpNow;
+        backend->padInput().setInMenus(g_runtime != nullptr &&
+                                         rg::mousecamera::inGameMenu(g_runtime->memory().getRDRAM()));
+    }
     if (!backend->pumpEvents())
     {
         // Quitting: a slot still being written is waited for.
         rg::savestate::flush();
         return false;
     }
+    if (doHousekeeping)
     {
         const dq8::gfx::SdlPadInput &pad = backend->padInput();
         rg::mousecamera::pump(backend->window(),
                               (g_menu && g_menu->capturesInput()) || g_hostPaused.load(std::memory_order_relaxed),
                               {pad.keyboardMouseAt(), pad.mouseMotionAt(), pad.controllerAt()});
-    }
-    updateButtonGlyphs(*backend);
+        updateButtonGlyphs(*backend);
     // F9 writes "[mark] N s" to the log: pressed when a drop is felt, it
     // puts the moment next to the [gfx] lines of that second.
     static const auto markStart = std::chrono::steady_clock::now();
@@ -846,6 +857,7 @@ bool pump(void *userData)
                            10.0);
         }
     }
+    } // if (doHousekeeping)
     uint32_t held = 0u, pressed = 0u, sticks = 0u;
     backend->hostPadState(held, pressed, sticks);
     sticks = rg::pad::shapeSticks(sticks);

@@ -2012,29 +2012,59 @@ namespace
 
 // The bounds a depth-and-bounds chunk leaves: quads 98 and 99 as they were,
 // widened lane by lane by each vertex's projected x, y, z and fog.
-void boundsAfter(const Program &program, const uint8_t *data, uint32_t top, Vec4 &least, Vec4 &most)
+void boundsFromMesh(const GSNativeMesh &mesh, Vec4 &least, Vec4 &most)
+{
+    const GSNativeMesh::Header &h = mesh.header;
+    const float m00 = h.matrix[0][0], m01 = h.matrix[0][1], m02 = h.matrix[0][2], m03 = h.matrix[0][3];
+    const float m10 = h.matrix[1][0], m11 = h.matrix[1][1], m12 = h.matrix[1][2], m13 = h.matrix[1][3];
+    const float m20 = h.matrix[2][0], m21 = h.matrix[2][1], m22 = h.matrix[2][2], m23 = h.matrix[2][3];
+    const float m30 = h.matrix[3][0], m31 = h.matrix[3][1], m32 = h.matrix[3][2], m33 = h.matrix[3][3];
+    const float f0 = h.fog[0], f1 = h.fog[1], f2 = h.fog[2], f3 = h.fog[3];
+    const float dScale = h.depthScale, dMax = h.depthMax;
+    float lo0 = least.x, lo1 = least.y, lo2 = least.z, lo3 = least.w;
+    float hi0 = most.x, hi1 = most.y, hi2 = most.z, hi3 = most.w;
+    for (const GSNativeMesh::Vertex &v : mesh.vertices)
+    {
+        const float c0 = v.x * m00 + v.y * m10 + v.z * m20 + m30;
+        const float c1 = v.x * m01 + v.y * m11 + v.z * m21 + m31;
+        const float c2 = v.x * m02 + v.y * m12 + v.z * m22 + m32;
+        const float c3 = v.x * m03 + v.y * m13 + v.z * m23 + m33;
+        const float q = gsNativeReciprocal(c3);
+        const float px = c0 * q;
+        const float py = c1 * q;
+        const float pz = std::fmin(c2 * q * dScale, dMax);
+        const float pf = std::fmin(std::fmax(c3 * f1 + f0, f2), f3);
+        lo0 = std::fmin(lo0, px); hi0 = std::fmax(hi0, px);
+        lo1 = std::fmin(lo1, py); hi1 = std::fmax(hi1, py);
+        lo2 = std::fmin(lo2, pz); hi2 = std::fmax(hi2, pz);
+        lo3 = std::fmin(lo3, pf); hi3 = std::fmax(hi3, pf);
+    }
+    least = {lo0, lo1, lo2, lo3};
+    most = {hi0, hi1, hi2, hi3};
+}
+
+void boundsAfter(const Program &program, const uint8_t *data, uint32_t top, Vec4 &least, Vec4 &most,
+                 const GSNativeMesh *builtMesh = nullptr)
 {
     const VuData vu(data);
     least = vu.quad(98);
     most = vu.quad(99);
-    Chunk chunk;
-    readChunk(program, vu, top, chunk);
-    for (const GSNativeMesh::Vertex &v : chunk.mesh.vertices)
+    if (builtMesh)
     {
-        const GSNativeMeshPoint p = gsNativeMeshPoint(chunk.mesh.header, v);
-        const float lanes[4] = {p.px, p.py, p.pz, p.pf};
-        float *lo = &least.x, *hi = &most.x;
-        for (int i = 0; i < 4; ++i)
-        {
-            lo[i] = std::fmin(lo[i], lanes[i]);
-            hi[i] = std::fmax(hi[i], lanes[i]);
-        }
+        boundsFromMesh(*builtMesh, least, most);
+        return;
     }
+    thread_local Chunk chunk;
+    chunk.fog.clear();
+    chunk.mesh.header = {};
+    chunk.mesh.vertices.clear();
+    readChunk(program, vu, top, chunk);
+    boundsFromMesh(chunk.mesh, least, most);
 }
 
 } // namespace
 
-void applyMemoryEffects(const Program &program, uint8_t *data, uint32_t top)
+void applyMemoryEffects(const Program &program, uint8_t *data, uint32_t top, const GSNativeMesh *builtMesh)
 {
     if (program.kind == Kind::Overlay)
     {
@@ -2061,7 +2091,7 @@ void applyMemoryEffects(const Program &program, uint8_t *data, uint32_t top)
     }
     const VuRounding rounding;
     Vec4 least, most;
-    boundsAfter(program, data, top, least, most);
+    boundsAfter(program, data, top, least, most, builtMesh);
     std::memcpy(data + 98u * 16u, &least, sizeof(least));
     std::memcpy(data + 99u * 16u, &most, sizeof(most));
 }
@@ -2128,9 +2158,10 @@ void buildChunk(const Program &program, const uint8_t *data, uint32_t top,
     }
     if (program.kind == Kind::Overlay)
     {
-        std::vector<uint8_t> copy(data, data + 1024u * 16u);
+        alignas(16) uint8_t copy[1024u * 16u];
+        std::memcpy(copy, data, sizeof(copy));
         packets.clear();
-        runOverlay(copy.data(), &packets);
+        runOverlay(copy, &packets);
         return;
     }
     if (program.kind == Kind::Base)
@@ -2302,7 +2333,7 @@ Mode modeFromEnvironment()
 
 void Monitor::declined(const Program &program, const char *reason)
 {
-    ++m_declined[std::string(program.name) + ": " + reason];
+    ++m_declined[{program.name, reason}];
 }
 
 const char *Monitor::check(const Program &program, const std::vector<std::vector<uint8_t>> &vu,
@@ -2353,6 +2384,10 @@ const char *Monitor::check(const Program &program, const std::vector<std::vector
 
 void Monitor::tick()
 {
+    if ((++m_ticks & 4095u) != 0u)
+    {
+        return;
+    }
     const int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
                             std::chrono::steady_clock::now().time_since_epoch()).count();
     if (now < m_next)
@@ -2368,12 +2403,12 @@ void Monitor::tick()
     std::string line;
     for (const auto &[name, count] : m_native)
     {
-        line += " " + name + "=" + std::to_string(count);
+        line += std::string(" ") + name + "=" + std::to_string(count);
     }
     std::string left;
-    for (const auto &[reason, count] : m_declined)
+    for (const auto &[key, count] : m_declined)
     {
-        left += " [" + reason + "]=" + std::to_string(count);
+        left += std::string(" [") + key.name + ": " + key.reason + "]=" + std::to_string(count);
     }
     std::fprintf(stderr, "[vu1native] %s: native chunks%s; left to the VU1%s", 
                  m_mode == Mode::Check  ? "check"

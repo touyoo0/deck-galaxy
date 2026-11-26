@@ -1043,7 +1043,11 @@ public:
                 // What the VU1 would have left in its memory, where it did not run.
                 if (nativeMode() != rg::vu1native::Mode::Replace)
                 {
-                    rg::vu1native::applyMemoryEffects(*native, memory.getVU1Data(), top);
+                    const GSNativeMesh *built =
+                        (nativeMode() == rg::vu1native::Mode::Gpu && rg::vu1native::hasMesh(*native))
+                            ? &m_nativeMesh
+                            : nullptr;
+                    rg::vu1native::applyMemoryEffects(*native, memory.getVU1Data(), top, built);
                 }
             }
         }

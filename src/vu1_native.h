@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "runtime/gs/gs_types.h"
@@ -152,9 +153,12 @@ std::string describePieces(const uint8_t *code, uint32_t startPC);
 // What the program leaves in VU1 data memory that a later run, or the EE,
 // may read: the bounds in quads 98 and 99 for the programs with
 // `depthBounds`. `apply` writes it where the VU1 did not run (skip, gpu);
+// when `builtMesh` is provided (from buildMesh), its already-decoded vertices
+// are reused instead of re-running readChunk.
 // `matches` says whether the VU1 left the same (check), from the data
 // memory before the run and after it.
-void applyMemoryEffects(const Program &program, uint8_t *data, uint32_t top);
+void applyMemoryEffects(const Program &program, uint8_t *data, uint32_t top,
+                        const GSNativeMesh *builtMesh = nullptr);
 bool memoryEffectsMatch(const Program &program, const uint8_t *before, uint32_t top, const uint8_t *after);
 
 // The GS packets the program kicks for that chunk, in order.
@@ -220,13 +224,27 @@ public:
     void tick();
 
 private:
+    struct DeclinedKey
+    {
+        const char *name;
+        const char *reason;
+        bool operator==(const DeclinedKey &o) const { return name == o.name && reason == o.reason; }
+    };
+    struct DeclinedHash
+    {
+        size_t operator()(const DeclinedKey &k) const noexcept
+        {
+            return std::hash<const void *>{}(k.name) ^ (std::hash<const void *>{}(k.reason) * 0x9E3779B97F4A7C15ull);
+        }
+    };
     Mode m_mode;
-    std::map<std::string, uint64_t> m_native;
-    std::map<std::string, uint64_t> m_declined;
+    std::unordered_map<const char *, uint64_t> m_native;
+    std::unordered_map<DeclinedKey, uint64_t, DeclinedHash> m_declined;
     std::map<std::string, uint64_t> m_kinds;
     uint64_t m_checked = 0u;
     uint64_t m_differ = 0u;
     uint32_t m_shown = 0u;
+    uint32_t m_ticks = 0u;
     int64_t m_next = 0;
 };
 
