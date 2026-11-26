@@ -575,23 +575,6 @@ void Overlay::drawDisplayPage() {
             }
             ImGui::EndCombo();
         }
-
-        static constexpr const char *kFilterHelp[] = {"Crisp pixels with no uneven columns, at any size.",
-                                                      "Soft, smooth scaling."};
-        settingRow("Scaling filter", kFilterHelp[std::min(static_cast<int>(m_settings.display.filter), 1)]);
-        static constexpr const char *kFilters[] = {"Sharp", "Smooth"};
-        int filter = std::min(static_cast<int>(m_settings.display.filter), 1);
-        if (segmented("filter", &filter, kFilters, 2)) {
-            m_settings.display.filter = static_cast<gfx::SdlGpuFilter>(filter);
-            m_backend.setDisplayOptions(m_settings.display);
-            markDirty();
-        }
-
-        settingRow("Sharper picture", "Drops the PS2's line blending, a deflicker for TVs that only blurs on a monitor.");
-        if (toggle("sharper", &m_settings.display.removeLineBlend)) {
-            m_backend.setDisplayOptions(m_settings.display);
-            markDirty();
-        }
         endSettings();
     }
     // The game's camera and view options (Steam Deck fork: moved here from Game).

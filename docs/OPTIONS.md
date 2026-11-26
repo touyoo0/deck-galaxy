@@ -74,6 +74,7 @@ and **Check for new versions**, which is on F1 > Interface:
 
 | Option | |
 |---|---|
+| Remaster mode | On by default. Modernizes the native renderer with mipmaps, 16x anisotropic filtering, smooth palette textures and contrast-adaptive sharpening (CAS). Turn off for the original PS2 texture rendering. |
 | 60 frames per second | On by default; off, the game's own 30. From the next start. |
 | Minimap size | 0.5x to 1.0x the game's, toward its corner. |
 | Compass size | 0.5x to 1.0x the game's, toward its corner. |

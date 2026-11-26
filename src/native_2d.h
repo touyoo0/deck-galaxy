@@ -63,4 +63,11 @@ std::vector<uint8_t> registerPacket(const std::vector<std::pair<uint8_t, uint64_
 // the converter carries follows it, as the GS's does.
 void observe(const uint8_t *data, uint32_t size);
 
+// Single register write applied directly (bypassing A+D decode): keeps the
+// converter's carried PRMODE/PRMODECONT/PRIM/RGBAQ state in sync.
+void observeRegister(uint8_t reg, uint64_t value);
+
+// Current carried RGBAQ color on this thread (for direct VU1 piece builders).
+void currentRgba(uint8_t out[4]);
+
 } // namespace rg::native2d

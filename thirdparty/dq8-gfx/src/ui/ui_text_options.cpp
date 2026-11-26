@@ -15,6 +15,18 @@ const TextEntry kTextsOptions[] = {
     {"Developers", "Développeurs", "Entwickler", "Desarrolladores", "Sviluppatori"},
 
     // the options
+    {"Remaster mode", "Mode Remaster", "Remaster-Modus", "Modo Remaster", "Modalità Remaster"},
+    {"Modernizes the native renderer with mipmaps, 16x anisotropic filtering, smooth palette textures and "
+     "contrast-adaptive sharpening, while keeping low GPU power draw on Steam Deck.",
+     "Modernise le rendu natif avec mipmaps, filtrage anisotrope 16x, textures palettées lissées et netteté "
+     "adaptative (CAS), tout en gardant une faible consommation GPU sur Steam Deck.",
+     "Modernisiert den nativen Renderer mit Mipmaps, 16-facher anisotroper Filterung, geglätteten "
+     "Palettentexturen und adaptiver Schärfe (CAS) bei geringem GPU-Verbrauch auf dem Steam Deck.",
+     "Moderniza el renderizador nativo con mipmaps, filtrado anisotrópico 16x, texturas con paleta suavizadas y "
+     "nitidez adaptativa (CAS), manteniendo un bajo consumo de GPU en Steam Deck.",
+     "Modernizza il renderer nativo con mipmap, filtro anisotropico 16x, texture a tavolozza levigate e nitidezza "
+     "adattiva (CAS), mantenendo un basso consumo GPU su Steam Deck."},
+
     {"60 frames per second", "60 images par seconde", "60 Bilder pro Sekunde", "60 fotogramas por segundo",
      "60 fotogrammi al secondo"},
     {"The game runs at 60 frames a second instead of its own 30, its logic still at the PS2's pace; movies and the "

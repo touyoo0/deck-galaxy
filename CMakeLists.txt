@@ -10,7 +10,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(RogueGalaxyRecomp
-    VERSION 0.12.7
+    VERSION 0.13.0
     DESCRIPTION "Rogue Galaxy (PS2) static recompilation"
     LANGUAGES C CXX)
 
@@ -176,6 +176,40 @@ set_property(TARGET ps2_runtime PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE OF
 option(RG_GS_SDLGPU "Build the SDL3 GPU GS backend" ON)
 if(RG_GS_SDLGPU)
     add_subdirectory(thirdparty/dq8-gfx "${CMAKE_BINARY_DIR}/dq8-gfx")
+endif()
+
+# Target AMD Zen 2 (AVX2, BMI2, Zen 2 scheduling) when building natively on
+# Steam Deck (LCD Jupiter / OLED Galileo). VU1/VU0/producer keep -ffp-contract=off.
+set(RG_STEAMDECK_ARCH_DEFAULT OFF)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "/sys/class/dmi/id/product_name")
+    file(READ "/sys/class/dmi/id/product_name" RG_DMI_PRODUCT)
+    if(RG_DMI_PRODUCT MATCHES "^(Jupiter|Galileo)")
+        set(RG_STEAMDECK_ARCH_DEFAULT ON)
+    endif()
+endif()
+option(RG_STEAMDECK_ARCH "Optimize game and native renderer for Steam Deck (Zen 2)" ${RG_STEAMDECK_ARCH_DEFAULT})
+if(RG_STEAMDECK_ARCH AND (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU"))
+    message(STATUS "Steam Deck Zen 2 tuning enabled (-march=znver2)")
+    if(TARGET dq8_gfx_native)
+        target_compile_options(dq8_gfx_native PRIVATE -march=znver2)
+    endif()
+endif()
+
+# ThinLTO with lld on Linux/Clang Release builds: lets LLVM inline across
+# generated translation units and native renderer helpers without rebuilding
+# the heavy VU AOT shards in ps2_runtime.
+find_program(RG_LLD_PROGRAM ld.lld)
+set(RG_THIN_LTO_DEFAULT OFF)
+if(RG_STEAMDECK_ARCH AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+   CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND RG_LLD_PROGRAM)
+    set(RG_THIN_LTO_DEFAULT ON)
+endif()
+option(RG_THIN_LTO "Enable ThinLTO (-flto=thin) with lld for generated code and game targets" ${RG_THIN_LTO_DEFAULT})
+if(RG_THIN_LTO AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND RG_LLD_PROGRAM)
+    message(STATUS "ThinLTO enabled (-flto=thin, ld.lld)")
+    if(TARGET dq8_gfx_native)
+        target_compile_options(dq8_gfx_native PRIVATE $<$<CONFIG:Release>:-flto=thin>)
+    endif()
 endif()
 
 add_subdirectory(src)

@@ -43,6 +43,7 @@
 #include "fast_travel.h"
 #include "map_chests.h"
 #include "native_renderer.h"
+#include "remaster.h"
 #include "hud_size.h"
 #include "inventory.h"
 #include "opening.h"
@@ -192,6 +193,7 @@ int run(int argc, char **argv)
     rg::freecamera::install(runtime);
     rg::settingspages::install(runtime);
     rg::quickscenes::install();
+    rg::remaster::install();
     rg::savestate::install(runtime);
     // Read here, after the menu's settings and before anything native sets
     // itself up, so the whole run sees one answer.

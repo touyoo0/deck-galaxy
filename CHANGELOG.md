@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.13.0 - 2026-11-26
+
+- New "Remaster mode" (enabled by default): 2x GPU texture upscaling (Anime4K CNN for 3D textures and 2xBR for 2D/UI), mipmaps, 16x anisotropic filtering, half-resolution SSAO, FXAA and contrast-adaptive sharpening (CAS).
+- Major Steam Deck performance and power optimizations: direct VU1 outline and shadow-volume builders, SSE/AVX2 skinning and 3D culling, draw call batching, Zen 2 (`-march=znver2`) + ThinLTO builds, and lower idle overhead.
+- Cleaned up the Display menu: removed the obsolete "Scaling filter" and "Sharper picture" options.
+
 ## 0.12.7 - 2026-11-25
 
 - Steadier 60 fps and lower power draw and heat on the Steam Deck across exploration and battles.
