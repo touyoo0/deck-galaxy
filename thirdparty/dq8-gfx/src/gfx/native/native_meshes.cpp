@@ -845,6 +845,7 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         mu.blend[3] = m.clampV ? 1.0f : 0.0f;
         mu.wrap[0] = m.wrapU;
         mu.wrap[1] = m.wrapV;
+        mu.wrap[2] = (!m.blending && m.fba) ? 1u : 0u;
         mu.region[0] = m.regionU[0];
         mu.region[1] = m.regionU[1];
         mu.region[2] = m.regionV[0];
@@ -1020,7 +1021,7 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
                     nm.blendOp != m.blendOp || nm.blendFactor != m.blendFactor ||
                     nm.alphaTest != m.alphaTest || nm.alphaRef != m.alphaRef || nm.alphaFail != m.alphaFail ||
                     nm.depthTest != m.depthTest || nm.depthWrite != m.depthWrite || nm.colorWrite != m.colorWrite ||
-                    nm.fog != m.fog)
+                    nm.fog != m.fog || nm.fba != m.fba)
                     break;
                 totalIndices += next.indexCount;
                 ++n;

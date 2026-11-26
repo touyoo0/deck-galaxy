@@ -190,6 +190,7 @@ struct Material
     uint8_t colorWrite = 0xF; // bits R, G, B, A
     bool cullBack = false;
     bool fog = false;
+    bool fba = false; // GS FBA: sets bit 7 (0x80) of written alpha
     // The producer resolved every field from what the game meant, with no
     // fallback (the readiness counter R4).
     bool known = false;

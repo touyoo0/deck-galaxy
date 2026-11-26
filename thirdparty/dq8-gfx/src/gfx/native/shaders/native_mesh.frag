@@ -159,5 +159,6 @@ void main() {
         float k = (remaster ? clamp(inFog, 0.0, 255.0) : clamp(floor(inFog), 0.0, 255.0)) / 255.0;
         c.rgb = mix(material.fogColor.rgb * 255.0, c.rgb, k);
     }
-    outColor = vec4(c.rgb / 255.0, c.a / 128.0);
+    float outAlpha = (material.wrap.z != 0u) ? max(c.a, 128.0) : c.a;
+    outColor = vec4(c.rgb / 255.0, outAlpha / 128.0);
 }

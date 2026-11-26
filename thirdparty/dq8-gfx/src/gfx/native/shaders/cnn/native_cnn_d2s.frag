@@ -90,17 +90,36 @@ void main() {
     vec4 mx = max(max(c00, c10), max(c01, c11));
     vec4 res = clamp(bicubic, mn, mx);
 
+    vec3 rgb;
+    float alphaWeight;
     if (res.a <= 1e-5) {
-        outColor = vec4(0.0);
-        return;
+        // Preserve RGB on alpha == 0 texels (e.g. PS2 textures using alpha as an
+        // emissive/cutout mask while still drawing RGB with ATST ALWAYS/GEQUAL 0).
+        vec3 rRows[4];
+        vec3 r00, r10, r01, r11;
+        for (int j = -1; j <= 2; ++j) {
+            vec3 s0 = fetchSrc(base + ivec2(-1, j), srcSize).rgb;
+            vec3 s1 = fetchSrc(base + ivec2( 0, j), srcSize).rgb;
+            vec3 s2 = fetchSrc(base + ivec2( 1, j), srcSize).rgb;
+            vec3 s3 = fetchSrc(base + ivec2( 2, j), srcSize).rgb;
+            if (j == 0) { r00 = s1; r10 = s2; }
+            if (j == 1) { r01 = s1; r11 = s2; }
+            rRows[j + 1] = cubic4(vec4(s0, 0.0), vec4(s1, 0.0), vec4(s2, 0.0), vec4(s3, 0.0), f.x).rgb;
+        }
+        vec3 bicubicRgb = cubic4(vec4(rRows[0], 0.0), vec4(rRows[1], 0.0), vec4(rRows[2], 0.0), vec4(rRows[3], 0.0), f.y).rgb;
+        vec3 rmn = min(min(r00, r10), min(r01, r11));
+        vec3 rmx = max(max(r00, r10), max(r01, r11));
+        rgb = clamp(bicubicRgb, rmn, rmx);
+        alphaWeight = (mx.a <= 1e-5) ? 1.0 : 0.0;
+    } else {
+        rgb = clamp(res.rgb / res.a, 0.0, 1.0);
+        // Attenuate residual on near-transparent alpha borders to avoid edge halos.
+        alphaWeight = smoothstep(0.05, 0.35, res.a);
     }
-    vec3 rgb = clamp(res.rgb / res.a, 0.0, 1.0);
 
     // Learned CNN 2x2 sub-pixel residual from conv_last.
     vec4 resVec = texelFetch(convLast, srcPix, 0);
     float residual = resVec[sub.y * 2 + sub.x];
-    // Attenuate residual on near-transparent alpha borders to avoid edge halos.
-    float alphaWeight = smoothstep(0.05, 0.35, res.a);
     rgb = clamp(rgb + vec3(residual * alphaWeight), 0.0, 1.0);
 
     outColor = vec4(rgb, clamp(res.a, 0.0, 1.0));
