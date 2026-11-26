@@ -71,6 +71,12 @@ vec4 evalCorner(
     // Pick whichever orthogonal neighbor (F or H) is closer to E.
     vec4 px = (dEF <= dEH) ? F : H;
 
+    // Never bleed empty transparent atlas space (a ~= 0) into an opaque PS2
+    // pixel (PS2 opaque alpha is 0x80 = 0.502), or 9-slice dialog/menu borders
+    // become see-through along their outer edges.
+    if (E.a >= 0.45 && px.a < 0.05)
+        return E;
+
     // Determine edge slope (normal 45-deg vs 2:1 shallow/steep) for smooth anti-aliasing.
     float ke = df(F, G);
     float ki = df(H, C);

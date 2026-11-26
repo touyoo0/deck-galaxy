@@ -682,7 +682,6 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         const bool remaster3d = remaster && d.hasModel && m.sourceTarget == 0u && m.wrapU < 2u && m.wrapV < 2u &&
                                 m.destinationAlphaTest < 0;
         const bool remasterResolve = remaster && m.sourceTarget == 0u && m.destinationAlphaTest < 0;
-        bool usedResolved = false;
         if (m.sourceTarget != 0u)
         {
             // A target drawn earlier this frame (or kept from before), read
@@ -742,10 +741,7 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
             if (img.format == PixelFormat::Rgba8 && remasterResolve)
             {
                 if (const auto r = m_resolved.find(uint64_t(m.texture) << 32u); r != m_resolved.end())
-                {
                     image = palette = r->second.texture;
-                    usedResolved = true;
-                }
             }
             else if (img.format == PixelFormat::Index8)
             {
@@ -755,7 +751,6 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
                 {
                     image = palette = r->second.texture;
                     mu.mode[0] = 1u;
-                    usedResolved = true;
                 }
                 else
                 {
@@ -917,8 +912,7 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         }
         SDL_PushGPUVertexUniformData(commands, 0, &du, sizeof(du));
         SDL_PushGPUFragmentUniformData(commands, 0, &mu, sizeof(mu));
-        const uint32_t samplerKey =
-            ((m.linear || (usedResolved && !d.hasModel)) ? 1u : 0u) | (m.clampU ? 2u : 0u) | (m.clampV ? 4u : 0u);
+        const uint32_t samplerKey = (m.linear ? 1u : 0u) | (m.clampU ? 2u : 0u) | (m.clampV ? 4u : 0u);
         SDL_GPUSampler *sampler = meshSampler(device, samplerKey, remaster3d && mu.mode[0] == 1u);
         if (image != boundImage || palette != boundPalette || sampler != boundSampler)
         {
