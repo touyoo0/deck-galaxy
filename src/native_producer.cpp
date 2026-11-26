@@ -1363,73 +1363,120 @@ bool mesh(const GSNativeMesh &mesh, const GSDrawState *drawState, const uint8_t 
         // Only what the skip rule reads (px, py, outside), by the same
         // operations as gsNativeMeshPoint, so the same bits.
         points.resize(count);
-        const auto &m = h.matrix;
+        const float m00 = h.matrix[0][0], m01 = h.matrix[0][1], m02 = h.matrix[0][2], m03 = h.matrix[0][3];
+        const float m10 = h.matrix[1][0], m11 = h.matrix[1][1], m12 = h.matrix[1][2], m13 = h.matrix[1][3];
+        const float m20 = h.matrix[2][0], m21 = h.matrix[2][1], m22 = h.matrix[2][2], m23 = h.matrix[2][3];
+        const float m30 = h.matrix[3][0], m31 = h.matrix[3][1], m32 = h.matrix[3][2], m33 = h.matrix[3][3];
+        const bool guardBand = h.guardBand != 0u;
+        const float bs0 = h.bandScale[0], bs1 = h.bandScale[1], bs2 = h.bandScale[2];
+        const float bo0 = h.bandOffset[0] * bs0, bo1 = h.bandOffset[1] * bs1, bo2 = h.bandOffset[2] * bs2;
+        const GSNativeMesh::Vertex *verts = mesh.vertices.data();
+        GSNativeMeshPoint *pts = points.data();
         for (uint32_t k = 0; k < count; ++k)
         {
 #if defined(__clang__)
 #pragma clang fp contract(off) // rounded as the VU1's separate multiply and add
 #endif
-            const GSNativeMesh::Vertex &v = mesh.vertices[k];
-            float clip[4];
-            for (int i = 0; i < 4; ++i)
-                clip[i] = v.x * m[0][i] + v.y * m[1][i] + v.z * m[2][i] + m[3][i];
-            GSNativeMeshPoint &p = points[k];
-            p.q = gsNativeReciprocal(clip[3]);
-            p.px = clip[0] * p.q;
-            p.py = clip[1] * p.q;
-            p.outside = false;
-            if (h.guardBand)
+            const GSNativeMesh::Vertex &v = verts[k];
+            const float c0 = v.x * m00 + v.y * m10 + v.z * m20 + m30;
+            const float c1 = v.x * m01 + v.y * m11 + v.z * m21 + m31;
+            const float c2 = v.x * m02 + v.y * m12 + v.z * m22 + m32;
+            const float c3 = v.x * m03 + v.y * m13 + v.z * m23 + m33;
+            GSNativeMeshPoint &p = pts[k];
+            const float q = gsNativeReciprocal(c3);
+            p.q = q;
+            p.px = c0 * q;
+            p.py = c1 * q;
+            if (guardBand)
             {
-                const float projected[3] = {p.px, p.py, clip[2] * p.q};
-                for (int i = 0; i < 3; ++i)
-                {
-                    const float g = projected[i] * h.bandScale[i] + h.bandOffset[i] * h.bandScale[i];
-                    p.outside = p.outside || g > 1.0f || g < -1.0f;
-                }
+                const float g0 = p.px * bs0 + bo0;
+                const float g1 = p.py * bs1 + bo1;
+                const float g2 = (c2 * q) * bs2 + bo2;
+                p.outside = (g0 > 1.0f || g0 < -1.0f) || (g1 > 1.0f || g1 < -1.0f) || (g2 > 1.0f || g2 < -1.0f);
+            }
+            else
+            {
+                p.outside = false;
             }
         }
     }
     const bool lists = h.triangleList != 0u;
     const bool listCull = lists && h.backface;
-    float winding = listCull ? -h.winding : h.winding;
     uint64_t skipped = 0u;
     thread_local std::vector<uint32_t> tmpIndices;
-    tmpIndices.clear();
-    tmpIndices.reserve(count >= 2u ? (count - 2u) * 3u : 0u);
-    for (uint32_t k = 1; k < count; ++k)
+    if (!culls)
     {
-        const bool judged = !listCull || k % 3u == 2u;
-        bool skip = culls && judged && gsNativeMeshSkips(h, points.data(), k, winding);
-        // A clipping chunk's triangle with a corner behind the eye (w < 0):
-        // its projected corner lands mirrored, so the projected facing has
-        // the wrong sign and a floor in front of the camera was culled at
-        // some angles. The VU1 judges such a triangle after its slot E has
-        // clipped it; here the GPU clips after, so the facing is judged in
-        // homogeneous terms: the projected one times the sign of the three
-        // w's product (the same as before while every w is positive).
-        if (h.clips && h.backface && judged && k >= 2u)
+        if (count < 3u)
         {
-            const float wSign = points[k - 2u].q * points[k - 1u].q * points[k].q;
-            if (wSign < 0.0f)
+            tmpIndices.clear();
+        }
+        else if (lists)
+        {
+            const uint32_t idxCount = (count / 3u) * 3u;
+            tmpIndices.resize(idxCount);
+            uint32_t *dst = tmpIndices.data();
+            for (uint32_t k = 0u; k < idxCount; ++k)
+                dst[k] = k;
+        }
+        else
+        {
+            const uint32_t idxCount = (count - 2u) * 3u;
+            tmpIndices.resize(idxCount);
+            uint32_t *dst = tmpIndices.data();
+            for (uint32_t k = 2u; k < count; ++k)
             {
-                GSNativeMesh::Header facingOnly = h;
-                facingOnly.guardBand = 0u;
-                skip = gsNativeMeshSkips(facingOnly, points.data(), k, -winding);
+                *dst++ = k - 2u;
+                *dst++ = k - 1u;
+                *dst++ = k;
             }
         }
-        if (culls && !listCull)
-            winding = -winding;
-        const bool drawn = k >= 2u && (lists ? k % 3u == 2u : true);
-        if (!drawn)
-            continue;
-        if (skip)
+    }
+    else
+    {
+        float winding = listCull ? -h.winding : h.winding;
+        const uint32_t maxIndices = count >= 2u ? (count - 2u) * 3u : 0u;
+        tmpIndices.resize(maxIndices);
+        uint32_t *dst = tmpIndices.data();
+        const GSNativeMeshPoint *pts = points.data();
+        const bool clipBackface = h.clips && h.backface;
+        for (uint32_t k = 1; k < count; ++k)
         {
-            ++skipped;
-            continue;
+            const bool judged = !listCull || k % 3u == 2u;
+            bool skip = judged && gsNativeMeshSkips(h, pts, k, winding);
+            if (clipBackface && judged && k >= 2u)
+            {
+                const float wSign = pts[k - 2u].q * pts[k - 1u].q * pts[k].q;
+                if (wSign < 0.0f)
+                {
+                    GSNativeMesh::Header facingOnly = h;
+                    facingOnly.guardBand = 0u;
+                    skip = gsNativeMeshSkips(facingOnly, pts, k, -winding);
+                }
+            }
+            if (!listCull)
+                winding = -winding;
+            const bool drawn = k >= 2u && (lists ? k % 3u == 2u : true);
+            if (!drawn)
+                continue;
+            if (skip)
+            {
+                ++skipped;
+                continue;
+            }
+            *dst++ = k - 2u;
+            *dst++ = k - 1u;
+            *dst++ = k;
         }
-        tmpIndices.push_back(k - 2u);
-        tmpIndices.push_back(k - 1u);
-        tmpIndices.push_back(k);
+        tmpIndices.resize(static_cast<size_t>(dst - tmpIndices.data()));
+    }
+
+    if (tmpIndices.empty())
+    {
+        State &s = state();
+        std::lock_guard lock(s.mutex);
+        ++s.counts.meshes;
+        s.counts.trianglesSkipped += skipped;
+        return drawState != nullptr;
     }
 
     thread_local std::vector<native::Vertex> tmpVertices;
@@ -1647,6 +1694,8 @@ uint64_t hostSpan(uint32_t psm, uint32_t dbw, uint32_t height)
 // none.
 State::HostImage *hostImageFor(State &s, uint32_t base, uint32_t psm, uint32_t bufferWidth, bool anyWidth = false)
 {
+    if (s.hostImages.empty())
+        return nullptr;
     const auto at = s.hostImages.find({base, psm});
     if (at == s.hostImages.end())
         return nullptr;
@@ -1785,6 +1834,7 @@ bool sourceOf(State &s, const GSTex0Reg &t, native::Material &m)
     }
     // A narrow read of a buffer with narrow views: the view of its width,
     // else whichever of the views and the buffer was drawn last.
+    if (!s.viewWidths.empty())
     if (const auto widths = s.viewWidths.find(t.tbp0); widths != s.viewWidths.end() && narrow(s, t.tbp0, t.tbw))
     {
         const auto seqOf = [&](uint32_t key) {

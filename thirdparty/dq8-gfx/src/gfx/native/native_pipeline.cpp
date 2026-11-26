@@ -268,11 +268,19 @@ void pushMesh(MeshDraw &&draw, const Vertex *vertices, uint32_t vertexCount, con
     draw.firstVertex = static_cast<uint32_t>(q.meshVertices.size());
     draw.vertexCount = vertexCount;
     if (vertexCount != 0u)
+    {
+        if (q.meshVertices.capacity() < q.meshVertices.size() + vertexCount)
+            q.meshVertices.reserve(std::max<size_t>(q.meshVertices.size() * 2u + vertexCount, 65536u));
         q.meshVertices.insert(q.meshVertices.end(), vertices, vertices + vertexCount);
+    }
     draw.firstIndex = static_cast<uint32_t>(q.meshIndices.size());
     draw.indexCount = indexCount;
     if (indexCount != 0u)
+    {
+        if (q.meshIndices.capacity() < q.meshIndices.size() + indexCount)
+            q.meshIndices.reserve(std::max<size_t>(q.meshIndices.size() * 2u + indexCount, 131072u));
         q.meshIndices.insert(q.meshIndices.end(), indices, indices + indexCount);
+    }
     q.records.push_back(std::move(draw));
 }
 

@@ -161,11 +161,23 @@ bool memoryEffectsMatch(const Program &program, const uint8_t *before, uint32_t 
 void buildChunk(const Program &program, const uint8_t *data, uint32_t top,
                 std::vector<std::vector<uint8_t>> &packets);
 
+// Direct A+D register writes for a mesh's GS state (FOGCOL, PRIM, PRMODE),
+// avoiding GIF packet serialization/decoding on the native pipeline hot path.
+struct MeshStateWrites
+{
+    std::pair<uint8_t, uint64_t> writes[3];
+    size_t count = 0u;
+};
+
 // The chunk as a mesh: the packets that set the GS state it draws under
 // (FOGCOL, PRIM and PRMODE), to go first, and the strip itself, for
-// GS::submitNativeMesh.
+// GS::submitNativeMesh. When `needDepth` is false, per-vertex CPU depth
+// projection is skipped (unused by the native pipeline). When `directWrites`
+// is non-null and the state packets are pure A+D writes, they are returned
+// directly and `packets` is left empty.
 void buildMesh(const Program &program, const uint8_t *data, uint32_t top,
-               std::vector<std::vector<uint8_t>> &packets, GSNativeMesh &mesh);
+               std::vector<std::vector<uint8_t>> &packets, GSNativeMesh &mesh,
+               bool needDepth = true, MeshStateWrites *directWrites = nullptr);
 
 // RG_VU1_NATIVE, in the game (src/vif1_thread.cpp), for the chunks done
 // natively: `check` runs the VU1 as before and compares its packets with the

@@ -178,4 +178,21 @@ if(RG_GS_SDLGPU)
     add_subdirectory(thirdparty/dq8-gfx "${CMAKE_BINARY_DIR}/dq8-gfx")
 endif()
 
+# Target AMD Zen 2 (AVX2, BMI2, Zen 2 scheduling) when building natively on
+# Steam Deck (LCD Jupiter / OLED Galileo). VU1/VU0/producer keep -ffp-contract=off.
+set(RG_STEAMDECK_ARCH_DEFAULT OFF)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "/sys/class/dmi/id/product_name")
+    file(READ "/sys/class/dmi/id/product_name" RG_DMI_PRODUCT)
+    if(RG_DMI_PRODUCT MATCHES "^(Jupiter|Galileo)")
+        set(RG_STEAMDECK_ARCH_DEFAULT ON)
+    endif()
+endif()
+option(RG_STEAMDECK_ARCH "Optimize game and native renderer for Steam Deck (Zen 2)" ${RG_STEAMDECK_ARCH_DEFAULT})
+if(RG_STEAMDECK_ARCH AND (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU"))
+    message(STATUS "Steam Deck Zen 2 tuning enabled (-march=znver2)")
+    if(TARGET dq8_gfx_native)
+        target_compile_options(dq8_gfx_native PRIVATE -march=znver2)
+    endif()
+endif()
+
 add_subdirectory(src)

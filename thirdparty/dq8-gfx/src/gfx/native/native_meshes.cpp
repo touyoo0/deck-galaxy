@@ -330,16 +330,23 @@ void Renderer::prepareRemasterTextures(SDL_GPUDevice *device, SDL_GPUCommandBuff
     const bool xbrReady = ensureXbr(device, xbrErr);
     const bool cnnReady = ensureCnn(device, cnnErr);
     bool added = false;
+    uint64_t lastCheckedKey = 0u;
+    bool lastCheckedIs2d = false;
     for (const MeshDraw &d : m_frameMeshes)
     {
         const Material &m = d.material;
         if (d.indexCount == 0u || m.sourceTarget != 0u || m.texture == 0u || m.destinationAlphaTest >= 0)
             continue;
+        const bool is2d = !d.hasModel;
+        const uint64_t fastKey = (uint64_t(m.texture) << 32u) | uint64_t(m.palette);
+        if (fastKey == lastCheckedKey && is2d == lastCheckedIs2d)
+            continue;
+        lastCheckedKey = fastKey;
+        lastCheckedIs2d = is2d;
         auto it = m_images.find(m.texture);
         if (it == m_images.end())
             continue;
         Image &img = it->second;
-        const bool is2d = !d.hasModel;
         const bool clampU = m.clampU || m.wrapU >= 2u;
         const bool clampV = m.clampV || m.wrapV >= 2u;
         const bool isPow2 = (img.width & (img.width - 1u)) == 0u && (img.height & (img.height - 1u)) == 0u;
@@ -644,6 +651,15 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
     float cached3dModel[16] = {};
     float cached3dDepthScale = 0.0f, cached3dDepthMax = 0.0f;
     float cached3dClip[16] = {}, cached3dDepthRow[4] = {}, cached3dDepthLimit[2] = {};
+    const bool remaster = remasterEnabled();
+    Id lastTexId = 0u, lastPalId = 0u;
+    bool lastTexResolved = false;
+    SDL_GPUTexture *lastTexImage = nullptr, *lastTexPalette = nullptr;
+    float lastTexOwnW = 1.0f, lastTexOwnH = 1.0f;
+    uint32_t lastTexMode0 = 0u, lastTexMode3 = 0u;
+    bool hasLastDu = false, hasLastMu = false;
+    DrawUniforms lastDu{};
+    MaterialUniforms lastMu{};
     for (size_t n = first; n < last; ++n)
     {
         const MeshDraw &d = m_frameMeshes[n];
@@ -678,7 +694,6 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         mu.texa[1] = m.alphaZeroOnBlack ? 1.0f : 0.0f;
         SDL_GPUTexture *image = m_white, *palette = m_white;
         float ownW = 1.0f, ownH = 1.0f;
-        const bool remaster = remasterEnabled();
         const bool remaster3d = remaster && d.hasModel && m.sourceTarget == 0u && m.wrapU < 2u && m.wrapV < 2u &&
                                 m.destinationAlphaTest < 0;
         const bool remasterResolve = remaster && m.sourceTarget == 0u && m.destinationAlphaTest < 0;
@@ -727,43 +742,65 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         }
         else if (m.texture != 0u)
         {
-            const auto it = m_images.find(m.texture);
-            if (it == m_images.end())
+            if (m.texture == lastTexId && m.palette == lastPalId && remasterResolve == lastTexResolved &&
+                lastTexImage != nullptr)
             {
-                ++m_meshCounts.noTexture;
-                continue;
+                image = lastTexImage;
+                palette = lastTexPalette;
+                ownW = lastTexOwnW;
+                ownH = lastTexOwnH;
+                mu.mode[0] = lastTexMode0;
+                mu.mode[3] = lastTexMode3;
             }
-            const Image &img = it->second;
-            image = palette = img.texture;
-            ownW = float(img.width);
-            ownH = float(img.height);
-            mu.mode[0] = 1u;
-            if (img.format == PixelFormat::Rgba8 && remasterResolve)
+            else
             {
-                if (const auto r = m_resolved.find(uint64_t(m.texture) << 32u); r != m_resolved.end())
-                    image = palette = r->second.texture;
-            }
-            else if (img.format == PixelFormat::Index8)
-            {
-                const Id palId = m.palette ? m.palette : img.palette;
-                const uint64_t rkey = (uint64_t(m.texture) << 32u) | uint64_t(palId);
-                if (const auto r = remasterResolve ? m_resolved.find(rkey) : m_resolved.end(); r != m_resolved.end())
+                const auto it = m_images.find(m.texture);
+                if (it == m_images.end())
                 {
-                    image = palette = r->second.texture;
-                    mu.mode[0] = 1u;
+                    ++m_meshCounts.noTexture;
+                    continue;
                 }
-                else
+                const Image &img = it->second;
+                image = palette = img.texture;
+                ownW = float(img.width);
+                ownH = float(img.height);
+                mu.mode[0] = 1u;
+                if (img.format == PixelFormat::Rgba8 && remasterResolve)
                 {
-                    const auto p = m_palettes.find(palId);
-                    if (p == m_palettes.end())
+                    if (const auto r = m_resolved.find(uint64_t(m.texture) << 32u); r != m_resolved.end())
+                        image = palette = r->second.texture;
+                }
+                else if (img.format == PixelFormat::Index8)
+                {
+                    const Id palId = m.palette ? m.palette : img.palette;
+                    const uint64_t rkey = (uint64_t(m.texture) << 32u) | uint64_t(palId);
+                    if (const auto r = remasterResolve ? m_resolved.find(rkey) : m_resolved.end(); r != m_resolved.end())
                     {
-                        ++m_meshCounts.noTexture;
-                        continue;
+                        image = palette = r->second.texture;
+                        mu.mode[0] = 1u;
                     }
-                    palette = p->second.texture;
-                    mu.mode[0] = 2u;
-                    mu.mode[3] = p->second.width;
+                    else
+                    {
+                        const auto p = m_palettes.find(palId);
+                        if (p == m_palettes.end())
+                        {
+                            ++m_meshCounts.noTexture;
+                            continue;
+                        }
+                        palette = p->second.texture;
+                        mu.mode[0] = 2u;
+                        mu.mode[3] = p->second.width;
+                    }
                 }
+                lastTexId = m.texture;
+                lastPalId = m.palette;
+                lastTexResolved = remasterResolve;
+                lastTexImage = image;
+                lastTexPalette = palette;
+                lastTexOwnW = ownW;
+                lastTexOwnH = ownH;
+                lastTexMode0 = mu.mode[0];
+                lastTexMode3 = mu.mode[3];
             }
             mu.mode[1] = static_cast<uint32_t>(m.function);
             mu.mode[2] = m.textureAlpha ? 1u : 0u;
@@ -910,8 +947,18 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
                 boundBlendConst = f;
             }
         }
-        SDL_PushGPUVertexUniformData(commands, 0, &du, sizeof(du));
-        SDL_PushGPUFragmentUniformData(commands, 0, &mu, sizeof(mu));
+        if (!hasLastDu || std::memcmp(&du, &lastDu, sizeof(du)) != 0)
+        {
+            SDL_PushGPUVertexUniformData(commands, 0, &du, sizeof(du));
+            lastDu = du;
+            hasLastDu = true;
+        }
+        if (!hasLastMu || std::memcmp(&mu, &lastMu, sizeof(mu)) != 0)
+        {
+            SDL_PushGPUFragmentUniformData(commands, 0, &mu, sizeof(mu));
+            lastMu = mu;
+            hasLastMu = true;
+        }
         const uint32_t samplerKey = (m.linear ? 1u : 0u) | (m.clampU ? 2u : 0u) | (m.clampV ? 4u : 0u);
         SDL_GPUSampler *sampler = meshSampler(device, samplerKey, remaster3d && mu.mode[0] == 1u);
         if (image != boundImage || palette != boundPalette || sampler != boundSampler)
@@ -1011,7 +1058,8 @@ bool Renderer::drawFrame(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, 
         return v ? std::strtoull(v, nullptr, 10) : 0ull;
     }();
     // Or the frame after build/run/dump-gpu appears (the producer's trigger).
-    const bool triggered = std::remove("build/run/dump-gpu") == 0;
+    // Check once every 60 frames instead of issuing an unlink() syscall every frame.
+    const bool triggered = (m_meshCounts.frames % 60u == 0u) && std::remove("build/run/dump-gpu") == 0;
     if (triggered)
     {
         std::fprintf(stderr, "[frame-dump] frame %llu (%zu draws)\n", (unsigned long long)m_meshCounts.frames,

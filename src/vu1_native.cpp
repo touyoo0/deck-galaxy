@@ -9,6 +9,7 @@
 #include <deque>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
@@ -884,31 +885,101 @@ void readChunk(const Program &program, const VuData &vu, uint32_t top, Chunk &ch
     const uint32_t bones = program.decode == Decode::Skinned ? bonesOf(program, vu, top) : 0u;
     const bool lit = program.color == Color::Lit || program.color == Color::LitVertex || program.color == Color::LitPoint ||
                       program.color == Color::LitPointVertex;
+    const bool hasPointLights = program.color == Color::LitPoint || program.color == Color::LitPointVertex;
     const bool normals = lit || program.uv == Uv::SphereMap || program.uv == Uv::Reflect || program.uv == Uv::Ramp ||
                          program.uv == Uv::Swell;
-    const Lights lights(vu);
-    const PointLights points(vu);
-    const SphereMap sphere(vu);
-    const Wave wave(vu);
-    const Reflection reflection(vu);
-    const Ramp ramp(vu);
-    const Beam beam(vu);
-    const Swell swell(vu);
+    std::optional<Lights> lights;
+    if (lit)
+        lights.emplace(vu);
+    std::optional<PointLights> points;
+    if (hasPointLights)
+        points.emplace(vu);
+    std::optional<SphereMap> sphere;
+    if (program.uv == Uv::SphereMap)
+        sphere.emplace(vu);
+    std::optional<Wave> wave;
+    if (program.uv == Uv::Wave)
+        wave.emplace(vu);
+    std::optional<Reflection> reflection;
+    if (program.uv == Uv::Reflect)
+        reflection.emplace(vu);
+    std::optional<Ramp> ramp;
+    if (program.uv == Uv::Ramp)
+        ramp.emplace(vu);
+    std::optional<Beam> beam;
+    if (program.uv == Uv::Beam)
+        beam.emplace(vu);
+    std::optional<Swell> swell;
+    if (program.uv == Uv::Swell)
+        swell.emplace(vu);
+    const Vec4 posScale = vu.quad(77);
+    const uint32_t weightBase = bones != 0u ? (positions + vu.half(top + 1u, 2)) : 0u;
     chunk.mesh.vertices.resize(count);
+    GSNativeMesh::Vertex *verts = chunk.mesh.vertices.data();
+    // Fast path for the ~90% common case: int16 positions/UVs, plain UVs, non-rawColor, non-white.
+    if (!program.rawFloats && !program.rawColor && program.uv == Uv::Plain && !program.white && !normals)
+    {
+        for (uint32_t k = 0; k < count; ++k)
+        {
+            GSNativeMesh::Vertex &v = verts[k];
+            float position[3] = {
+                itof15(vu.word(positions + k, 0)) * posScale.x,
+                itof15(vu.word(positions + k, 1)) * posScale.y,
+                itof15(vu.word(positions + k, 2)) * posScale.z,
+            };
+            if (bones != 0u)
+                skin(vu, weightBase + k * 2u, bones, position);
+            v.x = position[0];
+            v.y = position[1];
+            v.z = position[2];
+            v.u = itof15(vu.word(uvs + k, 0)) * uvScale.x;
+            v.v = itof15(vu.word(uvs + k, 1)) * uvScale.y;
+            if (perVertex)
+            {
+                v.r = colorBase.x * itof15(vu.word(colors + k, 0)) * 256.0f;
+                v.g = colorBase.y * itof15(vu.word(colors + k, 1)) * 256.0f;
+                v.b = colorBase.z * itof15(vu.word(colors + k, 2)) * 256.0f;
+                v.a = colorBase.w * itof15(vu.word(colors + k, 3)) * 256.0f;
+            }
+            else
+            {
+                v.r = colorBase.x;
+                v.g = colorBase.y;
+                v.b = colorBase.z;
+                v.a = colorBase.w;
+            }
+        }
+        return;
+    }
     for (uint32_t k = 0; k < count; ++k)
     {
         GSNativeMesh::Vertex &v = chunk.mesh.vertices[k];
         float position[3];
-        decodePosition(vu, top, k, bones, position, program.rawFloats);
+        if (program.rawFloats)
+        {
+            position[0] = fromBits(static_cast<uint32_t>(vu.word(positions + k, 0)));
+            position[1] = fromBits(static_cast<uint32_t>(vu.word(positions + k, 1)));
+            position[2] = fromBits(static_cast<uint32_t>(vu.word(positions + k, 2)));
+        }
+        else
+        {
+            position[0] = itof15(vu.word(positions + k, 0)) * posScale.x;
+            position[1] = itof15(vu.word(positions + k, 1)) * posScale.y;
+            position[2] = itof15(vu.word(positions + k, 2)) * posScale.z;
+        }
+        if (bones != 0u)
+        {
+            skin(vu, weightBase + k * 2u, bones, position);
+        }
         if (program.uv == Uv::Wave)
         {
-            wave.xy(position[0], position[1]);
+            wave->xy(position[0], position[1]);
         }
         if (program.uv == Uv::Swell)
         {
             float normal[3];
             decodeNormal(vu, top, k, program.skinNormals ? bones : 0u, normal, program.rawFloats);
-            swell.push(position, normal);
+            swell->push(position, normal);
         }
         v.x = position[0];
         v.y = position[1];
@@ -927,7 +998,7 @@ void readChunk(const Program &program, const VuData &vu, uint32_t top, Chunk &ch
             v.a = fromBits(static_cast<uint32_t>(vu.word(colors + k, 3)));
         }
         if (program.uv == Uv::Beam)
-            beam.uv(position, v.u, v.v);
+            beam->uv(position, v.u, v.v);
         if (program.white)
             v.r = v.g = v.b = 128.0f;
         if (normals)
@@ -936,15 +1007,15 @@ void readChunk(const Program &program, const VuData &vu, uint32_t top, Chunk &ch
             decodeNormal(vu, top, k, program.skinNormals ? bones : 0u, normal, program.rawFloats);
             if (lit)
             {
-                const Vec4 c = lights.shade(normal);
+                const Vec4 c = lights->shade(normal);
                 v.r = c.x;
                 v.g = c.y;
                 v.b = c.z;
                 v.a = c.w;
-                if (program.color == Color::LitPoint || program.color == Color::LitPointVertex)
+                if (hasPointLights)
                 {
                     float rgb[3] = {c.x, c.y, c.z};
-                    points.add(position, normal, rgb);
+                    points->add(position, normal, rgb);
                     v.r = rgb[0];
                     v.g = rgb[1];
                     v.b = rgb[2];
@@ -974,15 +1045,15 @@ void readChunk(const Program &program, const VuData &vu, uint32_t top, Chunk &ch
             }
             if (program.uv == Uv::SphereMap)
             {
-                sphere.uv(normal, v.u, v.v);
+                sphere->uv(normal, v.u, v.v);
             }
             if (program.uv == Uv::Reflect)
             {
-                reflection.uv(position, normal, v.u, v.v);
+                reflection->uv(position, normal, v.u, v.v);
             }
             if (program.uv == Uv::Ramp)
             {
-                ramp.uv(normal, v.u, v.v);
+                ramp->uv(normal, v.u, v.v);
             }
         }
     }
@@ -2078,10 +2149,13 @@ void buildChunk(const Program &program, const uint8_t *data, uint32_t top,
         buildProjector(program, VuData(data), top, packets);
         return;
     }
-    Chunk chunk;
+    thread_local Chunk chunk;
+    chunk.fog.clear();
+    chunk.mesh.header = {};
+    chunk.mesh.vertices.clear();
     readChunk(program, VuData(data), top, chunk);
     packets.clear();
-    packets.push_back(std::move(chunk.fog));
+    packets.push_back(chunk.fog);
 
     // The output as D writes it: the header, then ST, RGBAQ and XYZF2 per
     // vertex, ADC as the program's culling says (ISW keeps only the low half
@@ -2094,7 +2168,8 @@ void buildChunk(const Program &program, const uint8_t *data, uint32_t top,
     {
         putQuad(packet, quad);
     }
-    std::vector<GSNativeMeshPoint> points(count);
+    thread_local std::vector<GSNativeMeshPoint> points;
+    points.resize(count);
     for (uint32_t k = 0; k < count; ++k)
     {
         const GSNativeMeshPoint &p = points[k] = gsNativeMeshPoint(mesh.header, mesh.vertices[k]);
@@ -2135,8 +2210,11 @@ void buildChunk(const Program &program, const uint8_t *data, uint32_t top,
 }
 
 void buildMesh(const Program &program, const uint8_t *data, uint32_t top,
-               std::vector<std::vector<uint8_t>> &packets, GSNativeMesh &mesh)
+               std::vector<std::vector<uint8_t>> &packets, GSNativeMesh &mesh,
+               bool needDepth, MeshStateWrites *directWrites)
 {
+    if (directWrites)
+        directWrites->count = 0u;
     if (!hasMesh(program))
     {
         buildChunk(program, data, top, packets);
@@ -2145,28 +2223,65 @@ void buildMesh(const Program &program, const uint8_t *data, uint32_t top,
         return;
     }
     const VuRounding rounding;
-    Chunk chunk;
+    thread_local Chunk chunk;
+    chunk.fog.clear();
+    chunk.mesh.header = {};
+    chunk.mesh.vertices.swap(mesh.vertices);
+    chunk.mesh.vertices.clear();
     readChunk(program, VuData(data), top, chunk);
     if (program.kind == Kind::Projector)
     {
         projectorMesh(program, VuData(data), top, chunk.mesh);
     }
     packets.clear();
-    packets.push_back(std::move(chunk.fog));
-    // PRIM and PRMODE behind the program's GIF tag, made the packet's end.
-    std::vector<uint8_t> &state = packets.emplace_back();
-    uint32_t tag[4];
-    std::memcpy(tag, chunk.header[0], sizeof(tag));
-    tag[0] |= 0x8000u;
-    putQuad(state, tag);
-    putQuad(state, chunk.header[1]);
-    putQuad(state, chunk.header[2]);
-    // The Z exactly as the program has it: the GPU rounds to nearest.
-    for (GSNativeMesh::Vertex &v : chunk.mesh.vertices)
+    bool wroteDirect = false;
+    if (directWrites && chunk.fog.size() == 32u)
     {
-        v.depth = gsNativeMeshDepth(chunk.mesh.header, v);
+        uint64_t fogLo = 0u, fogHi = 0u, hdrLo = 0u, hdrHi = 0u;
+        std::memcpy(&fogLo, chunk.fog.data(), 8u);
+        std::memcpy(&fogHi, chunk.fog.data() + 8u, 8u);
+        std::memcpy(&hdrLo, chunk.header[0], 8u);
+        std::memcpy(&hdrHi, chunk.header[0] + 8u, 8u);
+        const bool fogIsAd1 = (fogLo & 0x7FFFu) == 1u && ((fogLo >> 58) & 3u) == 0u &&
+                              ((fogLo >> 60) & 0xFu) == 1u && (fogHi & 0xFu) == 0xEu;
+        const bool hdrIsAd2 = (hdrLo & 0x7FFFu) == 2u && ((hdrLo >> 58) & 3u) == 0u &&
+                              ((hdrLo >> 60) & 0xFu) == 1u && (hdrHi & 0xFu) == 0xEu;
+        if (fogIsAd1 && hdrIsAd2)
+        {
+            uint64_t v0 = 0u, v1 = 0u, v2 = 0u;
+            std::memcpy(&v0, chunk.fog.data() + 16u, 8u);
+            std::memcpy(&v1, chunk.header[1], 8u);
+            std::memcpy(&v2, chunk.header[2], 8u);
+            directWrites->writes[0] = {chunk.fog[24u], v0};
+            directWrites->writes[1] = {chunk.header[1][8u], v1};
+            directWrites->writes[2] = {chunk.header[2][8u], v2};
+            directWrites->count = 3u;
+            wroteDirect = true;
+        }
     }
-    mesh = std::move(chunk.mesh);
+    if (!wroteDirect)
+    {
+        packets.push_back(chunk.fog);
+        // PRIM and PRMODE behind the program's GIF tag, made the packet's end.
+        std::vector<uint8_t> &state = packets.emplace_back();
+        state.reserve(48u);
+        uint32_t tag[4];
+        std::memcpy(tag, chunk.header[0], sizeof(tag));
+        tag[0] |= 0x8000u;
+        putQuad(state, tag);
+        putQuad(state, chunk.header[1]);
+        putQuad(state, chunk.header[2]);
+    }
+    if (needDepth)
+    {
+        // The Z exactly as the program has it: the GPU rounds to nearest.
+        for (GSNativeMesh::Vertex &v : chunk.mesh.vertices)
+        {
+            v.depth = gsNativeMeshDepth(chunk.mesh.header, v);
+        }
+    }
+    mesh.header = chunk.mesh.header;
+    mesh.vertices.swap(chunk.mesh.vertices);
 }
 
 Mode modeFromEnvironment()

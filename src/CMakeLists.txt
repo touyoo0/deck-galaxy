@@ -163,8 +163,14 @@ target_compile_definitions(roguegalaxy PRIVATE RG_APP_VERSION="${PROJECT_VERSION
 
 # The native VU1 programs match the VU1 to the bit, which needs the products
 # and sums rounded apart; an -march with FMA would fuse them.
-set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/vu1_native.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/vu0_native.cpp"
-                            PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+if(RG_STEAMDECK_ARCH AND (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU"))
+    target_compile_options(roguegalaxy PRIVATE -march=znver2)
+endif()
+set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/vu1_native.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vu0_native.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/native_producer.cpp"
+    PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 
 # tools/vu1/oracle: replays an RG_VU1_REPLAY recording through VU1 without the
 # game, the check for native replacements of the VU1 programs. Not built by

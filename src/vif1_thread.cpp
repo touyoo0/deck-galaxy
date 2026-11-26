@@ -365,25 +365,28 @@ public:
     }
 
     // Native pipeline producer work offloaded from VIF1 to the GIF thread:
-    // NativeMesh carries GSDrawState + 64 VU1 quads (1024 B) + header + vertices;
+    // NativeMesh carries GSDrawState + 4 VU1 matrices (256 B) + header + vertices;
     // NativePiece carries GSDrawState + texelUvs flag + header + vertices;
     // ApplyProduced updates resident texture/palette bindings in exact FIFO order.
-    static constexpr size_t kVu1MatrixBytes = 64u * 16u;
+    static constexpr size_t kVu1PackedMatrixBytes = 16u * 16u; // quads 4-7, 8-11, 24-27, 60-63
     void nativeMesh(const GSNativeMesh &mesh, const GSDrawState &state, const uint8_t *vu1Data)
     {
         const size_t vertBytes = mesh.vertices.size() * sizeof(GSNativeMesh::Vertex);
-        const size_t total = sizeof(GSDrawState) + kVu1MatrixBytes + sizeof(GSNativeMesh::Header) + vertBytes;
-        m_meshBytes.resize(total);
-        uint8_t *p = m_meshBytes.data();
+        const size_t total = sizeof(GSDrawState) + kVu1PackedMatrixBytes + sizeof(GSNativeMesh::Header) + vertBytes;
+        uint8_t *p = beginAppend(Kind::NativeMesh, static_cast<uint32_t>(total));
         std::memcpy(p, &state, sizeof(state));
         p += sizeof(state);
-        std::memcpy(p, vu1Data, kVu1MatrixBytes);
-        p += kVu1MatrixBytes;
+        // Pack only the 4 matrices nativeproducer::mesh reads (quads 4-7, 8-11, 24-27, 60-63).
+        std::memcpy(p + 0u * 64u, vu1Data + 4u * 16u, 64u);
+        std::memcpy(p + 1u * 64u, vu1Data + 8u * 16u, 64u);
+        std::memcpy(p + 2u * 64u, vu1Data + 24u * 16u, 64u);
+        std::memcpy(p + 3u * 64u, vu1Data + 60u * 16u, 64u);
+        p += kVu1PackedMatrixBytes;
         std::memcpy(p, &mesh.header, sizeof(mesh.header));
         p += sizeof(mesh.header);
         if (vertBytes != 0u)
             std::memcpy(p, mesh.vertices.data(), vertBytes);
-        append(Kind::NativeMesh, m_meshBytes.data(), static_cast<uint32_t>(total));
+        endAppend();
     }
 
     void nativePiece(const GSNativeMesh &mesh, const GSDrawState &state, bool texelUvs)
@@ -391,8 +394,7 @@ public:
         const uint32_t flags = texelUvs ? 1u : 0u;
         const size_t vertBytes = mesh.vertices.size() * sizeof(GSNativeMesh::Vertex);
         const size_t total = sizeof(GSDrawState) + sizeof(flags) + sizeof(GSNativeMesh::Header) + vertBytes;
-        m_meshBytes.resize(total);
-        uint8_t *p = m_meshBytes.data();
+        uint8_t *p = beginAppend(Kind::NativePiece, static_cast<uint32_t>(total));
         std::memcpy(p, &state, sizeof(state));
         p += sizeof(state);
         std::memcpy(p, &flags, sizeof(flags));
@@ -401,7 +403,7 @@ public:
         p += sizeof(mesh.header);
         if (vertBytes != 0u)
             std::memcpy(p, mesh.vertices.data(), vertBytes);
-        append(Kind::NativePiece, m_meshBytes.data(), static_cast<uint32_t>(total));
+        endAppend();
     }
 
     void applyProduced(const rg::nativeproducer::TakenProduced &taken)
@@ -505,6 +507,21 @@ private:
     };
     static_assert(sizeof(Header) == 32u);
 
+    uint8_t *beginAppend(Kind kind, uint32_t size)
+    {
+        const size_t padded = (static_cast<size_t>(size) + 15u) & ~size_t{15u};
+        const size_t base = m_staged.size();
+        m_staged.resize(base + sizeof(Header) + padded);
+        const Header header{kind, size, _mm_getcsr() & ~kMxcsrFlags, t_vu1Tag, t_vu1Camera, {}};
+        std::memcpy(m_staged.data() + base, &header, sizeof(header));
+        return m_staged.data() + base + sizeof(Header);
+    }
+    void endAppend()
+    {
+        if (m_staged.size() >= kPublishBytes)
+            publish();
+    }
+
     void append(Kind kind, const uint8_t *data, uint32_t size)
     {
         if (!data || size == 0u)
@@ -576,11 +593,16 @@ private:
                         const uint8_t *p = data;
                         std::memcpy(&drawState, p, sizeof(drawState));
                         p += sizeof(drawState);
-                        const uint8_t *vu1 = p;
-                        p += kVu1MatrixBytes;
+                        alignas(16) uint8_t vu1[64u * 16u];
+                        std::memcpy(vu1 + 4u * 16u, p + 0u * 64u, 64u);
+                        std::memcpy(vu1 + 8u * 16u, p + 1u * 64u, 64u);
+                        std::memcpy(vu1 + 24u * 16u, p + 2u * 64u, 64u);
+                        std::memcpy(vu1 + 60u * 16u, p + 3u * 64u, 64u);
+                        p += kVu1PackedMatrixBytes;
                         std::memcpy(&m_mesh.header, p, sizeof(m_mesh.header));
                         p += sizeof(m_mesh.header);
-                        const size_t vertBytes = header.size - (sizeof(drawState) + kVu1MatrixBytes + sizeof(m_mesh.header));
+                        const size_t vertBytes =
+                            header.size - (sizeof(drawState) + kVu1PackedMatrixBytes + sizeof(m_mesh.header));
                         m_mesh.vertices.resize(vertBytes / sizeof(GSNativeMesh::Vertex));
                         if (vertBytes != 0u)
                             std::memcpy(m_mesh.vertices.data(), p, vertBytes);
@@ -692,6 +714,9 @@ void flushEffect();
 void flushComposites();
 // Both dropped, after a flush that threw.
 void discardHeld();
+// Direct A+D state writes for native VU1 meshes (skips packet encode/decode).
+bool canApplyMeshStateDirect();
+void applyMeshStateDirect(const rg::vu1native::MeshStateWrites &w);
 // For busyReport's VU1 pair counts.
 PS2Runtime *g_runtime = nullptr;
 
@@ -875,6 +900,7 @@ public:
         // (once per code image and entry), its MSCNTs run the chunks; or the
         // MSCAL is the chunk (drawsAtCall).
         const rg::vu1native::Program *native = nullptr;
+        rg::vu1native::MeshStateWrites directWrites{};
         if (nativeMode() != rg::vu1native::Mode::Off)
         {
             if (!resume)
@@ -930,7 +956,10 @@ public:
                     native = m_nativeProgram;
                     if (gpu)
                     {
-                        rg::vu1native::buildMesh(*native, memory.getVU1Data(), top, m_nativePackets, m_nativeMesh);
+                        const bool needDepth = !rg::nativeproducer::pipelineOn();
+                        const bool canDirect = rg::vu1native::hasMesh(*native) && canApplyMeshStateDirect();
+                        rg::vu1native::buildMesh(*native, memory.getVU1Data(), top, m_nativePackets, m_nativeMesh,
+                                                 needDepth, canDirect ? &directWrites : nullptr);
                     }
                     else
                     {
@@ -996,9 +1025,16 @@ public:
             }
             else
             {
-                for (const auto &packet : m_nativePackets)
+                if (directWrites.count != 0u)
                 {
-                    deliverPacket(m_runtime.gs(), packet.data(), static_cast<uint32_t>(packet.size()));
+                    applyMeshStateDirect(directWrites);
+                }
+                else
+                {
+                    for (const auto &packet : m_nativePackets)
+                    {
+                        deliverPacket(m_runtime.gs(), packet.data(), static_cast<uint32_t>(packet.size()));
+                    }
                 }
                 if (nativeMode() == rg::vu1native::Mode::Gpu && rg::vu1native::hasMesh(*native))
                 {
@@ -1792,9 +1828,61 @@ void sendPacket(GS &gs, const uint8_t *data, uint32_t size)
 {
     if (native2D() && data && size >= 16u)
     {
+        // Fast path: single EOP PACKED A+D register-only packet when absorbing
+        // with no host upload in flight. Avoids GifEvent decode and Piece churn.
+        if (uploadsTaken() && absorbing() && t_upload.transferBytes == 0u && t_upload.imageBytes == 0u &&
+            !t_capture.active)
+        {
+            uint64_t lo = 0u, hi = 0u;
+            std::memcpy(&lo, data, 8u);
+            std::memcpy(&hi, data + 8u, 8u);
+            const uint32_t nloop = static_cast<uint32_t>(lo & 0x7FFFu);
+            const bool eop = ((lo >> 15) & 1u) != 0u;
+            const bool pre = ((lo >> 46) & 1u) != 0u;
+            const uint32_t flg = static_cast<uint32_t>((lo >> 58) & 3u);
+            const uint32_t nreg = static_cast<uint32_t>((lo >> 60) & 0xFu);
+            if (eop && !pre && flg == 0u && nreg == 1u && (hi & 0xFu) == 0xEu && nloop <= 32u &&
+                (1u + nloop) * 16u == size)
+            {
+                std::pair<uint8_t, uint64_t> local[32];
+                bool pureState = true;
+                for (uint32_t i = 0u; i < nloop; ++i)
+                {
+                    const uint8_t *q = data + 16u + i * 16u;
+                    const uint8_t reg = q[8u];
+                    // Reject vertex kick registers (0x01..0x0D) and transfer registers (0x50..0x53).
+                    if ((reg >= 0x01u && reg <= 0x0Du) || (reg >= 0x50u && reg <= 0x53u))
+                    {
+                        pureState = false;
+                        break;
+                    }
+                    uint64_t val = 0u;
+                    std::memcpy(&val, q, 8u);
+                    local[i] = {reg, val};
+                }
+                if (pureState)
+                {
+                    if (nloop != 0u)
+                    {
+                        rg::drawstate::writeRegisters(local, nloop);
+                        for (uint32_t i = 0u; i < nloop; ++i)
+                        {
+                            const uint8_t reg = local[i].first;
+                            if (reg == 0x00u || reg == 0x1Au || reg == 0x1Bu)
+                                rg::native2d::observeRegister(reg, local[i].second);
+                            else if (reg >= 0x60u && reg <= 0x62u)
+                                absorbRegister(reg, local[i].second);
+                        }
+                    }
+                    g_absorbedPackets.fetch_add(1u, std::memory_order_relaxed);
+                    return;
+                }
+            }
+        }
         thread_local std::vector<rg::native2d::Piece> pieces;
         const rg::native2d::Span one{data, size};
-        std::string why;
+        thread_local std::string why;
+        why.clear();
         if (rg::native2d::build(&one, 1u, pieces, why))
         {
             const bool anyMesh = std::any_of(pieces.begin(), pieces.end(),
@@ -2285,6 +2373,29 @@ bool compositePacket(GS &gs, const uint8_t *data, uint32_t size, uint32_t addres
     }
     compositeOther(rg::nativefx::name(place.effect), address, cursor);
     return false;
+}
+
+bool canApplyMeshStateDirect()
+{
+    return native2D() && uploadsTaken() && absorbing() && t_upload.transferBytes == 0u &&
+           t_upload.imageBytes == 0u && !t_capture.active &&
+           !(composites() && t_batch.state != CompositeBatch::State::Outside);
+}
+
+void applyMeshStateDirect(const rg::vu1native::MeshStateWrites &w)
+{
+    if (nativeEffects() && t_onVif1Thread && t_held.effect != rg::nativefx::Effect::None)
+        flushEffect();
+    rg::drawstate::writeRegisters(w.writes, w.count);
+    for (size_t i = 0u; i < w.count; ++i)
+    {
+        const uint8_t reg = w.writes[i].first;
+        if (reg == 0x00u || reg == 0x1Au || reg == 0x1Bu)
+            rg::native2d::observeRegister(reg, w.writes[i].second);
+        else if (reg >= 0x60u && reg <= 0x62u)
+            absorbRegister(reg, w.writes[i].second);
+    }
+    g_absorbedPackets.fetch_add(2u, std::memory_order_relaxed);
 }
 
 void deliverPacket(GS &gs, const uint8_t *data, uint32_t size)
