@@ -10,7 +10,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(RogueGalaxyRecomp
-    VERSION 0.12.7
+    VERSION 0.13.0
     DESCRIPTION "Rogue Galaxy (PS2) static recompilation"
     LANGUAGES C CXX)
 
@@ -192,6 +192,23 @@ if(RG_STEAMDECK_ARCH AND (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU"))
     message(STATUS "Steam Deck Zen 2 tuning enabled (-march=znver2)")
     if(TARGET dq8_gfx_native)
         target_compile_options(dq8_gfx_native PRIVATE -march=znver2)
+    endif()
+endif()
+
+# ThinLTO with lld on Linux/Clang Release builds: lets LLVM inline across
+# generated translation units and native renderer helpers without rebuilding
+# the heavy VU AOT shards in ps2_runtime.
+find_program(RG_LLD_PROGRAM ld.lld)
+set(RG_THIN_LTO_DEFAULT OFF)
+if(RG_STEAMDECK_ARCH AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+   CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND RG_LLD_PROGRAM)
+    set(RG_THIN_LTO_DEFAULT ON)
+endif()
+option(RG_THIN_LTO "Enable ThinLTO (-flto=thin) with lld for generated code and game targets" ${RG_THIN_LTO_DEFAULT})
+if(RG_THIN_LTO AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND RG_LLD_PROGRAM)
+    message(STATUS "ThinLTO enabled (-flto=thin, ld.lld)")
+    if(TARGET dq8_gfx_native)
+        target_compile_options(dq8_gfx_native PRIVATE $<$<CONFIG:Release>:-flto=thin>)
     endif()
 endif()
 

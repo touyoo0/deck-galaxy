@@ -916,7 +916,9 @@ public:
         // MSCAL is the chunk (drawsAtCall).
         const rg::vu1native::Program *native = nullptr;
         rg::vu1native::MeshStateWrites directWrites{};
+        rg::vu1native::MeshStateWrites directWrites2{};
         bool directOutline = false;
+        bool directShadow = false;
         if (nativeMode() != rg::vu1native::Mode::Off)
         {
             if (!resume)
@@ -980,6 +982,23 @@ public:
                         {
                             m_nativePackets.clear();
                             directOutline = true;
+                        }
+                        else if (native->kind == rg::vu1native::Kind::Shadow && canDirect)
+                        {
+                            uint8_t defRgba[4];
+                            rg::native2d::currentRgba(defRgba);
+                            if (rg::vu1native::buildShadowPiece(*native, memory.getVU1Data(), top, defRgba,
+                                                                directWrites, m_nativeMesh,
+                                                                directWrites2, m_nativeMesh2))
+                            {
+                                m_nativePackets.clear();
+                                directShadow = true;
+                            }
+                            else
+                            {
+                                rg::vu1native::buildMesh(*native, memory.getVU1Data(), top, m_nativePackets,
+                                                         m_nativeMesh, needDepth, nullptr);
+                            }
                         }
                         else
                         {
@@ -1053,31 +1072,50 @@ public:
             }
             else
             {
-                if (directWrites.count != 0u)
+                if (directShadow)
                 {
-                    applyMeshStateDirect(directWrites);
+                    const auto emitPiece = [&](const rg::vu1native::MeshStateWrites &w, const GSNativeMesh &m) {
+                        if (m.vertices.empty())
+                            return;
+                        if (w.count != 0u)
+                            applyMeshStateDirect(w);
+                        const GSDrawState state = rg::drawstate::current();
+                        if (g_stage && t_onVif1Thread && producerThreadEnabled())
+                            g_stage->nativePiece(m, state, false);
+                        else if (rg::nativeproducer::piece(m, &state, false))
+                            ++g_piecesMade;
+                    };
+                    emitPiece(directWrites, m_nativeMesh);
+                    emitPiece(directWrites2, m_nativeMesh2);
                 }
                 else
                 {
-                    for (const auto &packet : m_nativePackets)
+                    if (directWrites.count != 0u)
                     {
-                        deliverPacket(m_runtime.gs(), packet.data(), static_cast<uint32_t>(packet.size()));
+                        applyMeshStateDirect(directWrites);
                     }
-                }
-                if (directOutline)
-                {
-                    if (!m_nativeMesh.vertices.empty())
+                    else
                     {
-                        const GSDrawState state = rg::drawstate::current();
-                        if (g_stage && t_onVif1Thread && producerThreadEnabled())
-                            g_stage->nativePiece(m_nativeMesh, state, false);
-                        else if (rg::nativeproducer::piece(m_nativeMesh, &state, false))
-                            ++g_piecesMade;
+                        for (const auto &packet : m_nativePackets)
+                        {
+                            deliverPacket(m_runtime.gs(), packet.data(), static_cast<uint32_t>(packet.size()));
+                        }
                     }
-                }
-                else if (nativeMode() == rg::vu1native::Mode::Gpu && rg::vu1native::hasMesh(*native))
-                {
-                    deliverMesh(m_runtime.gs(), m_nativeMesh, memory.getVU1Data());
+                    if (directOutline)
+                    {
+                        if (!m_nativeMesh.vertices.empty())
+                        {
+                            const GSDrawState state = rg::drawstate::current();
+                            if (g_stage && t_onVif1Thread && producerThreadEnabled())
+                                g_stage->nativePiece(m_nativeMesh, state, false);
+                            else if (rg::nativeproducer::piece(m_nativeMesh, &state, false))
+                                ++g_piecesMade;
+                        }
+                    }
+                    else if (nativeMode() == rg::vu1native::Mode::Gpu && rg::vu1native::hasMesh(*native))
+                    {
+                        deliverMesh(m_runtime.gs(), m_nativeMesh, memory.getVU1Data());
+                    }
                 }
                 // What the VU1 would have left in its memory, where it did not run.
                 if (nativeMode() != rg::vu1native::Mode::Replace)
@@ -1284,6 +1322,7 @@ private:
     rg::vu1native::Monitor m_nativeMonitor{nativeMode()};
     std::vector<std::vector<uint8_t>> m_nativePackets;
     GSNativeMesh m_nativeMesh;
+    GSNativeMesh m_nativeMesh2;
     std::vector<std::vector<uint8_t>> m_vu1Packets;
     std::vector<uint8_t> m_checkData;
     VU1State m_checkState{};
@@ -2433,7 +2472,7 @@ void applyMeshStateDirect(const rg::vu1native::MeshStateWrites &w)
     for (size_t i = 0u; i < w.count; ++i)
     {
         const uint8_t reg = w.writes[i].first;
-        if (reg == 0x00u || reg == 0x1Au || reg == 0x1Bu)
+        if (reg == 0x00u || reg == 0x01u || reg == 0x1Au || reg == 0x1Bu)
             rg::native2d::observeRegister(reg, w.writes[i].second);
         else if (reg >= 0x60u && reg <= 0x62u)
             absorbRegister(reg, w.writes[i].second);

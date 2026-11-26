@@ -165,11 +165,11 @@ bool memoryEffectsMatch(const Program &program, const uint8_t *before, uint32_t 
 void buildChunk(const Program &program, const uint8_t *data, uint32_t top,
                 std::vector<std::vector<uint8_t>> &packets);
 
-// Direct A+D register writes for a mesh's GS state (FOGCOL, PRIM, PRMODE),
-// avoiding GIF packet serialization/decoding on the native pipeline hot path.
+// Direct A+D register writes for a mesh's GS state (FOGCOL, PRIM, PRMODE, or
+// shadow volume facing/backing A+D packets), avoiding GIF packet encode/decode.
 struct MeshStateWrites
 {
-    std::pair<uint8_t, uint64_t> writes[3];
+    std::pair<uint8_t, uint64_t> writes[16];
     size_t count = 0u;
 };
 
@@ -189,6 +189,15 @@ void buildMesh(const Program &program, const uint8_t *data, uint32_t top,
 // Returns false if the chunk needs the packet fallback (e.g. fogged).
 bool buildOutlinePiece(const Program &program, const uint8_t *data, uint32_t top,
                        MeshStateWrites &stateWrites, GSNativeMesh &mesh);
+
+// Direct window-space meshes for Kind::Shadow (shadow volumes): batches facing
+// and backing fans into two triangle-list meshes (additive pass first when
+// identifiable), avoiding per-fan GIF allocations and native2d::build decoding.
+// Returns false if the chunk needs the packet fallback.
+bool buildShadowPiece(const Program &program, const uint8_t *data, uint32_t top,
+                      const uint8_t defaultRgba[4],
+                      MeshStateWrites &firstWrites, GSNativeMesh &firstMesh,
+                      MeshStateWrites &secondWrites, GSNativeMesh &secondMesh);
 
 // RG_VU1_NATIVE, in the game (src/vif1_thread.cpp), for the chunks done
 // natively: `check` runs the VU1 as before and compares its packets with the

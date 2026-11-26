@@ -9,6 +9,9 @@ set(RG_GENERATED_FLAGS -O2 -g0 -fno-strict-aliasing -fwrapv)
 if(RG_STEAMDECK_ARCH AND (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU"))
     list(APPEND RG_GENERATED_FLAGS -march=znver2 -ffp-contract=off)
 endif()
+if(RG_THIN_LTO AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND RG_LLD_PROGRAM)
+    list(APPEND RG_GENERATED_FLAGS $<$<CONFIG:Release>:-flto=thin>)
+endif()
 
 # ee_fpu.h reaches the generated code only through its precompiled header;
 # without it the EE float conversions would quietly round again.
@@ -168,6 +171,13 @@ target_compile_definitions(roguegalaxy PRIVATE RG_APP_VERSION="${PROJECT_VERSION
 # and sums rounded apart; an -march with FMA would fuse them.
 if(RG_STEAMDECK_ARCH AND (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU"))
     target_compile_options(roguegalaxy PRIVATE -march=znver2)
+endif()
+if(RG_THIN_LTO AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND RG_LLD_PROGRAM)
+    target_compile_options(roguegalaxy PRIVATE $<$<CONFIG:Release>:-flto=thin>)
+    target_link_options(roguegalaxy PRIVATE
+        $<$<CONFIG:Release>:-flto=thin>
+        $<$<CONFIG:Release>:-fuse-ld=lld>
+        "$<$<CONFIG:Release>:-Wl,--thinlto-cache-dir=${CMAKE_BINARY_DIR}/thinlto-cache>")
 endif()
 set_source_files_properties(
     "${CMAKE_CURRENT_SOURCE_DIR}/vu1_native.cpp"

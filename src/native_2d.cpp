@@ -72,12 +72,24 @@ void observeRegister(uint8_t reg, uint64_t value)
         carried.attributesFromPrim = (value & 1u) != 0u;
     else if (reg == 0x1Bu)
         carried.prmode = static_cast<uint16_t>(value & 0x7F8u);
+    else if (reg == 0x01u)
+    {
+        carried.state.rgba[0] = static_cast<uint8_t>(value & 0xFFu);
+        carried.state.rgba[1] = static_cast<uint8_t>((value >> 8) & 0xFFu);
+        carried.state.rgba[2] = static_cast<uint8_t>((value >> 16) & 0xFFu);
+        carried.state.rgba[3] = static_cast<uint8_t>((value >> 24) & 0xFFu);
+    }
     else if (reg == 0x00u)
     {
         carried.state.prim = static_cast<uint16_t>(value & 0x7FFu);
         carried.queueCount = 0u;
         carried.queuePrim = 0xFFFFu;
     }
+}
+
+void currentRgba(uint8_t out[4])
+{
+    std::memcpy(out, t_carried.state.rgba, 4u);
 }
 
 void observe(const uint8_t *data, uint32_t size)

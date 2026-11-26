@@ -28,6 +28,10 @@
 #include <cmath>
 #include <cstring>
 #include <cstdio>
+#include <limits>
+#if defined(__AVX2__)
+#include <immintrin.h>
+#endif
 #include <cstdlib>
 
 namespace rg::nativeproducer
@@ -1372,7 +1376,69 @@ bool mesh(const GSNativeMesh &mesh, const GSDrawState *drawState, const uint8_t 
         const float bo0 = h.bandOffset[0] * bs0, bo1 = h.bandOffset[1] * bs1, bo2 = h.bandOffset[2] * bs2;
         const GSNativeMesh::Vertex *verts = mesh.vertices.data();
         GSNativeMeshPoint *pts = points.data();
-        for (uint32_t k = 0; k < count; ++k)
+        uint32_t k = 0;
+#if defined(__AVX2__)
+        {
+            const __m256 vm00 = _mm256_set1_ps(m00), vm01 = _mm256_set1_ps(m01), vm02 = _mm256_set1_ps(m02),
+                         vm03 = _mm256_set1_ps(m03);
+            const __m256 vm10 = _mm256_set1_ps(m10), vm11 = _mm256_set1_ps(m11), vm12 = _mm256_set1_ps(m12),
+                         vm13 = _mm256_set1_ps(m13);
+            const __m256 vm20 = _mm256_set1_ps(m20), vm21 = _mm256_set1_ps(m21), vm22 = _mm256_set1_ps(m22),
+                         vm23 = _mm256_set1_ps(m23);
+            const __m256 vm30 = _mm256_set1_ps(m30), vm31 = _mm256_set1_ps(m31), vm32 = _mm256_set1_ps(m32),
+                         vm33 = _mm256_set1_ps(m33);
+            const __m256 vbs0 = _mm256_set1_ps(bs0), vbs1 = _mm256_set1_ps(bs1), vbs2 = _mm256_set1_ps(bs2);
+            const __m256 vbo0 = _mm256_set1_ps(bo0), vbo1 = _mm256_set1_ps(bo1), vbo2 = _mm256_set1_ps(bo2);
+            const __m256 vZero = _mm256_setzero_ps();
+            const __m256 vOne = _mm256_set1_ps(1.0f);
+            const __m256 vNegOne = _mm256_set1_ps(-1.0f);
+            const __m256 vSignMask = _mm256_set1_ps(-0.0f);
+            const __m256 vFltMax = _mm256_set1_ps(std::numeric_limits<float>::max());
+            for (; k + 8u <= count; k += 8u)
+            {
+                const __m256 vx = _mm256_set_ps(verts[k + 7].x, verts[k + 6].x, verts[k + 5].x, verts[k + 4].x,
+                                                verts[k + 3].x, verts[k + 2].x, verts[k + 1].x, verts[k + 0].x);
+                const __m256 vy = _mm256_set_ps(verts[k + 7].y, verts[k + 6].y, verts[k + 5].y, verts[k + 4].y,
+                                                verts[k + 3].y, verts[k + 2].y, verts[k + 1].y, verts[k + 0].y);
+                const __m256 vz = _mm256_set_ps(verts[k + 7].z, verts[k + 6].z, verts[k + 5].z, verts[k + 4].z,
+                                                verts[k + 3].z, verts[k + 2].z, verts[k + 1].z, verts[k + 0].z);
+                // Separate mul + add (no FMA) to match VU1 rounding to the bit.
+                const __m256 c0 = _mm256_add_ps(_mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(vx, vm00), _mm256_mul_ps(vy, vm10)), _mm256_mul_ps(vz, vm20)), vm30);
+                const __m256 c1 = _mm256_add_ps(_mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(vx, vm01), _mm256_mul_ps(vy, vm11)), _mm256_mul_ps(vz, vm21)), vm31);
+                const __m256 c2 = _mm256_add_ps(_mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(vx, vm02), _mm256_mul_ps(vy, vm12)), _mm256_mul_ps(vz, vm22)), vm32);
+                const __m256 c3 = _mm256_add_ps(_mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(vx, vm03), _mm256_mul_ps(vy, vm13)), _mm256_mul_ps(vz, vm23)), vm33);
+                const __m256 isZero = _mm256_cmp_ps(c3, vZero, _CMP_EQ_OQ);
+                const __m256 signMax = _mm256_or_ps(_mm256_and_ps(c3, vSignMask), vFltMax);
+                const __m256 vq = _mm256_blendv_ps(_mm256_div_ps(vOne, c3), signMax, isZero);
+                const __m256 vpx = _mm256_mul_ps(c0, vq);
+                const __m256 vpy = _mm256_mul_ps(c1, vq);
+                alignas(32) float qArr[8], pxArr[8], pyArr[8];
+                _mm256_store_ps(qArr, vq);
+                _mm256_store_ps(pxArr, vpx);
+                _mm256_store_ps(pyArr, vpy);
+                int outMask = 0;
+                if (guardBand)
+                {
+                    const __m256 g0 = _mm256_add_ps(_mm256_mul_ps(vpx, vbs0), vbo0);
+                    const __m256 g1 = _mm256_add_ps(_mm256_mul_ps(vpy, vbs1), vbo1);
+                    const __m256 g2 = _mm256_add_ps(_mm256_mul_ps(_mm256_mul_ps(c2, vq), vbs2), vbo2);
+                    const __m256 o0 = _mm256_or_ps(_mm256_cmp_ps(g0, vOne, _CMP_GT_OQ), _mm256_cmp_ps(g0, vNegOne, _CMP_LT_OQ));
+                    const __m256 o1 = _mm256_or_ps(_mm256_cmp_ps(g1, vOne, _CMP_GT_OQ), _mm256_cmp_ps(g1, vNegOne, _CMP_LT_OQ));
+                    const __m256 o2 = _mm256_or_ps(_mm256_cmp_ps(g2, vOne, _CMP_GT_OQ), _mm256_cmp_ps(g2, vNegOne, _CMP_LT_OQ));
+                    outMask = _mm256_movemask_ps(_mm256_or_ps(_mm256_or_ps(o0, o1), o2));
+                }
+                for (uint32_t j = 0; j < 8u; ++j)
+                {
+                    GSNativeMeshPoint &p = pts[k + j];
+                    p.q = qArr[j];
+                    p.px = pxArr[j];
+                    p.py = pyArr[j];
+                    p.outside = ((outMask >> j) & 1) != 0;
+                }
+            }
+        }
+#endif
+        for (; k < count; ++k)
         {
 #if defined(__clang__)
 #pragma clang fp contract(off) // rounded as the VU1's separate multiply and add
