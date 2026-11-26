@@ -828,6 +828,8 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         {
             SDL_BindGPUGraphicsPipeline(pass, pipeline);
             bound = pipeline;
+            hasLastDu = false;
+            hasLastMu = false;
         }
         mu.test[0] = static_cast<uint32_t>(m.alphaTest);
         mu.test[1] = m.alphaRef;
@@ -1207,6 +1209,10 @@ bool Renderer::drawFrame(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, 
             size_t b = a + 1;
             while (b < j && !readsTarget(m_frameMeshes[b]))
                 ++b;
+            // End the pass right after the last 3D scene draw so Remaster SSAO
+            // composites onto 3D geometry before any 2D HUD/menus are drawn.
+            if (!ssaoApplied && scene && depthId != 0u && a <= last3dSceneDraw && last3dSceneDraw + 1u < b)
+                b = last3dSceneDraw + 1u;
             SDL_GPUTexture *copy = nullptr;
             if (reads)
             {

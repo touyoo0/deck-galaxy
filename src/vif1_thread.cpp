@@ -171,7 +171,7 @@ uint32_t toDmaPhys(uint32_t addr)
 }
 
 // Bytes from local memory or scratchpad, wrapping as the runtime's DMA does.
-void appendBytes(PS2Memory &memory, std::vector<uint8_t> &out, uint32_t address, uint32_t bytes)
+void copyBytesTo(PS2Memory &memory, uint8_t *dst, uint32_t address, uint32_t bytes)
 {
     const bool scratch = memory.isScratchpad(address);
     uint32_t source = memory.translateAddress(address);
@@ -184,10 +184,18 @@ void appendBytes(PS2Memory &memory, std::vector<uint8_t> &out, uint32_t address,
             source = 0u;
         }
         const uint32_t chunk = std::min(bytes, size - source);
-        out.insert(out.end(), base + source, base + source + chunk);
+        std::memcpy(dst, base + source, chunk);
+        dst += chunk;
         bytes -= chunk;
         source += chunk;
     }
+}
+
+void appendBytes(PS2Memory &memory, std::vector<uint8_t> &out, uint32_t address, uint32_t bytes)
+{
+    const size_t base = out.size();
+    out.resize(base + bytes);
+    copyBytesTo(memory, out.data() + base, address, bytes);
 }
 
 // The tags of a VIF1 source chain, the way PS2Memory::writeIORegister
@@ -290,19 +298,26 @@ void gatherChain(PS2Memory &memory, uint32_t tadr, bool tte, bool tie, std::vect
     {
         // A garbage chain can sum to more than a buffer can hold; the list
         // then ends where the copy stops, like one that cannot be read.
-        out.reserve(total);
+        out.resize(total);
+        if (origins)
+            origins->reserve(spans.size());
+        uint8_t *dst = out.data();
+        uint32_t offset = 0u;
         for (const auto &[address, bytes] : spans)
         {
             if (origins)
             {
-                origins->emplace_back(static_cast<uint32_t>(out.size()), address);
+                origins->emplace_back(offset, address);
             }
-            appendBytes(memory, out, address, bytes);
+            copyBytesTo(memory, dst, address, bytes);
+            dst += bytes;
+            offset += bytes;
         }
     }
     catch (const std::exception &)
     {
         // As before: the list ends at the piece that could not be read.
+        out.clear();
     }
 }
 
@@ -901,6 +916,7 @@ public:
         // MSCAL is the chunk (drawsAtCall).
         const rg::vu1native::Program *native = nullptr;
         rg::vu1native::MeshStateWrites directWrites{};
+        bool directOutline = false;
         if (nativeMode() != rg::vu1native::Mode::Off)
         {
             if (!resume)
@@ -957,9 +973,21 @@ public:
                     if (gpu)
                     {
                         const bool needDepth = !rg::nativeproducer::pipelineOn();
-                        const bool canDirect = rg::vu1native::hasMesh(*native) && canApplyMeshStateDirect();
-                        rg::vu1native::buildMesh(*native, memory.getVU1Data(), top, m_nativePackets, m_nativeMesh,
-                                                 needDepth, canDirect ? &directWrites : nullptr);
+                        const bool canDirect = canApplyMeshStateDirect();
+                        if (native->kind == rg::vu1native::Kind::Outline && canDirect &&
+                            rg::vu1native::buildOutlinePiece(*native, memory.getVU1Data(), top, directWrites,
+                                                             m_nativeMesh))
+                        {
+                            m_nativePackets.clear();
+                            directOutline = true;
+                        }
+                        else
+                        {
+                            rg::vu1native::buildMesh(*native, memory.getVU1Data(), top, m_nativePackets, m_nativeMesh,
+                                                     needDepth,
+                                                     (canDirect && rg::vu1native::hasMesh(*native)) ? &directWrites
+                                                                                                    : nullptr);
+                        }
                     }
                     else
                     {
@@ -1036,7 +1064,18 @@ public:
                         deliverPacket(m_runtime.gs(), packet.data(), static_cast<uint32_t>(packet.size()));
                     }
                 }
-                if (nativeMode() == rg::vu1native::Mode::Gpu && rg::vu1native::hasMesh(*native))
+                if (directOutline)
+                {
+                    if (!m_nativeMesh.vertices.empty())
+                    {
+                        const GSDrawState state = rg::drawstate::current();
+                        if (g_stage && t_onVif1Thread && producerThreadEnabled())
+                            g_stage->nativePiece(m_nativeMesh, state, false);
+                        else if (rg::nativeproducer::piece(m_nativeMesh, &state, false))
+                            ++g_piecesMade;
+                    }
+                }
+                else if (nativeMode() == rg::vu1native::Mode::Gpu && rg::vu1native::hasMesh(*native))
                 {
                     deliverMesh(m_runtime.gs(), m_nativeMesh, memory.getVU1Data());
                 }

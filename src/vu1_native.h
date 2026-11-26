@@ -183,6 +183,13 @@ void buildMesh(const Program &program, const uint8_t *data, uint32_t top,
                std::vector<std::vector<uint8_t>> &packets, GSNativeMesh &mesh,
                bool needDepth = true, MeshStateWrites *directWrites = nullptr);
 
+// Direct window-space mesh for Kind::Outline (toon silhouette lines): skips
+// hidden edges and emits widened line quads straight into `mesh`, avoiding
+// GIF packet serialization and native2d::build decoding on the VIF1 thread.
+// Returns false if the chunk needs the packet fallback (e.g. fogged).
+bool buildOutlinePiece(const Program &program, const uint8_t *data, uint32_t top,
+                       MeshStateWrites &stateWrites, GSNativeMesh &mesh);
+
 // RG_VU1_NATIVE, in the game (src/vif1_thread.cpp), for the chunks done
 // natively: `check` runs the VU1 as before and compares its packets with the
 // native ones; `1` runs the VU1 (its state stays as it was) and sends the

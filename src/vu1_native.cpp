@@ -2315,6 +2315,131 @@ void buildMesh(const Program &program, const uint8_t *data, uint32_t top,
     mesh.vertices.swap(chunk.mesh.vertices);
 }
 
+bool buildOutlinePiece(const Program &program, const uint8_t *data, uint32_t top,
+                       MeshStateWrites &stateWrites, GSNativeMesh &mesh)
+{
+    if (program.kind != Kind::Outline)
+        return false;
+    const VuData vu(data);
+    const uint32_t prmode = vu.half(87, 0);
+    // If fog is enabled in PRMODE, fall back to packet path so native2d encodes F.
+    if (prmode & 0x20u)
+        return false;
+
+    const VuRounding rounding;
+    const uint32_t count = vu.half(top, 1);
+    const uint32_t points = outlinePoints(vu, top);
+    const uint32_t first = points == 4u ? 1u : 0u;
+    const uint32_t bones = program.decode == Decode::Skinned ? bonesOf(program, vu, top) : 0u;
+
+    stateWrites.writes[0] = {0x1Bu, static_cast<uint64_t>(prmode)};
+    stateWrites.writes[1] = {0x00u, 3u}; // triangle list, matching native2d::openMesh
+    stateWrites.count = 2u;
+
+    mesh.header = {};
+    mesh.header.matrix[0][0] = mesh.header.matrix[1][1] = mesh.header.matrix[2][2] = mesh.header.matrix[3][3] = 1.0f;
+    mesh.header.fog[0] = mesh.header.fog[1] = 255.0f;
+    mesh.header.colorMax[0] = mesh.header.colorMax[1] = mesh.header.colorMax[2] = mesh.header.colorMax[3] = 255.0f;
+    mesh.header.triangleList = 1u;
+    mesh.vertices.clear();
+
+    float m[4][4];
+    for (uint32_t row = 0; row < 4u; ++row)
+        std::memcpy(m[row], vu.bytes(68u + row), sizeof(m[row]));
+
+    const Vec4 viewport = vu.quad(16), band = vu.quad(17), offset = vu.quad(18);
+    const float bandScale[3] = {band.x * viewport.x, band.y * viewport.y, band.z};
+    const float bandOffset[3] = {offset.x * bandScale[0], offset.y * bandScale[1], offset.z * bandScale[2]};
+    const float fadeBase = fromBits(0x3f8e38e4u);  // 10/9
+    const float fadeSlope = fromBits(0xbb360b61u); // -1/360
+    const Vec4 posScale = vu.quad(77);
+    const uint32_t positions = top + 2u;
+    const uint32_t weightBase = bones != 0u ? (positions + vu.half(top + 1u, 2)) : 0u;
+
+    const uint32_t edgeCount = count / points;
+    for (uint32_t edge = 0; edge < edgeCount; ++edge)
+    {
+        float s[4][3];
+        float w1 = 0.0f;
+        for (uint32_t j = 0; j < points; ++j)
+        {
+            const uint32_t vk = edge * points + j;
+            float p[3] = {
+                itof15(vu.word(positions + vk, 0)) * posScale.x,
+                itof15(vu.word(positions + vk, 1)) * posScale.y,
+                itof15(vu.word(positions + vk, 2)) * posScale.z,
+            };
+            if (bones != 0u)
+                skin(vu, weightBase + vk * 2u, bones, p);
+            float clip[4];
+            for (int i = 0; i < 4; ++i)
+                clip[i] = p[0] * m[0][i] + p[1] * m[1][i] + p[2] * m[2][i] + m[3][i];
+            const float q = gsNativeReciprocal(clip[3]);
+            s[j][0] = clip[0] * q;
+            s[j][1] = clip[1] * q;
+            s[j][2] = clip[2] * q;
+            if (j == first)
+                w1 = clip[3];
+        }
+        bool outside = false;
+        for (uint32_t j = first; j <= first + 1u; ++j)
+        {
+            for (int i = 0; i < 3; ++i)
+            {
+                const float g = s[j][i] * bandScale[i] + bandOffset[i];
+                outside = outside || g > 1.0f || g < -1.0f;
+            }
+        }
+        if (outside)
+            continue;
+        if (points == 4u)
+        {
+            const float ax = s[1][0] - s[0][0], ay = s[1][1] - s[0][1];
+            const float bx = s[2][0] - s[0][0], by = s[2][1] - s[0][1];
+            const float cx = s[2][0] - s[1][0], cy = s[2][1] - s[1][1];
+            const float ex = s[3][0] - s[1][0], ey = s[3][1] - s[1][1];
+            if ((ax * by - bx * ay) * (cx * ey - ex * cy) < 0.0f)
+                continue;
+        }
+        const float alpha = std::fmin(std::fmax(fadeSlope * w1 + fadeBase, 0.0f), 1.0f);
+        const float h = 0.5f * alpha;
+        const float aCol = static_cast<float>(static_cast<uint32_t>(gsNativeFtoi(alpha * 64.0f, 1.0f)) & 0xFFu);
+        const float *e0 = s[first];
+        const float *e1 = s[first + 1u];
+        const float z0 = static_cast<float>(static_cast<uint32_t>(gsNativeFtoi(e0[2] + 0.0f, 16.0f)) & 0xFFFFFFFFu);
+        const float z1 = static_cast<float>(static_cast<uint32_t>(gsNativeFtoi(e1[2] + 0.0f, 16.0f)) & 0xFFFFFFFFu);
+        const float shifts[4][2] = {{h, 0.0f}, {-h, 0.0f}, {0.0f, -h}, {0.0f, h}};
+        const size_t base = mesh.vertices.size();
+        mesh.vertices.resize(base + 24u);
+        GSNativeMesh::Vertex *dst = mesh.vertices.data() + base;
+        for (int pass = 0; pass < 4; ++pass)
+        {
+            const float x0 = static_cast<float>(static_cast<uint16_t>(gsNativeFtoi(e0[0] + shifts[pass][0], 16.0f))) / 16.0f;
+            const float y0 = static_cast<float>(static_cast<uint16_t>(gsNativeFtoi(e0[1] + shifts[pass][1], 16.0f))) / 16.0f;
+            const float x1 = static_cast<float>(static_cast<uint16_t>(gsNativeFtoi(e1[0] + shifts[pass][0], 16.0f))) / 16.0f;
+            const float y1 = static_cast<float>(static_cast<uint16_t>(gsNativeFtoi(e1[1] + shifts[pass][1], 16.0f))) / 16.0f;
+            const float dx = x1 - x0, dy = y1 - y0;
+            const float len = std::sqrt(dx * dx + dy * dy);
+            const float nx = len > 1e-6f ? (-dy / len) * 0.5f : 0.5f;
+            const float ny = len > 1e-6f ? (dx / len) * 0.5f : 0.0f;
+            GSNativeMesh::Vertex v0{}, v1{}, v2{}, v3{};
+            v0.x = x0 + nx; v0.y = y0 + ny; v0.z = z0; v0.depth = z0;
+            v1.x = x0 - nx; v1.y = y0 - ny; v1.z = z0; v1.depth = z0;
+            v2.x = x1 - nx; v2.y = y1 - ny; v2.z = z1; v2.depth = z1;
+            v3.x = x1 + nx; v3.y = y1 + ny; v3.z = z1; v3.depth = z1;
+            v0.r = v1.r = v2.r = v3.r = 16.0f;
+            v0.g = v1.g = v2.g = v3.g = 16.0f;
+            v0.b = v1.b = v2.b = v3.b = 16.0f;
+            v0.a = v1.a = v2.a = v3.a = aCol;
+            dst[0] = v0; dst[1] = v1; dst[2] = v2;
+            dst[3] = v0; dst[4] = v2; dst[5] = v3;
+            dst += 6;
+        }
+    }
+    mesh.header.vertexCount = static_cast<uint32_t>(mesh.vertices.size());
+    return true;
+}
+
 Mode modeFromEnvironment()
 {
     const char *value = std::getenv("RG_VU1_NATIVE");

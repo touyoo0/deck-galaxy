@@ -74,6 +74,7 @@ void observeRegister(uint8_t reg, uint64_t value)
         carried.prmode = static_cast<uint16_t>(value & 0x7F8u);
     else if (reg == 0x00u)
     {
+        carried.state.prim = static_cast<uint16_t>(value & 0x7FFu);
         carried.queueCount = 0u;
         carried.queuePrim = 0xFFFFu;
     }
