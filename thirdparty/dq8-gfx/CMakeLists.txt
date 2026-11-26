@@ -58,6 +58,8 @@ target_link_libraries(dq8_gfx_gs PUBLIC dq8_host_simd ps2_runtime)
 add_library(dq8_gfx_native STATIC
     src/gfx/native/native_pipeline.cpp
     src/gfx/native/native_meshes.cpp
+    src/gfx/native/native_ai_cache.cpp
+    src/gfx/native/bc7enc.cpp
 )
 target_include_directories(dq8_gfx_native PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(dq8_gfx_native PUBLIC SDL3::SDL3-static)
@@ -70,6 +72,16 @@ foreach(shader IN ITEMS
         "native_cas.frag;frag;kNativeCasFragSpirv"
         "native_fxaa.frag;frag;kNativeFxaaFragSpirv"
         "native_upscale2x.frag;frag;kNativeUpscale2xFragSpirv"
+        "native_upscale2xbr.frag;frag;kNativeUpscale2xbrFragSpirv"
+        "cnn/native_cnn_conv0.frag;frag;kNativeCnnConv0FragSpirv"
+        "cnn/native_cnn_conv1.frag;frag;kNativeCnnConv1FragSpirv"
+        "cnn/native_cnn_conv2.frag;frag;kNativeCnnConv2FragSpirv"
+        "cnn/native_cnn_conv3.frag;frag;kNativeCnnConv3FragSpirv"
+        "cnn/native_cnn_conv4.frag;frag;kNativeCnnConv4FragSpirv"
+        "cnn/native_cnn_conv5.frag;frag;kNativeCnnConv5FragSpirv"
+        "cnn/native_cnn_conv6.frag;frag;kNativeCnnConv6FragSpirv"
+        "cnn/native_cnn_last.frag;frag;kNativeCnnLastFragSpirv"
+        "cnn/native_cnn_d2s.frag;frag;kNativeCnnD2sFragSpirv"
         "native_ssao.frag;frag;kNativeSsaoFragSpirv"
         "native_ssao_blur.frag;frag;kNativeSsaoBlurFragSpirv")
     list(GET shader 0 file)

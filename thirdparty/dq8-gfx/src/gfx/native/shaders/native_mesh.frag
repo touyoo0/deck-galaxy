@@ -45,6 +45,17 @@ int wrapAxis(int a, int size, uint mode, uint lo, uint hi, bool clampOld) {
     return clamp(a, 0, size - 1);
 }
 
+float wrapAxisF(float t, float size, uint mode, uint lo, uint hi, bool clampOld) {
+    if (mode == 2u)
+        return clamp(t, float(lo) + 0.25, float(hi) + 0.75);
+    if (mode == 3u) {
+        int a = int(floor(t));
+        int w = clamp((a & int(lo)) | int(hi), 0, int(size) - 1);
+        return float(w) + clamp(fract(t), 0.125, 0.875);
+    }
+    return clampOld ? clamp(t, 0.25, size - 0.25) : mod(t, size);
+}
+
 layout(location = 0) in vec2 inUv;
 layout(location = 1) in vec4 inColor;
 layout(location = 2) in float inFog;
@@ -86,7 +97,7 @@ void main() {
         vec2 texel = inUv * material.size.xy; // in the game's texels
         // A region (a tile of a sheet) is fetched as the GS addresses it.
         bool region = material.mode.x != 3u && (material.wrap.x >= 2u || material.wrap.y >= 2u);
-        if (material.mode.x == 2u || region) {
+        if (material.mode.x == 2u || (region && !remaster)) {
             // Fetched, not filtered: an index is not a color.
             ivec2 size = ivec2(material.size.zw);
             ivec2 at = ivec2(floor(texel));
@@ -98,6 +109,12 @@ void main() {
             } else {
                 t = texelFetch(image, at, 0);
             }
+        } else if (region) {
+            // Remaster mode with a 2x/4x upscaled atlas: stay strictly inside the tile region.
+            vec2 wrapped;
+            wrapped.x = wrapAxisF(texel.x, material.size.z, material.wrap.x, material.region.x, material.region.y, material.blend.z != 0.0);
+            wrapped.y = wrapAxisF(texel.y, material.size.w, material.wrap.y, material.region.z, material.region.w, material.blend.w != 0.0);
+            t = texture(image, wrapped / material.size.zw);
         } else {
             t = texture(image, texel / material.size.zw);
         }

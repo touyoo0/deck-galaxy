@@ -10,6 +10,7 @@
 // draws of the last frame a Present record closed (step 4b). Nothing of the
 // GS here.
 
+#include "gfx/native/native_ai_cache.h"
 #include "gfx/native/native_records.h"
 
 #include <SDL3/SDL_gpu.h>
@@ -171,6 +172,11 @@ private:
     void prepareRemasterTextures(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands);
     bool ensureCas(SDL_GPUDevice *device, std::string &error);
     bool ensureXbr(SDL_GPUDevice *device, std::string &error);
+    bool ensureCnn(SDL_GPUDevice *device, std::string &error);
+    bool ensureCnnScratch(SDL_GPUDevice *device, uint32_t width, uint32_t height);
+    void runCnnUpscale(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, SDL_GPUTexture *src, SDL_GPUTexture *dst,
+                       uint32_t srcW, uint32_t srcH, bool clampU, bool clampV);
+    void pollAiCache(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands);
     bool ensureSsao(SDL_GPUDevice *device, std::string &error);
     void applySsao(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, SDL_GPUTexture *sceneColor,
                    SDL_GPUTexture *sceneDepth, uint32_t width, uint32_t height);
@@ -279,6 +285,12 @@ private:
     SDL_GPUGraphicsPipeline *m_fxaaPipeline = nullptr;
     SDL_GPUGraphicsPipeline *m_casPipeline = nullptr;
     SDL_GPUGraphicsPipeline *m_xbrPipeline = nullptr;
+    SDL_GPUGraphicsPipeline *m_xbr2dPipeline = nullptr;
+    SDL_GPUGraphicsPipeline *m_cnnConvPipelines[7] = {};
+    SDL_GPUGraphicsPipeline *m_cnnLastPipeline = nullptr;
+    SDL_GPUGraphicsPipeline *m_cnnD2sPipeline = nullptr;
+    SDL_GPUTexture *m_cnnScratch[8] = {};
+    uint32_t m_cnnScratchW = 0, m_cnnScratchH = 0;
     SDL_GPUGraphicsPipeline *m_ssaoPipeline = nullptr;
     SDL_GPUGraphicsPipeline *m_ssaoBlurPipeline = nullptr;
     SDL_GPUGraphicsPipeline *m_ssaoCompositePipeline = nullptr;
@@ -286,8 +298,14 @@ private:
     SDL_GPUSampler *m_casSampler = nullptr;
     bool m_casFailed = false;
     bool m_xbrFailed = false;
+    bool m_cnnFailed = false;
+    bool m_cnnSupported = false;
+    bool m_bc7Checked = false;
+    bool m_bc7Supported = false;
     bool m_ssaoFailed = false;
     bool m_lastRemaster = false;
+    AiTextureCache m_aiCache;
+    uint64_t m_resolved2dCount = 0;
     SDL_GPUBuffer *m_vertexBuffer = nullptr;
     SDL_GPUBuffer *m_indexBuffer = nullptr;
     uint32_t m_vertexCapacity = 0, m_indexCapacity = 0;
