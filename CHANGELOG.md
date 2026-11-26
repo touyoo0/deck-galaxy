@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- New option "Remaster mode" (on by default): mipmaps, 16x anisotropic filtering, smooth palette textures and contrast-adaptive sharpening (CAS) in the native renderer.
+
 ## 0.12.7 - 2026-11-25
 
 - Steadier 60 fps and lower power draw and heat on the Steam Deck across exploration and battles.

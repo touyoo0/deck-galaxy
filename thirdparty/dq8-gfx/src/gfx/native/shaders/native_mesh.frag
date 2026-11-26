@@ -72,8 +72,14 @@ void main() {
             discard;
     }
 #endif
-    // The vertex color as the GS takes it: truncated to integers 0-255.
-    vec4 f = clamp(floor(inColor), 0.0, 255.0);
+    // The vertex color: exact 8-bit integer truncation in Original mode, or
+    // smooth float interpolation in Remaster mode (material.blend.y != 0) to
+    // eliminate color banding on skies, skin, walls and fog.
+    // material.blend.y == 2.0 marks 3D textured surfaces eligible for 0-cost
+    // dFdx/dFdy micro-relief bump shading.
+    bool remaster = material.blend.y > 0.5;
+    bool remaster3d = material.blend.y > 1.5;
+    vec4 f = remaster ? clamp(inColor, 0.0, 255.0) : clamp(floor(inColor), 0.0, 255.0);
     vec4 c = f;
     if (material.mode.x != 0u) {
         vec4 t;
@@ -96,22 +102,31 @@ void main() {
             t = texture(image, texel / material.size.zw);
         }
         bool target = material.mode.x == 3u;
-        t = vec4(floor(t.rgb * 255.0 + 0.5), floor(t.a * (target ? 128.0 : 255.0) + 0.5));
+        t = remaster ? vec4(t.rgb * 255.0, t.a * (target ? 128.0 : 255.0))
+                     : vec4(floor(t.rgb * 255.0 + 0.5), floor(t.a * (target ? 128.0 : 255.0) + 0.5));
+        // Zero-cost procedural micro-relief (bump) on 3D painted textures using
+        // hardware screen-space derivatives (0 extra texture fetches).
+        if (remaster3d && material.mode.x == 1u) {
+            float lum = dot(t.rgb, vec3(0.299, 0.587, 0.114)) / 255.0;
+            vec2 grad = vec2(dFdx(lum), dFdy(lum));
+            float relief = clamp(dot(grad, vec2(-0.55, -0.83)) * 1.8, -0.08, 0.10);
+            t.rgb = clamp(t.rgb * (1.0 + relief), 0.0, 255.0);
+        }
         if (material.texa.x >= 0.0)
             t.a = (material.texa.y != 0.0 && t.rgb == vec3(0.0)) ? 0.0 : material.texa.x;
         if (material.blend.x == 1.0)
-            t.a = float((uint(t.g) & 0xFCu) | (uint(t.a) & 3u));
+            t.a = float((uint(t.g + 0.5) & 0xFCu) | (uint(t.a + 0.5) & 3u));
         bool tcc = material.mode.z != 0u;
         uint fn = material.mode.y;
         if (fn == 1u) {
             c.rgb = t.rgb;
             c.a = tcc ? t.a : f.a;
         } else {
-            c.rgb = floor(f.rgb * t.rgb / 128.0);
+            c.rgb = remaster ? (f.rgb * t.rgb / 128.0) : floor(f.rgb * t.rgb / 128.0);
             if (fn >= 2u)
                 c.rgb += f.a;
             if (fn == 0u)
-                c.a = tcc ? floor(f.a * t.a / 128.0) : f.a;
+                c.a = tcc ? (remaster ? (f.a * t.a / 128.0) : floor(f.a * t.a / 128.0)) : f.a;
             else if (fn == 2u)
                 c.a = tcc ? t.a + f.a : f.a;
             else
@@ -120,11 +135,11 @@ void main() {
         c = min(c, 255.0);
     }
 #ifndef DQ8_NO_DISCARD
-    if (!passes(material.test.x, c.a, float(material.test.y)) && material.test.z != 0u)
+    if (!passes(material.test.x, remaster ? floor(c.a + 0.5) : c.a, float(material.test.y)) && material.test.z != 0u)
         discard;
 #endif
     if (material.test.w != 0u) {
-        float k = clamp(floor(inFog), 0.0, 255.0) / 255.0;
+        float k = (remaster ? clamp(inFog, 0.0, 255.0) : clamp(floor(inFog), 0.0, 255.0)) / 255.0;
         c.rgb = mix(material.fogColor.rgb * 255.0, c.rgb, k);
     }
     outColor = vec4(c.rgb / 255.0, c.a / 128.0);

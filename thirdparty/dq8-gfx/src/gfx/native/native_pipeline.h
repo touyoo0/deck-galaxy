@@ -31,6 +31,12 @@ namespace dq8::gfx::native
 void setOuterSwitch(bool (*outer)());
 bool enabled();
 
+// Remaster mode (F1 > Display > Remaster mode, RG_REMASTER): enables GPU
+// mipmaps, 16x anisotropic filtering, RGBA8 palette resolution for 3D
+// textures, and the final FidelityFX CAS sharpening pass. Live-switchable.
+void setRemaster(bool on);
+bool remasterEnabled();
+
 // Any thread. Dropped when the pipeline is off.
 void push(Record &&record);
 // Push a MeshDraw along with its vertices and indices into the queue's flat
@@ -140,6 +146,7 @@ private:
         uint32_t height = 0;
         Id palette = 0;
         uint64_t bytes = 0;
+        Bytes cpuBytes; // kept for Index8 textures and palettes (Remaster RGBA8 expansion)
     };
     struct PendingUpload
     {
@@ -147,22 +154,34 @@ private:
         uint32_t width = 0;
         uint32_t height = 0;
         Bytes bytes;
+        bool generateMips = false;
     };
 
     void apply(SDL_GPUDevice *device, Record &record, bool inPlaceMeshes, std::string &error);
     void count(const MeshDraw &draw);
     SDL_GPUTexture *createTexture(SDL_GPUDevice *device, SDL_GPUTextureFormat format, uint32_t width,
-                                  uint32_t height, std::string &error);
+                                  uint32_t height, uint32_t numLevels, SDL_GPUTextureUsageFlags usage,
+                                  std::string &error);
     bool upload(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, std::string &error);
     bool ensureView(SDL_GPUDevice *device, std::string &error);
     void drawView(SDL_GPUCommandBuffer *commands, SDL_GPURenderPass *pass);
     void evict(SDL_GPUDevice *device);
+    void invalidateResolved(SDL_GPUDevice *device, Id id, bool isPalette);
+    void evictResolved(SDL_GPUDevice *device);
+    void prepareRemasterTextures(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands);
+    bool ensureCas(SDL_GPUDevice *device, std::string &error);
+    bool ensureXbr(SDL_GPUDevice *device, std::string &error);
+    bool ensureSsao(SDL_GPUDevice *device, std::string &error);
+    void applySsao(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, SDL_GPUTexture *sceneColor,
+                   SDL_GPUTexture *sceneDepth, uint32_t width, uint32_t height);
+    bool applyCas(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, SDL_GPUTexture *source, uint32_t width,
+                  uint32_t height, std::string &error);
 
     // Step 4b's mesh draws (native_meshes.cpp): the frame's draws into the
     // scene target, with a depth target of its own.
     bool ensureMeshes(SDL_GPUDevice *device, std::string &error);
     SDL_GPUGraphicsPipeline *meshPipeline(SDL_GPUDevice *device, uint32_t key);
-    SDL_GPUSampler *meshSampler(SDL_GPUDevice *device, uint32_t key);
+    SDL_GPUSampler *meshSampler(SDL_GPUDevice *device, uint32_t key, bool remaster);
     bool uploadMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, std::string &error);
     // The frame's draws in order, a render pass per run of draws into one
     // target (step 5a).
@@ -210,6 +229,10 @@ private:
     std::unordered_map<Id, Image> m_palettes; // as 16x1 or 256x1 RGBA
     std::deque<Id> m_imageOrder;              // oldest first, for the budget
     uint64_t m_imageBytes = 0;
+    // Remaster cache: (texId << 32 | palId) -> RGBA8 mipmapped texture.
+    std::unordered_map<uint64_t, Image> m_resolved;
+    std::deque<uint64_t> m_resolvedOrder;
+    uint64_t m_resolvedBytes = 0;
     std::vector<PendingUpload> m_uploads;
     std::vector<TargetFill> m_fills; // a save state's targets, drawn at the next frame
     std::deque<Id> m_recent; // the newest textures, for the view
@@ -241,10 +264,30 @@ private:
     SDL_GPUShader *m_meshFragmentOpaque = nullptr;
     bool m_meshFailed = false;
     SDL_GPUTextureFormat m_depthFormat = SDL_GPU_TEXTUREFORMAT_INVALID;
+    bool m_depthCanSample = false;
     std::unordered_map<Id, GpuTarget> m_gpuTargets; // offscreen colors, and every depth (by its id)
     SDL_GPUTexture *m_white = nullptr;
     std::unordered_map<uint32_t, SDL_GPUGraphicsPipeline *> m_meshPipelines;
     SDL_GPUSampler *m_meshSamplers[8] = {};
+    SDL_GPUSampler *m_remasterSamplers[8] = {};
+    SDL_GPUTexture *m_fxaaTarget = nullptr;
+    SDL_GPUTexture *m_casTarget = nullptr;
+    SDL_GPUTexture *m_ssaoRaw = nullptr;
+    SDL_GPUTexture *m_ssaoBlur = nullptr;
+    uint32_t m_casWidth = 0, m_casHeight = 0;
+    uint32_t m_ssaoWidth = 0, m_ssaoHeight = 0;
+    SDL_GPUGraphicsPipeline *m_fxaaPipeline = nullptr;
+    SDL_GPUGraphicsPipeline *m_casPipeline = nullptr;
+    SDL_GPUGraphicsPipeline *m_xbrPipeline = nullptr;
+    SDL_GPUGraphicsPipeline *m_ssaoPipeline = nullptr;
+    SDL_GPUGraphicsPipeline *m_ssaoBlurPipeline = nullptr;
+    SDL_GPUGraphicsPipeline *m_ssaoCompositePipeline = nullptr;
+    SDL_GPUSampler *m_fxaaSampler = nullptr;
+    SDL_GPUSampler *m_casSampler = nullptr;
+    bool m_casFailed = false;
+    bool m_xbrFailed = false;
+    bool m_ssaoFailed = false;
+    bool m_lastRemaster = false;
     SDL_GPUBuffer *m_vertexBuffer = nullptr;
     SDL_GPUBuffer *m_indexBuffer = nullptr;
     uint32_t m_vertexCapacity = 0, m_indexCapacity = 0;

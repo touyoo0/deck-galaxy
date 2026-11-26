@@ -108,6 +108,7 @@ add_executable(roguegalaxy
     map_chests.cpp
     fast_travel.cpp
     native_renderer.cpp
+    remaster.cpp
     opening.cpp
     text_language.cpp
     insectron_layouts.cpp

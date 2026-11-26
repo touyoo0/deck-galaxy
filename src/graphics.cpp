@@ -34,6 +34,7 @@
 #include "fast_travel.h"
 #include "map_chests.h"
 #include "native_renderer.h"
+#include "remaster.h"
 #include "loading_screen.h"
 #include "opening.h"
 #include "quick_scenes.h"
@@ -432,6 +433,8 @@ void applyGameOption(const std::string &key, bool on)
         rg::cameraview::setFasterTurn(on);
     else if (key == "fast_transporter")
         rg::quickscenes::setFastTransporter(on);
+    else if (key == "remaster_mode")
+        rg::remaster::setEnabled(on);
 }
 
 void applyGameNumber(const std::string &key, int value)
@@ -1049,6 +1052,10 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
     // Numbers against the game's own (100) show as multipliers, 1.0x.
     constexpr const char *kTimes = dq8::ui::kMultiplierFormat;
     host.gameOptions = {
+        {"remaster_mode", "Remaster mode",
+         "Modernizes the native renderer with mipmaps, 16x anisotropic filtering, smooth palette textures and "
+         "contrast-adaptive sharpening, while keeping low GPU power draw on Steam Deck.",
+         true, 0, 0, 0, "", 1, true, false, "display"},
         {"sixty_fps", "60 frames per second",
          "The game runs at 60 frames a second instead of its own 30, its logic still at the PS2's pace; movies "
          "and the loading screen keep 30. Takes effect the next time the game starts.",

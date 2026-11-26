@@ -1,5 +1,11 @@
 #include "gfx/native/native_pipeline.h"
 
+#include "native_cas.frag.spv.h"
+#include "native_cas.vert.spv.h"
+#include "native_fxaa.frag.spv.h"
+#include "native_ssao.frag.spv.h"
+#include "native_ssao_blur.frag.spv.h"
+#include "native_upscale2x.frag.spv.h"
 #include "native_view.frag.spv.h"
 #include "native_view.vert.spv.h"
 
@@ -21,6 +27,21 @@ namespace dq8::gfx::native
 namespace
 {
 std::atomic<bool (*)()> g_outer{nullptr};
+std::atomic<bool> g_remaster{true};
+
+constexpr uint64_t kResolvedBudget = 256ull << 20;
+
+uint32_t mipLevelsFor(uint32_t width, uint32_t height)
+{
+    uint32_t dim = std::max(width, height);
+    uint32_t levels = 1u;
+    while (dim > 1u)
+    {
+        dim >>= 1u;
+        ++levels;
+    }
+    return levels;
+}
 
 struct Queue
 {
@@ -190,6 +211,16 @@ void setOuterSwitch(bool (*outer)())
     g_outer.store(outer, std::memory_order_release);
 }
 
+void setRemaster(bool on)
+{
+    g_remaster.store(on, std::memory_order_relaxed);
+}
+
+bool remasterEnabled()
+{
+    return g_remaster.load(std::memory_order_relaxed);
+}
+
 bool enabled()
 {
     static const bool on = [] {
@@ -277,16 +308,17 @@ void Renderer::count(const MeshDraw &draw)
 }
 
 SDL_GPUTexture *Renderer::createTexture(SDL_GPUDevice *device, SDL_GPUTextureFormat format, uint32_t width,
-                                        uint32_t height, std::string &error)
+                                        uint32_t height, uint32_t numLevels, SDL_GPUTextureUsageFlags usage,
+                                        std::string &error)
 {
     SDL_GPUTextureCreateInfo info{};
     info.type = SDL_GPU_TEXTURETYPE_2D;
     info.format = format;
-    info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    info.usage = usage;
     info.width = width;
     info.height = height;
     info.layer_count_or_depth = 1;
-    info.num_levels = 1;
+    info.num_levels = std::max(numLevels, 1u);
     SDL_GPUTexture *texture = SDL_CreateGPUTexture(device, &info);
     if (!texture)
         error = std::string("SDL_CreateGPUTexture(native texture): ") + SDL_GetError();
@@ -390,9 +422,14 @@ void Renderer::apply(SDL_GPUDevice *device, Record &record, bool inPlaceMeshes, 
                     ++m_refused;
                     return;
                 }
+                const bool rgba = (bpp == 4u);
+                const uint32_t levels = rgba ? mipLevelsFor(r.width, r.height) : 1u;
+                const SDL_GPUTextureUsageFlags usage =
+                    levels > 1u ? (SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)
+                                : SDL_GPU_TEXTUREUSAGE_SAMPLER;
                 SDL_GPUTexture *texture = createTexture(
-                    device, bpp == 4u ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM : SDL_GPU_TEXTUREFORMAT_R8_UNORM,
-                    r.width, r.height, error);
+                    device, rgba ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM : SDL_GPU_TEXTUREFORMAT_R8_UNORM,
+                    r.width, r.height, levels, usage, error);
                 if (!texture)
                     return;
                 if (const auto old = m_images.find(r.id); old != m_images.end())
@@ -400,11 +437,13 @@ void Renderer::apply(SDL_GPUDevice *device, Record &record, bool inPlaceMeshes, 
                     SDL_ReleaseGPUTexture(device, old->second.texture);
                     m_imageBytes -= old->second.bytes;
                     m_imageOrder.erase(std::find(m_imageOrder.begin(), m_imageOrder.end(), r.id));
+                    invalidateResolved(device, r.id, false);
                 }
-                m_images[r.id] = Image{texture, r.format, r.width, r.height, r.palette, bytes};
+                m_images[r.id] = Image{texture, r.format, r.width, r.height, r.palette, bytes,
+                                       rgba ? nullptr : r.texels};
                 m_imageOrder.push_back(r.id);
                 m_imageBytes += bytes;
-                m_uploads.push_back({texture, r.width, r.height, r.texels});
+                m_uploads.push_back({texture, r.width, r.height, r.texels, levels > 1u});
                 m_recent.erase(std::remove(m_recent.begin(), m_recent.end(), r.id), m_recent.end());
                 m_recent.push_front(r.id);
                 if (m_recent.size() > kViewColumns * kViewRows)
@@ -419,13 +458,17 @@ void Renderer::apply(SDL_GPUDevice *device, Record &record, bool inPlaceMeshes, 
                     return;
                 }
                 SDL_GPUTexture *texture =
-                    createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, r.entries, 1u, error);
+                    createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, r.entries, 1u, 1u,
+                                  SDL_GPU_TEXTUREUSAGE_SAMPLER, error);
                 if (!texture)
                     return;
                 if (const auto old = m_palettes.find(r.id); old != m_palettes.end())
+                {
                     SDL_ReleaseGPUTexture(device, old->second.texture);
-                m_palettes[r.id] = Image{texture, PixelFormat::Rgba8, r.entries, 1u, 0u, r.entries * 4u};
-                m_uploads.push_back({texture, r.entries, 1u, r.colors});
+                    invalidateResolved(device, r.id, true);
+                }
+                m_palettes[r.id] = Image{texture, PixelFormat::Rgba8, r.entries, 1u, 0u, r.entries * 4u, r.colors};
+                m_uploads.push_back({texture, r.entries, 1u, r.colors, false});
             }
             // The rest is drawn from step 4 on; counted above.
         },
@@ -480,10 +523,49 @@ bool Renderer::upload(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, std
         offset += static_cast<uint32_t>(u.bytes->size());
     }
     SDL_EndGPUCopyPass(copy);
+    for (const PendingUpload &u : m_uploads)
+    {
+        if (u.generateMips)
+            SDL_GenerateMipmapsForGPUTexture(commands, u.texture);
+    }
     // Freed once the GPU is done with it.
     SDL_ReleaseGPUTransferBuffer(device, buffer);
     m_uploads.clear();
     return true;
+}
+
+void Renderer::invalidateResolved(SDL_GPUDevice *device, Id id, bool isPalette)
+{
+    for (auto it = m_resolved.begin(); it != m_resolved.end();)
+    {
+        const Id texId = static_cast<Id>(it->first >> 32u);
+        const Id palId = static_cast<Id>(it->first & 0xFFFFFFFFu);
+        if ((isPalette ? palId : texId) == id)
+        {
+            SDL_ReleaseGPUTexture(device, it->second.texture);
+            m_resolvedBytes -= it->second.bytes;
+            it = m_resolved.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+}
+
+void Renderer::evictResolved(SDL_GPUDevice *device)
+{
+    while (m_resolvedBytes > kResolvedBudget && !m_resolvedOrder.empty())
+    {
+        const uint64_t key = m_resolvedOrder.front();
+        m_resolvedOrder.pop_front();
+        const auto it = m_resolved.find(key);
+        if (it == m_resolved.end())
+            continue;
+        SDL_ReleaseGPUTexture(device, it->second.texture);
+        m_resolvedBytes -= it->second.bytes;
+        m_resolved.erase(it);
+    }
 }
 
 void Renderer::evict(SDL_GPUDevice *device)
@@ -499,6 +581,7 @@ void Renderer::evict(SDL_GPUDevice *device)
         SDL_ReleaseGPUTexture(device, it->second.texture);
         m_imageBytes -= it->second.bytes;
         m_images.erase(it);
+        invalidateResolved(device, id, false);
         m_recent.erase(std::remove(m_recent.begin(), m_recent.end(), id), m_recent.end());
         gone.push_back(id);
         ++m_evicted;
@@ -703,10 +786,11 @@ bool Renderer::render(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, uin
     {
         std::string failed;
         SDL_GPUTexture *texture =
-            createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, fill.width, fill.height, failed);
+            createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, fill.width, fill.height, 1u,
+                          SDL_GPU_TEXTUREUSAGE_SAMPLER, failed);
         if (!texture)
             continue;
-        m_uploads.push_back({texture, fill.width, fill.height, fill.rgba});
+        m_uploads.push_back({texture, fill.width, fill.height, fill.rgba, false});
         fillBlits.push_back({texture, fill.id, fill.width, fill.height});
     }
     m_fills.clear();
@@ -775,6 +859,11 @@ bool Renderer::render(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, uin
         m_sceneHeight = height;
     }
 
+    const bool remaster = remasterEnabled();
+    if (remaster != m_lastRemaster && !m_frameMeshes.empty())
+        m_frameReady = true;
+    m_lastRemaster = remaster;
+
     // The scene: the meshes of the last frame a Present record closed, over
     // black, with a reversed depth target of its own. Kept as it is until
     // the next frame closes (the host presents more often than the game).
@@ -785,6 +874,13 @@ bool Renderer::render(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, uin
     const bool draw = meshes && m_frameReady;
     if (!draw && !fresh && !grid)
     {
+        if (remaster && m_casTarget && m_casWidth == m_sceneWidth && m_casHeight == m_sceneHeight)
+        {
+            out.texture = m_casTarget;
+            out.width = m_casWidth;
+            out.height = m_casHeight;
+            return true;
+        }
         out.texture = m_scene;
         out.width = m_sceneWidth;
         out.height = m_sceneHeight;
@@ -825,9 +921,426 @@ bool Renderer::render(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, uin
         SDL_EndGPURenderPass(pass);
     }
 
+    if (remaster && !view)
+    {
+        std::string casError;
+        if (applyCas(device, commands, m_scene, m_sceneWidth, m_sceneHeight, casError))
+        {
+            out.texture = m_casTarget;
+            out.width = m_casWidth;
+            out.height = m_casHeight;
+            return true;
+        }
+        if (!casError.empty())
+            std::fprintf(stderr, "[native-pipeline] CAS skipped: %s\n", casError.c_str());
+    }
+
     out.texture = m_scene;
     out.width = m_sceneWidth;
     out.height = m_sceneHeight;
+    return true;
+}
+
+bool Renderer::ensureCas(SDL_GPUDevice *device, std::string &error)
+{
+    if (m_casPipeline && m_fxaaPipeline)
+        return true;
+    if (m_casFailed)
+        return false;
+    m_casFailed = true;
+    if (!(SDL_GetGPUShaderFormats(device) & SDL_GPU_SHADERFORMAT_SPIRV))
+        return false;
+    SDL_GPUSamplerCreateInfo samplerInfo{};
+    samplerInfo.min_filter = SDL_GPU_FILTER_NEAREST;
+    samplerInfo.mag_filter = SDL_GPU_FILTER_NEAREST;
+    samplerInfo.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+    samplerInfo.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    samplerInfo.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    samplerInfo.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    m_casSampler = SDL_CreateGPUSampler(device, &samplerInfo);
+    samplerInfo.min_filter = SDL_GPU_FILTER_LINEAR;
+    samplerInfo.mag_filter = SDL_GPU_FILTER_LINEAR;
+    m_fxaaSampler = SDL_CreateGPUSampler(device, &samplerInfo);
+    if (!m_casSampler || !m_fxaaSampler)
+    {
+        error = std::string("SDL_CreateGPUSampler(native remaster post): ") + SDL_GetError();
+        return false;
+    }
+    SDL_GPUShaderCreateInfo vertexInfo{};
+    vertexInfo.code = reinterpret_cast<const uint8_t *>(kNativeCasVertSpirv);
+    vertexInfo.code_size = sizeof(kNativeCasVertSpirv);
+    vertexInfo.entrypoint = "main";
+    vertexInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    vertexInfo.stage = SDL_GPU_SHADERSTAGE_VERTEX;
+    SDL_GPUShaderCreateInfo casFragInfo{};
+    casFragInfo.code = reinterpret_cast<const uint8_t *>(kNativeCasFragSpirv);
+    casFragInfo.code_size = sizeof(kNativeCasFragSpirv);
+    casFragInfo.entrypoint = "main";
+    casFragInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    casFragInfo.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
+    casFragInfo.num_samplers = 1u;
+    casFragInfo.num_uniform_buffers = 1u;
+    SDL_GPUShaderCreateInfo fxaaFragInfo{};
+    fxaaFragInfo.code = reinterpret_cast<const uint8_t *>(kNativeFxaaFragSpirv);
+    fxaaFragInfo.code_size = sizeof(kNativeFxaaFragSpirv);
+    fxaaFragInfo.entrypoint = "main";
+    fxaaFragInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    fxaaFragInfo.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
+    fxaaFragInfo.num_samplers = 1u;
+    SDL_GPUShader *vertex = SDL_CreateGPUShader(device, &vertexInfo);
+    SDL_GPUShader *casFrag = vertex ? SDL_CreateGPUShader(device, &casFragInfo) : nullptr;
+    SDL_GPUShader *fxaaFrag = casFrag ? SDL_CreateGPUShader(device, &fxaaFragInfo) : nullptr;
+    if (!vertex || !casFrag || !fxaaFrag)
+    {
+        error = std::string("SDL_CreateGPUShader(native remaster post): ") + SDL_GetError();
+        if (vertex)
+            SDL_ReleaseGPUShader(device, vertex);
+        if (casFrag)
+            SDL_ReleaseGPUShader(device, casFrag);
+        if (fxaaFrag)
+            SDL_ReleaseGPUShader(device, fxaaFrag);
+        return false;
+    }
+    SDL_GPUColorTargetDescription colorTarget{};
+    colorTarget.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    SDL_GPUGraphicsPipelineCreateInfo info{};
+    info.vertex_shader = vertex;
+    info.fragment_shader = casFrag;
+    info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+    info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+    info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    info.target_info.color_target_descriptions = &colorTarget;
+    info.target_info.num_color_targets = 1u;
+    m_casPipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
+    info.fragment_shader = fxaaFrag;
+    m_fxaaPipeline = m_casPipeline ? SDL_CreateGPUGraphicsPipeline(device, &info) : nullptr;
+    SDL_ReleaseGPUShader(device, fxaaFrag);
+    SDL_ReleaseGPUShader(device, casFrag);
+    SDL_ReleaseGPUShader(device, vertex);
+    if (!m_casPipeline || !m_fxaaPipeline)
+    {
+        error = std::string("SDL_CreateGPUGraphicsPipeline(native remaster post): ") + SDL_GetError();
+        return false;
+    }
+    m_casFailed = false;
+    return true;
+}
+
+bool Renderer::ensureXbr(SDL_GPUDevice *device, std::string &error)
+{
+    if (m_xbrPipeline && m_casSampler)
+        return true;
+    if (m_xbrFailed)
+        return false;
+    m_xbrFailed = true;
+    if (!(SDL_GetGPUShaderFormats(device) & SDL_GPU_SHADERFORMAT_SPIRV))
+        return false;
+    if (!m_casSampler)
+    {
+        SDL_GPUSamplerCreateInfo samplerInfo{};
+        samplerInfo.min_filter = SDL_GPU_FILTER_NEAREST;
+        samplerInfo.mag_filter = SDL_GPU_FILTER_NEAREST;
+        samplerInfo.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        samplerInfo.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        samplerInfo.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        samplerInfo.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        m_casSampler = SDL_CreateGPUSampler(device, &samplerInfo);
+        if (!m_casSampler)
+        {
+            error = std::string("SDL_CreateGPUSampler(native xbr): ") + SDL_GetError();
+            return false;
+        }
+    }
+    SDL_GPUShaderCreateInfo vertexInfo{};
+    vertexInfo.code = reinterpret_cast<const uint8_t *>(kNativeCasVertSpirv);
+    vertexInfo.code_size = sizeof(kNativeCasVertSpirv);
+    vertexInfo.entrypoint = "main";
+    vertexInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    vertexInfo.stage = SDL_GPU_SHADERSTAGE_VERTEX;
+    SDL_GPUShaderCreateInfo fragInfo{};
+    fragInfo.code = reinterpret_cast<const uint8_t *>(kNativeUpscale2xFragSpirv);
+    fragInfo.code_size = sizeof(kNativeUpscale2xFragSpirv);
+    fragInfo.entrypoint = "main";
+    fragInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    fragInfo.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
+    fragInfo.num_samplers = 1u;
+    fragInfo.num_uniform_buffers = 1u;
+    SDL_GPUShader *vertex = SDL_CreateGPUShader(device, &vertexInfo);
+    SDL_GPUShader *frag = vertex ? SDL_CreateGPUShader(device, &fragInfo) : nullptr;
+    if (!vertex || !frag)
+    {
+        error = std::string("SDL_CreateGPUShader(native upscale2x): ") + SDL_GetError();
+        if (vertex)
+            SDL_ReleaseGPUShader(device, vertex);
+        if (frag)
+            SDL_ReleaseGPUShader(device, frag);
+        return false;
+    }
+    SDL_GPUColorTargetDescription colorTarget{};
+    colorTarget.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    SDL_GPUGraphicsPipelineCreateInfo info{};
+    info.vertex_shader = vertex;
+    info.fragment_shader = frag;
+    info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+    info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+    info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    info.target_info.color_target_descriptions = &colorTarget;
+    info.target_info.num_color_targets = 1u;
+    m_xbrPipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
+    SDL_ReleaseGPUShader(device, frag);
+    SDL_ReleaseGPUShader(device, vertex);
+    if (!m_xbrPipeline)
+    {
+        error = std::string("SDL_CreateGPUGraphicsPipeline(native upscale2x): ") + SDL_GetError();
+        return false;
+    }
+    m_xbrFailed = false;
+    return true;
+}
+
+bool Renderer::ensureSsao(SDL_GPUDevice *device, std::string &error)
+{
+    if (m_ssaoPipeline && m_ssaoBlurPipeline && m_ssaoCompositePipeline)
+        return true;
+    if (m_ssaoFailed)
+        return false;
+    m_ssaoFailed = true;
+    if (!(SDL_GetGPUShaderFormats(device) & SDL_GPU_SHADERFORMAT_SPIRV))
+        return false;
+    if (!ensureCas(device, error))
+        return false;
+    SDL_GPUShaderCreateInfo vertexInfo{};
+    vertexInfo.code = reinterpret_cast<const uint8_t *>(kNativeCasVertSpirv);
+    vertexInfo.code_size = sizeof(kNativeCasVertSpirv);
+    vertexInfo.entrypoint = "main";
+    vertexInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    vertexInfo.stage = SDL_GPU_SHADERSTAGE_VERTEX;
+    SDL_GPUShaderCreateInfo ssaoInfo{};
+    ssaoInfo.code = reinterpret_cast<const uint8_t *>(kNativeSsaoFragSpirv);
+    ssaoInfo.code_size = sizeof(kNativeSsaoFragSpirv);
+    ssaoInfo.entrypoint = "main";
+    ssaoInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    ssaoInfo.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
+    ssaoInfo.num_samplers = 1u;
+    SDL_GPUShaderCreateInfo blurInfo{};
+    blurInfo.code = reinterpret_cast<const uint8_t *>(kNativeSsaoBlurFragSpirv);
+    blurInfo.code_size = sizeof(kNativeSsaoBlurFragSpirv);
+    blurInfo.entrypoint = "main";
+    blurInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    blurInfo.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
+    blurInfo.num_samplers = 2u;
+    blurInfo.num_uniform_buffers = 1u;
+    SDL_GPUShader *vertex = SDL_CreateGPUShader(device, &vertexInfo);
+    SDL_GPUShader *ssaoFrag = vertex ? SDL_CreateGPUShader(device, &ssaoInfo) : nullptr;
+    SDL_GPUShader *blurFrag = ssaoFrag ? SDL_CreateGPUShader(device, &blurInfo) : nullptr;
+    if (!vertex || !ssaoFrag || !blurFrag)
+    {
+        error = std::string("SDL_CreateGPUShader(native ssao): ") + SDL_GetError();
+        if (vertex)
+            SDL_ReleaseGPUShader(device, vertex);
+        if (ssaoFrag)
+            SDL_ReleaseGPUShader(device, ssaoFrag);
+        if (blurFrag)
+            SDL_ReleaseGPUShader(device, blurFrag);
+        return false;
+    }
+    SDL_GPUColorTargetDescription colorTarget{};
+    colorTarget.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    SDL_GPUGraphicsPipelineCreateInfo info{};
+    info.vertex_shader = vertex;
+    info.fragment_shader = ssaoFrag;
+    info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+    info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+    info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    info.target_info.color_target_descriptions = &colorTarget;
+    info.target_info.num_color_targets = 1u;
+    m_ssaoPipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
+    info.fragment_shader = blurFrag;
+    m_ssaoBlurPipeline = m_ssaoPipeline ? SDL_CreateGPUGraphicsPipeline(device, &info) : nullptr;
+    // Composite pass: multiply AO onto m_scene RGB while preserving m_scene alpha.
+    colorTarget.blend_state.enable_blend = true;
+    colorTarget.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_DST_COLOR;
+    colorTarget.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+    colorTarget.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+    colorTarget.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+    colorTarget.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+    colorTarget.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+    colorTarget.blend_state.enable_color_write_mask = true;
+    colorTarget.blend_state.color_write_mask = SDL_GPU_COLORCOMPONENT_R | SDL_GPU_COLORCOMPONENT_G | SDL_GPU_COLORCOMPONENT_B;
+    m_ssaoCompositePipeline = m_ssaoBlurPipeline ? SDL_CreateGPUGraphicsPipeline(device, &info) : nullptr;
+    SDL_ReleaseGPUShader(device, blurFrag);
+    SDL_ReleaseGPUShader(device, ssaoFrag);
+    SDL_ReleaseGPUShader(device, vertex);
+    if (!m_ssaoPipeline || !m_ssaoBlurPipeline || !m_ssaoCompositePipeline)
+    {
+        error = std::string("SDL_CreateGPUGraphicsPipeline(native ssao): ") + SDL_GetError();
+        return false;
+    }
+    m_ssaoFailed = false;
+    return true;
+}
+
+void Renderer::applySsao(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, SDL_GPUTexture *sceneColor,
+                         SDL_GPUTexture *sceneDepth, uint32_t width, uint32_t height)
+{
+    if (!sceneColor || !sceneDepth || width < 4u || height < 4u)
+        return;
+    std::string error;
+    if (!ensureSsao(device, error))
+        return;
+    const uint32_t hw = std::max(width / 2u, 1u);
+    const uint32_t hh = std::max(height / 2u, 1u);
+    if (!m_ssaoRaw || !m_ssaoBlur || m_ssaoWidth != hw || m_ssaoHeight != hh)
+    {
+        if (m_ssaoRaw)
+            SDL_ReleaseGPUTexture(device, m_ssaoRaw);
+        if (m_ssaoBlur)
+            SDL_ReleaseGPUTexture(device, m_ssaoBlur);
+        SDL_GPUTextureCreateInfo info{};
+        info.type = SDL_GPU_TEXTURETYPE_2D;
+        info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        info.width = hw;
+        info.height = hh;
+        info.layer_count_or_depth = 1;
+        info.num_levels = 1;
+        m_ssaoRaw = SDL_CreateGPUTexture(device, &info);
+        m_ssaoBlur = m_ssaoRaw ? SDL_CreateGPUTexture(device, &info) : nullptr;
+        if (!m_ssaoRaw || !m_ssaoBlur)
+        {
+            m_ssaoWidth = m_ssaoHeight = 0u;
+            return;
+        }
+        m_ssaoWidth = hw;
+        m_ssaoHeight = hh;
+    }
+    const SDL_GPUViewport halfVp{0.0f, 0.0f, float(hw), float(hh), 0.0f, 1.0f};
+    const SDL_GPUViewport fullVp{0.0f, 0.0f, float(width), float(height), 0.0f, 1.0f};
+    // Pass 1: half-res SSAO from SceneDepth.
+    {
+        SDL_GPUColorTargetInfo target{};
+        target.texture = m_ssaoRaw;
+        target.load_op = SDL_GPU_LOADOP_DONT_CARE;
+        target.store_op = SDL_GPU_STOREOP_STORE;
+        SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(commands, &target, 1u, nullptr);
+        if (!pass)
+            return;
+        SDL_SetGPUViewport(pass, &halfVp);
+        SDL_BindGPUGraphicsPipeline(pass, m_ssaoPipeline);
+        const SDL_GPUTextureSamplerBinding binding{sceneDepth, m_casSampler};
+        SDL_BindGPUFragmentSamplers(pass, 0u, &binding, 1u);
+        SDL_DrawGPUPrimitives(pass, 3u, 1u, 0u, 0u);
+        SDL_EndGPURenderPass(pass);
+    }
+    // Pass 2: horizontal bilateral blur (m_ssaoRaw -> m_ssaoBlur).
+    {
+        SDL_GPUColorTargetInfo target{};
+        target.texture = m_ssaoBlur;
+        target.load_op = SDL_GPU_LOADOP_DONT_CARE;
+        target.store_op = SDL_GPU_STOREOP_STORE;
+        SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(commands, &target, 1u, nullptr);
+        if (!pass)
+            return;
+        SDL_SetGPUViewport(pass, &halfVp);
+        SDL_BindGPUGraphicsPipeline(pass, m_ssaoBlurPipeline);
+        const SDL_GPUTextureSamplerBinding bindings[2] = {{m_ssaoRaw, m_fxaaSampler}, {sceneDepth, m_casSampler}};
+        SDL_BindGPUFragmentSamplers(pass, 0u, bindings, 2u);
+        const float dir[4] = {1.0f / float(hw), 0.0f, 1.0f / float(hw), 1.0f / float(hh)};
+        SDL_PushGPUFragmentUniformData(commands, 0u, dir, sizeof(dir));
+        SDL_DrawGPUPrimitives(pass, 3u, 1u, 0u, 0u);
+        SDL_EndGPURenderPass(pass);
+    }
+    // Pass 3: vertical bilateral blur + multiplicative composite onto m_scene (before UI/HUD).
+    {
+        SDL_GPUColorTargetInfo target{};
+        target.texture = sceneColor;
+        target.load_op = SDL_GPU_LOADOP_LOAD;
+        target.store_op = SDL_GPU_STOREOP_STORE;
+        SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(commands, &target, 1u, nullptr);
+        if (!pass)
+            return;
+        SDL_SetGPUViewport(pass, &fullVp);
+        SDL_BindGPUGraphicsPipeline(pass, m_ssaoCompositePipeline);
+        const SDL_GPUTextureSamplerBinding bindings[2] = {{m_ssaoBlur, m_fxaaSampler}, {sceneDepth, m_casSampler}};
+        SDL_BindGPUFragmentSamplers(pass, 0u, bindings, 2u);
+        const float dir[4] = {0.0f, 1.0f / float(hh), 1.0f / float(width), 1.0f / float(height)};
+        SDL_PushGPUFragmentUniformData(commands, 0u, dir, sizeof(dir));
+        SDL_DrawGPUPrimitives(pass, 3u, 1u, 0u, 0u);
+        SDL_EndGPURenderPass(pass);
+    }
+}
+
+bool Renderer::applyCas(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, SDL_GPUTexture *source, uint32_t width,
+                        uint32_t height, std::string &error)
+{
+    if (!source || width == 0u || height == 0u || !ensureCas(device, error))
+        return false;
+    if (!m_casTarget || !m_fxaaTarget || m_casWidth != width || m_casHeight != height)
+    {
+        if (m_casTarget)
+            SDL_ReleaseGPUTexture(device, m_casTarget);
+        if (m_fxaaTarget)
+            SDL_ReleaseGPUTexture(device, m_fxaaTarget);
+        SDL_GPUTextureCreateInfo info{};
+        info.type = SDL_GPU_TEXTURETYPE_2D;
+        info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        info.width = width;
+        info.height = height;
+        info.layer_count_or_depth = 1;
+        info.num_levels = 1;
+        m_fxaaTarget = SDL_CreateGPUTexture(device, &info);
+        m_casTarget = m_fxaaTarget ? SDL_CreateGPUTexture(device, &info) : nullptr;
+        if (!m_fxaaTarget || !m_casTarget)
+        {
+            error = std::string("SDL_CreateGPUTexture(native remaster post): ") + SDL_GetError();
+            m_casWidth = m_casHeight = 0u;
+            return false;
+        }
+        m_casWidth = width;
+        m_casHeight = height;
+    }
+    const SDL_GPUViewport viewport{0.0f, 0.0f, float(width), float(height), 0.0f, 1.0f};
+    // Pass 1: FXAA 3.11 Quality (m_scene -> m_fxaaTarget).
+    {
+        SDL_GPUColorTargetInfo target{};
+        target.texture = m_fxaaTarget;
+        target.load_op = SDL_GPU_LOADOP_DONT_CARE;
+        target.store_op = SDL_GPU_STOREOP_STORE;
+        SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(commands, &target, 1u, nullptr);
+        if (!pass)
+        {
+            error = std::string("SDL_BeginGPURenderPass(native fxaa): ") + SDL_GetError();
+            return false;
+        }
+        SDL_SetGPUViewport(pass, &viewport);
+        SDL_BindGPUGraphicsPipeline(pass, m_fxaaPipeline);
+        const SDL_GPUTextureSamplerBinding binding{source, m_fxaaSampler};
+        SDL_BindGPUFragmentSamplers(pass, 0u, &binding, 1u);
+        SDL_DrawGPUPrimitives(pass, 3u, 1u, 0u, 0u);
+        SDL_EndGPURenderPass(pass);
+    }
+    // Pass 2: FidelityFX CAS + subtle vibrance/contrast (m_fxaaTarget -> m_casTarget).
+    {
+        SDL_GPUColorTargetInfo target{};
+        target.texture = m_casTarget;
+        target.load_op = SDL_GPU_LOADOP_DONT_CARE;
+        target.store_op = SDL_GPU_STOREOP_STORE;
+        SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(commands, &target, 1u, nullptr);
+        if (!pass)
+        {
+            error = std::string("SDL_BeginGPURenderPass(native cas): ") + SDL_GetError();
+            return false;
+        }
+        SDL_SetGPUViewport(pass, &viewport);
+        SDL_BindGPUGraphicsPipeline(pass, m_casPipeline);
+        const SDL_GPUTextureSamplerBinding binding{m_fxaaTarget, m_casSampler};
+        SDL_BindGPUFragmentSamplers(pass, 0u, &binding, 1u);
+        const float params[4] = {0.42f, 0.10f, 0.02f, 0.0f};
+        SDL_PushGPUFragmentUniformData(commands, 0u, params, sizeof(params));
+        SDL_DrawGPUPrimitives(pass, 3u, 1u, 0u, 0u);
+        SDL_EndGPURenderPass(pass);
+    }
     return true;
 }
 
@@ -843,6 +1356,10 @@ std::string Renderer::statsLine()
     line += " | held: textures " + std::to_string(m_images.size()) + " (" + std::to_string(m_imageBytes >> 20) +
             " MiB), palettes " + std::to_string(m_palettes.size()) + ", evicted " + d(m_evicted, m_evictedReported) +
             ", refused " + d(m_refused, m_refusedReported);
+    if (remasterEnabled())
+        line += " | remaster: resolved " + std::to_string(m_resolved.size()) + " (" +
+                std::to_string(m_resolvedBytes >> 20) + " MiB), ssao " +
+                (m_depthCanSample && m_ssaoPipeline ? "on" : "off");
     m_evictedReported = m_evicted;
     m_refusedReported = m_refused;
     const Readiness &now = m_readiness, &was = m_readinessReported;
@@ -1280,22 +1797,68 @@ void Renderer::release(SDL_GPUDevice *device)
     m_drainedIndices.clear();
     if (m_scene)
         SDL_ReleaseGPUTexture(device, m_scene);
+    if (m_fxaaTarget)
+        SDL_ReleaseGPUTexture(device, m_fxaaTarget);
+    if (m_casTarget)
+        SDL_ReleaseGPUTexture(device, m_casTarget);
+    if (m_ssaoRaw)
+        SDL_ReleaseGPUTexture(device, m_ssaoRaw);
+    if (m_ssaoBlur)
+        SDL_ReleaseGPUTexture(device, m_ssaoBlur);
     for (auto &[id, image] : m_images)
         SDL_ReleaseGPUTexture(device, image.texture);
     for (auto &[id, image] : m_palettes)
+        SDL_ReleaseGPUTexture(device, image.texture);
+    for (auto &[key, image] : m_resolved)
         SDL_ReleaseGPUTexture(device, image.texture);
     if (m_viewPipeline)
         SDL_ReleaseGPUGraphicsPipeline(device, m_viewPipeline);
     if (m_viewSampler)
         SDL_ReleaseGPUSampler(device, m_viewSampler);
+    if (m_fxaaPipeline)
+        SDL_ReleaseGPUGraphicsPipeline(device, m_fxaaPipeline);
+    if (m_casPipeline)
+        SDL_ReleaseGPUGraphicsPipeline(device, m_casPipeline);
+    if (m_xbrPipeline)
+        SDL_ReleaseGPUGraphicsPipeline(device, m_xbrPipeline);
+    if (m_ssaoPipeline)
+        SDL_ReleaseGPUGraphicsPipeline(device, m_ssaoPipeline);
+    if (m_ssaoBlurPipeline)
+        SDL_ReleaseGPUGraphicsPipeline(device, m_ssaoBlurPipeline);
+    if (m_ssaoCompositePipeline)
+        SDL_ReleaseGPUGraphicsPipeline(device, m_ssaoCompositePipeline);
+    if (m_fxaaSampler)
+        SDL_ReleaseGPUSampler(device, m_fxaaSampler);
+    if (m_casSampler)
+        SDL_ReleaseGPUSampler(device, m_casSampler);
     m_images.clear();
     m_palettes.clear();
+    m_resolved.clear();
+    m_resolvedOrder.clear();
     m_imageOrder.clear();
     m_recent.clear();
     m_imageBytes = 0u;
+    m_resolvedBytes = 0u;
     m_scene = nullptr;
+    m_fxaaTarget = nullptr;
+    m_casTarget = nullptr;
+    m_ssaoRaw = nullptr;
+    m_ssaoBlur = nullptr;
     m_viewPipeline = nullptr;
     m_viewSampler = nullptr;
+    m_fxaaPipeline = nullptr;
+    m_casPipeline = nullptr;
+    m_xbrPipeline = nullptr;
+    m_ssaoPipeline = nullptr;
+    m_ssaoBlurPipeline = nullptr;
+    m_ssaoCompositePipeline = nullptr;
+    m_fxaaSampler = nullptr;
+    m_casSampler = nullptr;
+    m_casFailed = false;
+    m_xbrFailed = false;
+    m_ssaoFailed = false;
     m_sceneWidth = m_sceneHeight = 0;
+    m_casWidth = m_casHeight = 0;
+    m_ssaoWidth = m_ssaoHeight = 0;
 }
 } // namespace dq8::gfx::native

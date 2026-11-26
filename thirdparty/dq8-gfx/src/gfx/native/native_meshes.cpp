@@ -221,13 +221,17 @@ bool Renderer::ensureMeshes(SDL_GPUDevice *device, std::string &error)
                                                  SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)
                         ? SDL_GPU_TEXTUREFORMAT_D32_FLOAT
                         : SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+    m_depthCanSample = SDL_GPUTextureSupportsFormat(
+        device, m_depthFormat, SDL_GPU_TEXTURETYPE_2D,
+        SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
     // A white texel for untextured draws: the shader ignores it, but a
     // sampler binding must be made.
-    m_white = createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, 1u, 1u, error);
+    m_white = createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, 1u, 1u, 1u, SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                            error);
     if (!m_white)
         return false;
     static const Bytes white = std::make_shared<const std::vector<uint8_t>>(std::vector<uint8_t>{255, 255, 255, 255});
-    m_uploads.push_back({m_white, 1u, 1u, white});
+    m_uploads.push_back({m_white, 1u, 1u, white, false});
     m_meshFailed = false;
     return true;
 }
@@ -246,7 +250,8 @@ SDL_GPUTexture *Renderer::targetTexture(SDL_GPUDevice *device, Id id, bool depth
     SDL_GPUTextureCreateInfo info{};
     info.type = SDL_GPU_TEXTURETYPE_2D;
     info.format = depth ? m_depthFormat : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    info.usage = depth ? SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET
+    info.usage = depth ? (m_depthCanSample ? (SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER)
+                                           : SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)
                        : (SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
     info.width = width;
     info.height = height;
@@ -262,21 +267,192 @@ SDL_GPUTexture *Renderer::targetTexture(SDL_GPUDevice *device, Id id, bool depth
     return t.texture;
 }
 
-SDL_GPUSampler *Renderer::meshSampler(SDL_GPUDevice *device, uint32_t key)
+SDL_GPUSampler *Renderer::meshSampler(SDL_GPUDevice *device, uint32_t key, bool remaster)
 {
-    SDL_GPUSampler *&sampler = m_meshSamplers[key & 7u];
+    SDL_GPUSampler *&sampler = remaster ? m_remasterSamplers[key & 7u] : m_meshSamplers[key & 7u];
     if (sampler)
         return sampler;
     SDL_GPUSamplerCreateInfo info{};
     const bool linear = key & 1u;
-    info.min_filter = linear ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
-    info.mag_filter = info.min_filter;
-    info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+    if (remaster)
+    {
+        info.min_filter = SDL_GPU_FILTER_LINEAR;
+        info.mag_filter = linear ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
+        info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
+        info.enable_anisotropy = true;
+        info.max_anisotropy = 16.0f;
+        info.mip_lod_bias = -0.35f;
+        info.min_lod = 0.0f;
+        info.max_lod = 1000.0f;
+    }
+    else
+    {
+        info.min_filter = linear ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
+        info.mag_filter = info.min_filter;
+        info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        info.min_lod = 0.0f;
+        info.max_lod = 0.0f;
+    }
     info.address_mode_u = (key & 2u) ? SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE : SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
     info.address_mode_v = (key & 4u) ? SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE : SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
     info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     sampler = SDL_CreateGPUSampler(device, &info);
     return sampler;
+}
+
+void Renderer::prepareRemasterTextures(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands)
+{
+    if (!remasterEnabled())
+        return;
+    struct PendingXbr
+    {
+        SDL_GPUTexture *src = nullptr;
+        SDL_GPUTexture *dst = nullptr;
+        uint32_t dstW = 0, dstH = 0;
+        bool generateMips = false;
+        bool clampU = false, clampV = false;
+        bool releaseSrc = false;
+    };
+    std::vector<PendingXbr> xbrJobs;
+    std::string xbrErr;
+    const bool xbrReady = ensureXbr(device, xbrErr);
+    bool added = false;
+    for (const MeshDraw &d : m_frameMeshes)
+    {
+        const Material &m = d.material;
+        const bool canResolve = d.hasModel || m.linear;
+        if (!canResolve || d.indexCount == 0u || m.sourceTarget != 0u || m.texture == 0u ||
+            m.wrapU >= 2u || m.wrapV >= 2u || m.destinationAlphaTest >= 0)
+            continue;
+        const auto it = m_images.find(m.texture);
+        if (it == m_images.end())
+            continue;
+        const Image &img = it->second;
+        if (img.format == PixelFormat::Rgba8)
+        {
+            if (!xbrReady || img.width < 16u || img.height < 16u || img.width > 512u || img.height > 512u)
+                continue;
+            const uint64_t key = uint64_t(m.texture) << 32u;
+            if (m_resolved.find(key) != m_resolved.end())
+                continue;
+            const uint32_t outW = img.width * 2u, outH = img.height * 2u;
+            uint32_t dim = std::max(outW, outH), levels = 1u;
+            while (dim > 1u) { dim >>= 1u; ++levels; }
+            std::string err;
+            SDL_GPUTexture *dstTex = createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, outW, outH, levels,
+                                                   SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET,
+                                                   err);
+            if (!dstTex)
+                continue;
+            xbrJobs.push_back({img.texture, dstTex, outW, outH, levels > 1u, m.clampU, m.clampV, false});
+            const uint64_t bytes = uint64_t(outW) * outH * 4u;
+            m_resolved[key] = Image{dstTex, PixelFormat::Rgba8, outW, outH, 0u, bytes, nullptr};
+            m_resolvedOrder.push_back(key);
+            m_resolvedBytes += bytes;
+            added = true;
+            continue;
+        }
+        if (img.format != PixelFormat::Index8 || !img.cpuBytes)
+            continue;
+        const Id palId = m.palette ? m.palette : img.palette;
+        const auto p = m_palettes.find(palId);
+        if (p == m_palettes.end() || !p->second.cpuBytes || p->second.width == 0u)
+            continue;
+        const uint64_t key = (uint64_t(m.texture) << 32u) | uint64_t(palId);
+        if (m_resolved.find(key) != m_resolved.end())
+            continue;
+        const Image &pal = p->second;
+        const size_t pixelCount = size_t(img.width) * img.height;
+        if (pixelCount == 0u || img.cpuBytes->size() < pixelCount || pal.cpuBytes->size() < size_t(pal.width) * 4u)
+            continue;
+        auto rgba = std::make_shared<std::vector<uint8_t>>(pixelCount * 4u);
+        const uint8_t *src = img.cpuBytes->data();
+        const uint8_t *palData = pal.cpuBytes->data();
+        const uint32_t maxIdx = pal.width - 1u;
+        uint8_t *dst = rgba->data();
+        for (size_t k = 0; k < pixelCount; ++k)
+        {
+            const uint32_t idx = std::min<uint32_t>(src[k], maxIdx);
+            std::memcpy(dst + k * 4u, palData + size_t(idx) * 4u, 4u);
+        }
+        const bool doXbr = xbrReady && img.width >= 16u && img.height >= 16u && img.width <= 512u && img.height <= 512u;
+        const uint32_t outW = doXbr ? img.width * 2u : img.width;
+        const uint32_t outH = doXbr ? img.height * 2u : img.height;
+        uint32_t dim = std::max(outW, outH);
+        uint32_t levels = 1u;
+        while (dim > 1u)
+        {
+            dim >>= 1u;
+            ++levels;
+        }
+        const SDL_GPUTextureUsageFlags dstUsage =
+            (levels > 1u || doXbr) ? (SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)
+                                   : SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        std::string err;
+        SDL_GPUTexture *dstTex = createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, outW, outH, levels,
+                                               dstUsage, err);
+        if (!dstTex)
+            continue;
+        if (doXbr)
+        {
+            SDL_GPUTexture *srcTex = createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, img.width, img.height,
+                                                   1u, SDL_GPU_TEXTUREUSAGE_SAMPLER, err);
+            if (!srcTex)
+            {
+                SDL_ReleaseGPUTexture(device, dstTex);
+                continue;
+            }
+            m_uploads.push_back({srcTex, img.width, img.height, rgba, false});
+            xbrJobs.push_back({srcTex, dstTex, outW, outH, levels > 1u, m.clampU, m.clampV, true});
+        }
+        else
+        {
+            m_uploads.push_back({dstTex, img.width, img.height, rgba, levels > 1u});
+        }
+        const uint64_t bytes = uint64_t(outW) * outH * 4u;
+        m_resolved[key] = Image{dstTex, PixelFormat::Rgba8, outW, outH, palId, bytes, nullptr};
+        m_resolvedOrder.push_back(key);
+        m_resolvedBytes += bytes;
+        added = true;
+    }
+    if (added)
+    {
+        std::string failed;
+        if (!m_uploads.empty() && !upload(device, commands, failed))
+        {
+            std::fprintf(stderr, "[native-pipeline] remaster texture upload failed: %s\n", failed.c_str());
+            m_uploads.clear();
+            for (const PendingXbr &job : xbrJobs)
+                if (job.releaseSrc)
+                    SDL_ReleaseGPUTexture(device, job.src);
+            return;
+        }
+        for (const PendingXbr &job : xbrJobs)
+        {
+            SDL_GPUColorTargetInfo target{};
+            target.texture = job.dst;
+            target.load_op = SDL_GPU_LOADOP_DONT_CARE;
+            target.store_op = SDL_GPU_STOREOP_STORE;
+            SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(commands, &target, 1u, nullptr);
+            if (pass)
+            {
+                const SDL_GPUViewport viewport{0.0f, 0.0f, float(job.dstW), float(job.dstH), 0.0f, 1.0f};
+                SDL_SetGPUViewport(pass, &viewport);
+                SDL_BindGPUGraphicsPipeline(pass, m_xbrPipeline);
+                const SDL_GPUTextureSamplerBinding binding{job.src, m_casSampler};
+                SDL_BindGPUFragmentSamplers(pass, 0u, &binding, 1u);
+                const uint32_t wrap[4] = {job.clampU ? 1u : 0u, job.clampV ? 1u : 0u, 0u, 0u};
+                SDL_PushGPUFragmentUniformData(commands, 0u, wrap, sizeof(wrap));
+                SDL_DrawGPUPrimitives(pass, 3u, 1u, 0u, 0u);
+                SDL_EndGPURenderPass(pass);
+                if (job.generateMips)
+                    SDL_GenerateMipmapsForGPUTexture(commands, job.dst);
+            }
+            if (job.releaseSrc)
+                SDL_ReleaseGPUTexture(device, job.src);
+        }
+        evictResolved(device);
+    }
 }
 
 SDL_GPUGraphicsPipeline *Renderer::meshPipeline(SDL_GPUDevice *device, uint32_t key)
@@ -449,6 +625,11 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         mu.texa[1] = m.alphaZeroOnBlack ? 1.0f : 0.0f;
         SDL_GPUTexture *image = m_white, *palette = m_white;
         float ownW = 1.0f, ownH = 1.0f;
+        const bool remaster = remasterEnabled();
+        const bool remaster3d = remaster && d.hasModel && m.sourceTarget == 0u && m.wrapU < 2u && m.wrapV < 2u &&
+                                m.destinationAlphaTest < 0;
+        const bool remasterResolve = remaster && (d.hasModel || m.linear) && m.sourceTarget == 0u &&
+                                     m.wrapU < 2u && m.wrapV < 2u && m.destinationAlphaTest < 0;
         if (m.sourceTarget != 0u)
         {
             // A target drawn earlier this frame (or kept from before), read
@@ -505,17 +686,32 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
             ownW = float(img.width);
             ownH = float(img.height);
             mu.mode[0] = 1u;
-            if (img.format == PixelFormat::Index8)
+            if (img.format == PixelFormat::Rgba8 && remasterResolve)
             {
-                const auto p = m_palettes.find(m.palette ? m.palette : img.palette);
-                if (p == m_palettes.end())
+                if (const auto r = m_resolved.find(uint64_t(m.texture) << 32u); r != m_resolved.end())
+                    image = palette = r->second.texture;
+            }
+            else if (img.format == PixelFormat::Index8)
+            {
+                const Id palId = m.palette ? m.palette : img.palette;
+                const uint64_t rkey = (uint64_t(m.texture) << 32u) | uint64_t(palId);
+                if (const auto r = remasterResolve ? m_resolved.find(rkey) : m_resolved.end(); r != m_resolved.end())
                 {
-                    ++m_meshCounts.noTexture;
-                    continue;
+                    image = palette = r->second.texture;
+                    mu.mode[0] = 1u;
                 }
-                palette = p->second.texture;
-                mu.mode[0] = 2u;
-                mu.mode[3] = p->second.width;
+                else
+                {
+                    const auto p = m_palettes.find(palId);
+                    if (p == m_palettes.end())
+                    {
+                        ++m_meshCounts.noTexture;
+                        continue;
+                    }
+                    palette = p->second.texture;
+                    mu.mode[0] = 2u;
+                    mu.mode[3] = p->second.width;
+                }
             }
             mu.mode[1] = static_cast<uint32_t>(m.function);
             mu.mode[2] = m.textureAlpha ? 1u : 0u;
@@ -553,6 +749,7 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         mu.size[2] = ownW;
         mu.size[3] = ownH;
         mu.blend[0] = m.shuffle == ChannelShuffle::GreenToAlpha ? 1.0f : 0.0f;
+        mu.blend[1] = remaster ? (d.hasModel ? 2.0f : 1.0f) : 0.0f;
         mu.blend[2] = m.clampU ? 1.0f : 0.0f;
         mu.blend[3] = m.clampV ? 1.0f : 0.0f;
         mu.wrap[0] = m.wrapU;
@@ -664,7 +861,7 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         SDL_PushGPUVertexUniformData(commands, 0, &du, sizeof(du));
         SDL_PushGPUFragmentUniformData(commands, 0, &mu, sizeof(mu));
         const uint32_t samplerKey = (m.linear ? 1u : 0u) | (m.clampU ? 2u : 0u) | (m.clampV ? 4u : 0u);
-        SDL_GPUSampler *sampler = meshSampler(device, samplerKey);
+        SDL_GPUSampler *sampler = meshSampler(device, samplerKey, remaster3d && mu.mode[0] == 1u);
         if (image != boundImage || palette != boundPalette || sampler != boundSampler)
         {
             const SDL_GPUTextureSamplerBinding bindings[2] = {{image, sampler}, {palette, sampler}};
@@ -755,6 +952,7 @@ bool Renderer::drawFrame(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, 
     }
     if (!uploadMeshes(device, commands, error))
         return false;
+    prepareRemasterTextures(device, commands);
     // RG_NATIVE_FRAME_DUMP=N: the N-th frame's draws, one line each.
     static const uint64_t dumpFrame = [] {
         const char *v = std::getenv("RG_NATIVE_FRAME_DUMP");
@@ -799,6 +997,22 @@ bool Renderer::drawFrame(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, 
     }
     std::vector<Id> depthsCleared;
     const size_t count = m_frameMeshes.size();
+    // Locate the last 3D draw into the scene target so Remaster SSAO composites
+    // right after 3D geometry and before 2D HUD/menus are drawn.
+    size_t last3dSceneDraw = count;
+    if (remasterEnabled() && m_depthCanSample)
+    {
+        for (size_t k = count; k-- > 0;)
+        {
+            const MeshDraw &d = m_frameMeshes[k];
+            if (d.target == m_sceneTarget && d.hasModel && d.depthTarget != 0u && d.indexCount != 0u)
+            {
+                last3dSceneDraw = k;
+                break;
+            }
+        }
+    }
+    bool ssaoApplied = false;
     size_t i = 0;
     while (i < count)
     {
@@ -980,6 +1194,12 @@ bool Renderer::drawFrame(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, 
             drawMeshes(device, commands, pass, a, b, target, depthId != 0u, float(gameW), float(gameH), targetScale,
                        scale, copy, copied.width, copied.height);
             SDL_EndGPURenderPass(pass);
+            if (!ssaoApplied && scene && depthId != 0u && depthInfo.texture &&
+                a <= last3dSceneDraw && last3dSceneDraw < b)
+            {
+                applySsao(device, commands, m_scene, depthInfo.texture, m_sceneWidth, m_sceneHeight);
+                ssaoApplied = true;
+            }
             colorInfo.load_op = SDL_GPU_LOADOP_LOAD;
             depthInfo.load_op = SDL_GPU_LOADOP_LOAD;
             a = b;
@@ -995,6 +1215,12 @@ void Renderer::releaseMeshes(SDL_GPUDevice *device)
             SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
     m_meshPipelines.clear();
     for (SDL_GPUSampler *&sampler : m_meshSamplers)
+    {
+        if (sampler)
+            SDL_ReleaseGPUSampler(device, sampler);
+        sampler = nullptr;
+    }
+    for (SDL_GPUSampler *&sampler : m_remasterSamplers)
     {
         if (sampler)
             SDL_ReleaseGPUSampler(device, sampler);
