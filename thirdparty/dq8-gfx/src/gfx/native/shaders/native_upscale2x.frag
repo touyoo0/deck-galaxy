@@ -78,12 +78,30 @@ void main() {
                                       : mix(c10, c01, 0.5 * ((1.0 - f.x) + f.y));
     vec4 res = mix(baseSample, diagSample, diagBias * 0.45);
 
-    // Unpremultiply safely.
+    // Unpremultiply safely; preserve RGB when alpha == 0 (used as mask on PS2).
+    vec3 rgb;
     if (res.a <= 1e-5) {
-        outColor = vec4(0.0);
-        return;
+        vec3 rRows[4];
+        vec3 r00, r10, r01, r11;
+        for (int j = -1; j <= 2; ++j) {
+            vec3 s0 = fetchT(base + ivec2(-1, j), srcSize).rgb;
+            vec3 s1 = fetchT(base + ivec2( 0, j), srcSize).rgb;
+            vec3 s2 = fetchT(base + ivec2( 1, j), srcSize).rgb;
+            vec3 s3 = fetchT(base + ivec2( 2, j), srcSize).rgb;
+            if (j == 0) { r00 = s1; r10 = s2; }
+            if (j == 1) { r01 = s1; r11 = s2; }
+            rRows[j + 1] = cubic4(vec4(s0, 0.0), vec4(s1, 0.0), vec4(s2, 0.0), vec4(s3, 0.0), f.x).rgb;
+        }
+        vec3 bicubicRgb = cubic4(vec4(rRows[0], 0.0), vec4(rRows[1], 0.0), vec4(rRows[2], 0.0), vec4(rRows[3], 0.0), f.y).rgb;
+        vec3 rmn = min(min(r00, r10), min(r01, r11));
+        vec3 rmx = max(max(r00, r10), max(r01, r11));
+        vec3 baseRgb = clamp(bicubicRgb, rmn, rmx);
+        vec3 diagRgb = (dMain < dAnti) ? mix(r00, r11, 0.5 * (f.x + f.y))
+                                       : mix(r10, r01, 0.5 * ((1.0 - f.x) + f.y));
+        rgb = clamp(mix(baseRgb, diagRgb, diagBias * 0.45), 0.0, 1.0);
+    } else {
+        rgb = clamp(res.rgb / res.a, 0.0, 1.0);
     }
-    vec3 rgb = clamp(res.rgb / res.a, 0.0, 1.0);
 
     // Adaptive detail restoration (multi-tap unsharp mask on the source neighborhood)
     // to bring out painted brushwork, stone cracks, fabric weave, and ink outlines.

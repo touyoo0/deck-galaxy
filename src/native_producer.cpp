@@ -1246,11 +1246,12 @@ bool materialOf(State &s, const GSDrawState &state, native::Material &m)
         known = false;
     }
 
-    if (!testOf(c.test, c.zbuf.zmask, m) || (c.fba & 1u))
+    if (!testOf(c.test, c.zbuf.zmask, m))
     {
         ++s.counts.unknownOther;
         known = false;
     }
+    m.fba = (c.fba & 1u) != 0u;
 
     // FBMSK: a channel is written when none of its bits are masked.
     const uint32_t mask = c.frame.fbmsk;

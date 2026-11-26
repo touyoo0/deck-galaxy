@@ -42,7 +42,7 @@ vec4 blendPremul(vec4 a, vec4 b, float t) {
     vec4 pb = vec4(b.rgb * b.a, b.a);
     vec4 pm = mix(pa, pb, t);
     if (pm.a <= 1e-5)
-        return vec4(0.0);
+        return vec4(mix(a.rgb, b.rgb, t), 0.0);
     return vec4(clamp(pm.rgb / pm.a, 0.0, 1.0), clamp(pm.a, 0.0, 1.0));
 }
 
