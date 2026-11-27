@@ -110,11 +110,13 @@ struct BestiaryDrop {
 };
 struct BestiaryMonster {
     std::string name;
+    std::string modelName;
     int defeated = 0;
     std::vector<BestiaryDrop> drops;
 };
 struct BestiaryItemSource {
     std::string monsterName;
+    std::string modelName;
     int ratePercent = 0;
     int monsterDefeated = 0;
 };
@@ -231,6 +233,7 @@ struct HostServices {
     // them. Empty when the host has none (Rogue Galaxy: added).
     std::function<BestiaryData()> bestiary;
     std::function<BestiaryAtlas()> bestiaryIcons;
+    std::function<BestiaryAtlas(const std::string &modelName)> bestiaryMonsterIcon;
 };
 
 // Game: Rogue Galaxy's own switches (added).
@@ -468,6 +471,11 @@ private:
     bool m_bestiaryAtlasReady = false;
     ImTextureRef m_bestiaryAtlasTex{};
     ImVec2 m_bestiaryAtlasSize{};
+    struct MonsterIconCache {
+        bool ready = false;
+        ImTextureRef tex{};
+    };
+    std::map<std::string, MonsterIconCache> m_bestiaryMonsterIcons;
     bool m_statsOpen = false;
     // RG_UI_SCRIPT's "icons": every icon on screen, for a screenshot.
     bool m_iconSheet = false;

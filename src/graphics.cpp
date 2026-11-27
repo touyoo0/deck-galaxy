@@ -1273,6 +1273,7 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
         {
             dq8::ui::BestiaryMonster entry;
             entry.name = m.name;
+            entry.modelName = m.modelName;
             entry.defeated = m.defeated;
             entry.drops.reserve(m.drops.size());
             for (const rg::bestiary::Drop &d : m.drops)
@@ -1290,7 +1291,7 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
             entry.sources.reserve(item.sources.size());
             for (const rg::bestiary::ItemSource &s : item.sources)
             {
-                entry.sources.push_back({s.monsterName, s.ratePercent, s.monsterDefeated});
+                entry.sources.push_back({s.monsterName, s.modelName, s.ratePercent, s.monsterDefeated});
             }
             out.items.push_back(std::move(entry));
         }
@@ -1298,6 +1299,14 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
     };
     host.bestiaryIcons = [] {
         rg::bestiary::IconAtlas atlas = rg::bestiary::loadIconAtlas();
+        dq8::ui::BestiaryAtlas out;
+        out.width = atlas.width;
+        out.height = atlas.height;
+        out.rgba = std::move(atlas.rgba);
+        return out;
+    };
+    host.bestiaryMonsterIcon = [](const std::string &modelName) {
+        rg::bestiary::IconAtlas atlas = rg::bestiary::renderMonsterIcon(modelName);
         dq8::ui::BestiaryAtlas out;
         out.width = atlas.width;
         out.height = atlas.height;

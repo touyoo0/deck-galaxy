@@ -1426,6 +1426,35 @@ void Overlay::drawBestiaryPage() {
         return true;
     };
 
+    int monsterRendersThisFrame = 0;
+    const auto drawMonsterIconAt = [&](ImDrawList *dl, const std::string &modelName, ImVec2 pos, float px) -> bool {
+        if (modelName.empty() || !m_host.bestiaryMonsterIcon)
+            return false;
+        const ImVec2 maxPos(pos.x + px, pos.y + px);
+        if (!ImGui::IsRectVisible(pos, maxPos))
+            return true; // reserve space without rendering off-screen models
+        auto it = m_bestiaryMonsterIcons.find(modelName);
+        if (it == m_bestiaryMonsterIcons.end()) {
+            if (monsterRendersThisFrame >= 4)
+                return true;
+            ++monsterRendersThisFrame;
+            MonsterIconCache entry;
+            const BestiaryAtlas atlas = m_host.bestiaryMonsterIcon(modelName);
+            if (atlas.width > 0 && atlas.height > 0 && !atlas.rgba.empty()) {
+                ImVec2 sz{};
+                const std::string texKey = "bestiary_mon_" + modelName;
+                entry.ready =
+                    rgbaTexture(texKey.c_str(), atlas.width, atlas.height, atlas.rgba.data(), entry.tex, sz);
+            }
+            it = m_bestiaryMonsterIcons.emplace(modelName, entry).first;
+        }
+        if (it->second.ready) {
+            dl->AddImage(it->second.tex, pos, maxPos);
+            return true;
+        }
+        return false;
+    };
+
     if (m_bestiaryTab == 0) {
         size_t defeatedCount = 0;
         for (const BestiaryMonster &m : m_bestiaryCache.monsters)
@@ -1466,30 +1495,40 @@ void Overlay::drawBestiaryPage() {
                 ImGui::Selectable("##mon", false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0.0f, 0.0f));
                 ImGui::SameLine(0.0f, 0.0f);
                 ImDrawList *dl = ImGui::GetWindowDrawList();
-                const ImVec2 badgePos = ImGui::GetCursorScreenPos();
-                const float badgeR = em(0.26f);
-                ImGui::Dummy(ImVec2(em(0.8f), lineH));
-                if (monster.defeated > 0)
-                    dl->AddCircleFilled(ImVec2(badgePos.x + badgeR, badgePos.y + lineH * 0.5f), badgeR, palette::kGold);
-                else
-                    dl->AddCircle(ImVec2(badgePos.x + badgeR, badgePos.y + lineH * 0.5f), badgeR, palette::kTextMuted,
-                                  0, 1.3f);
-                ImGui::SameLine(0.0f, em(0.2f));
-                const float monW = ImGui::GetContentRegionAvail().x;
-                const ImVec2 monPos = ImGui::GetCursorScreenPos();
+                const float monIcon = std::floor(em(1.45f));
+                const ImVec2 monOrigin = ImGui::GetCursorScreenPos();
+                const float monAvailW = ImGui::GetContentRegionAvail().x;
+                float monX = monOrigin.x;
+                if (drawMonsterIconAt(dl, monster.modelName, ImVec2(monX, monOrigin.y), monIcon)) {
+                    if (monster.defeated > 0)
+                        dl->AddCircleFilled(ImVec2(monX + monIcon - em(0.15f), monOrigin.y + monIcon - em(0.15f)),
+                                            em(0.22f), palette::kGold);
+                    monX += monIcon + em(0.45f);
+                } else {
+                    const float badgeR = em(0.26f);
+                    if (monster.defeated > 0)
+                        dl->AddCircleFilled(ImVec2(monX + badgeR, monOrigin.y + monIcon * 0.5f), badgeR,
+                                            palette::kGold);
+                    else
+                        dl->AddCircle(ImVec2(monX + badgeR, monOrigin.y + monIcon * 0.5f), badgeR, palette::kTextMuted,
+                                      0, 1.3f);
+                    monX += em(0.9f);
+                }
+                const float monW = std::max(0.0f, monOrigin.x + monAvailW - monX);
+                const float monTextY = monOrigin.y + std::floor((monIcon - lineH) * 0.5f);
                 if (monster.defeated > 0) {
                     char countBuf[24];
                     std::snprintf(countBuf, sizeof(countBuf), "%s%d", kTimes, monster.defeated);
                     const float countW = ImGui::CalcTextSize(countBuf).x;
                     const float nameW = std::max(0.0f, monW - countW - em(0.35f));
-                    drawMarquee(dl, monPos, nameW, palette::kGold, monster.name.c_str());
-                    dl->AddText(ImVec2(monPos.x + std::min(ImGui::CalcTextSize(monster.name.c_str()).x, nameW) + em(0.35f),
-                                       monPos.y),
+                    drawMarquee(dl, ImVec2(monX, monTextY), nameW, palette::kGold, monster.name.c_str());
+                    dl->AddText(ImVec2(monX + std::min(ImGui::CalcTextSize(monster.name.c_str()).x, nameW) + em(0.35f),
+                                       monTextY),
                                 palette::kTextMuted, countBuf);
                 } else {
-                    drawMarquee(dl, monPos, monW, textCol, monster.name.c_str());
+                    drawMarquee(dl, ImVec2(monX, monTextY), monW, textCol, monster.name.c_str());
                 }
-                ImGui::Dummy(ImVec2(monW, lineH));
+                ImGui::Dummy(ImVec2(monAvailW, std::max(lineH, monIcon)));
 
                 ImGui::TableNextColumn();
                 if (monster.drops.empty()) {
@@ -1580,23 +1619,27 @@ void Overlay::drawBestiaryPage() {
                 const size_t rows = (visibleSources.size() + 1u) / 2u;
                 const ImVec2 origin = ImGui::GetCursorScreenPos();
                 const float pctPad = em(0.35f);
-                const float srcRowH = lineH + em(0.28f);
+                const float iconPad = em(0.35f);
                 for (size_t s = 0; s < visibleSources.size(); ++s) {
                     const BestiaryItemSource &src = *visibleSources[s];
                     const size_t r = s / 2u;
                     const size_t c = s % 2u;
                     const float x = origin.x + static_cast<float>(c) * (cellW + colGap);
-                    const float y = origin.y + static_cast<float>(r) * srcRowH;
+                    const float y = origin.y + static_cast<float>(r) * cellRowH;
+                    float cursorX = x;
+                    if (drawMonsterIconAt(dl, src.modelName,
+                                          ImVec2(cursorX, y + std::floor((cellRowH - iconSize) * 0.5f)), iconSize))
+                        cursorX += iconSize + iconPad;
                     char pct[16];
                     std::snprintf(pct, sizeof(pct), "%d%%", src.ratePercent);
                     const float pctW = ImGui::CalcTextSize(pct).x;
-                    const float textY = y + std::floor((srcRowH - lineH) * 0.5f);
-                    const float nameW = std::max(0.0f, cellW - pctW - pctPad);
-                    drawMarquee(dl, ImVec2(x, textY), nameW, src.monsterDefeated > 0 ? palette::kGold : textCol,
+                    const float textY = y + std::floor((cellRowH - lineH) * 0.5f);
+                    const float nameW = std::max(0.0f, (x + cellW) - cursorX - pctW - pctPad);
+                    drawMarquee(dl, ImVec2(cursorX, textY), nameW, src.monsterDefeated > 0 ? palette::kGold : textCol,
                                 src.monsterName.c_str());
                     dl->AddText(ImVec2(x + cellW - pctW, textY), palette::kTextMuted, pct);
                 }
-                ImGui::Dummy(ImVec2(availW, static_cast<float>(rows) * srcRowH));
+                ImGui::Dummy(ImVec2(availW, static_cast<float>(rows) * cellRowH));
                 ImGui::PopID();
             }
             ImGui::EndTable();

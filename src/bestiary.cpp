@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -37,6 +38,8 @@ constexpr uint32_t kItemIconOffset = 0x2Cu;
 constexpr uint32_t kMonsterEntrySize = 0xA4u;
 constexpr uint32_t kMonsterIdOffset = 0x00u;
 constexpr uint32_t kMonsterNameOffset = 0x04u;
+constexpr uint32_t kMonsterModelPtrOffset = 0x20u;
+constexpr uint32_t kMonModelChrNameOffset = 0x0Cu;
 constexpr uint32_t kMonsterDropCountOffset = 0x9Au;
 constexpr uint32_t kMonsterDropsPtrOffset = 0x9Cu;
 constexpr uint32_t kDropEntrySize = 0x04u;
@@ -339,6 +342,17 @@ Snapshot read(const uint8_t *rdram)
         Monster monster;
         monster.id = id;
         monster.name = std::move(name);
+        uint32_t modelPtr = 0u, chrNamePtr = 0u;
+        if (readGuest(rdram, entry + kMonsterModelPtrOffset, modelPtr) &&
+            readGuest(rdram, modelPtr + kMonModelChrNameOffset, chrNamePtr))
+        {
+            std::string chr = readGuestString(rdram, chrNamePtr);
+            for (char &c : chr)
+            {
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+            monster.modelName = std::move(chr);
+        }
         if (const auto it = defeatedById.find(id); it != defeatedById.end())
         {
             monster.defeated = it->second;
@@ -440,7 +454,7 @@ Snapshot read(const uint8_t *rdram)
             }
             else
             {
-                item.sources.push_back({monster.id, monster.name, drop.ratePercent, monster.defeated});
+                item.sources.push_back({monster.id, monster.name, monster.modelName, drop.ratePercent, monster.defeated});
             }
         }
     }
@@ -661,6 +675,730 @@ IconAtlas loadIconAtlas()
         std::memcpy(atlas.rgba.data() + i * 4u, palette[idx], 4);
     }
     return atlas;
+}
+
+namespace
+{
+
+struct ArchiveFile
+{
+    int layer = 0;
+    uint64_t offset = 0;
+    uint64_t size = 0;
+};
+
+struct DiscCache
+{
+    bool loaded = false;
+    std::filesystem::path datPaths[2];
+    std::unordered_map<std::string, ArchiveFile> files;
+};
+
+DiscCache &discCache()
+{
+    static DiscCache cache;
+    if (cache.loaded)
+    {
+        return cache;
+    }
+    cache.loaded = true;
+    std::filesystem::path root = PS2Runtime::getIoPaths().cdRoot;
+    std::error_code ec;
+    if (root.empty() || !std::filesystem::exists(root / "DATA0_0.HD6", ec))
+    {
+        root = "disc";
+    }
+    const char *names[2] = {"DATA0_0", "DATA1_0"};
+    for (int layer = 0; layer < 2; ++layer)
+    {
+        cache.datPaths[layer] = root / (std::string(names[layer]) + ".DAT");
+        std::ifstream hd6File(root / (std::string(names[layer]) + ".HD6"), std::ios::binary);
+        if (!hd6File)
+        {
+            continue;
+        }
+        const std::vector<uint8_t> hd6((std::istreambuf_iterator<char>(hd6File)), std::istreambuf_iterator<char>());
+        if (hd6.size() < 0x30u || std::memcmp(hd6.data(), "HD6\0", 4) != 0)
+        {
+            continue;
+        }
+        const auto u32 = [&](size_t off) {
+            uint32_t v = 0;
+            std::memcpy(&v, hd6.data() + off, 4);
+            return v;
+        };
+        const auto u64 = [&](size_t off) {
+            uint64_t v = 0;
+            std::memcpy(&v, hd6.data() + off, 8);
+            return v;
+        };
+        const uint32_t tokOff = u32(0x04u);
+        const uint32_t tokSize = u32(0x08u);
+        const uint32_t tokCount = u32(0x0Cu);
+        const uint32_t nameOff = u32(0x14u);
+        const uint32_t unit = u32(0x20u);
+        const uint32_t count = u32(0x24u);
+        const uint32_t tableOff = u32(0x28u);
+        if (tokOff + tokSize > hd6.size() || tableOff + static_cast<size_t>(count) * 8u > hd6.size())
+        {
+            continue;
+        }
+        std::vector<std::string_view> tokens;
+        tokens.reserve(tokCount);
+        size_t pos = tokOff;
+        const size_t tokEnd = tokOff + tokSize;
+        while (tokens.size() < tokCount && pos < tokEnd)
+        {
+            const size_t start = pos;
+            while (pos < tokEnd && hd6[pos] != 0)
+            {
+                ++pos;
+            }
+            tokens.emplace_back(reinterpret_cast<const char *>(hd6.data() + start), pos - start);
+            if (pos < tokEnd)
+            {
+                ++pos;
+            }
+        }
+        std::string name;
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            const uint64_t v = u64(tableOff + static_cast<size_t>(i) * 8u);
+            size_t p = nameOff + static_cast<size_t>(v & 0x3FFFFu);
+            name.clear();
+            while (p < hd6.size() && hd6[p] != 0)
+            {
+                uint32_t token = 0;
+                uint32_t shift = 0;
+                while (p < hd6.size())
+                {
+                    const uint8_t b = hd6[p++];
+                    token |= static_cast<uint32_t>(b & 0x7Fu) << shift;
+                    shift += 7u;
+                    if ((b & 0x80u) == 0u)
+                    {
+                        break;
+                    }
+                }
+                if (token < tokens.size())
+                {
+                    name.append(tokens[token]);
+                }
+            }
+            for (char &c : name)
+            {
+                c = (c == '/') ? '\\' : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+            if (name.rfind("chara\\mob\\", 0) == 0 && name.size() > 4 && name.compare(name.size() - 4, 4, ".chr") == 0)
+            {
+                cache.files.emplace(name, ArchiveFile{layer, ((v >> 18u) & 0x3FFFFFu) * 2048ull,
+                                                      (v >> 40u) * static_cast<uint64_t>(unit)});
+            }
+        }
+    }
+    return cache;
+}
+
+struct SoftTex
+{
+    int w = 0;
+    int h = 0;
+    std::vector<uint8_t> rgba;
+};
+
+bool decodeTim2(const uint8_t *buf, size_t len, size_t tim2, SoftTex &out)
+{
+    if (tim2 + 0x40u > len || std::memcmp(buf + tim2, "TIM2", 4) != 0)
+    {
+        return false;
+    }
+    const uint8_t fmt = buf[tim2 + 5u];
+    const size_t head = tim2 + (fmt == 0u ? 0x10u : 0x80u);
+    if (head + 48u > len)
+    {
+        return false;
+    }
+    uint32_t imgSz = 0;
+    uint16_t hsize = 0, ccols = 0, w = 0, h = 0;
+    std::memcpy(&imgSz, buf + head + 8u, 4);
+    std::memcpy(&hsize, buf + head + 12u, 2);
+    std::memcpy(&ccols, buf + head + 14u, 2);
+    const uint8_t ctype = buf[head + 18u];
+    const uint8_t itype = buf[head + 19u];
+    std::memcpy(&w, buf + head + 20u, 2);
+    std::memcpy(&h, buf + head + 22u, 2);
+    if (w == 0u || h == 0u || w > 1024u || h > 1024u)
+    {
+        return false;
+    }
+    const size_t imgOff = head + hsize;
+    const size_t clutOff = imgOff + imgSz;
+    const uint8_t imgFmt = itype & 0x3Fu;
+    const uint8_t clutFmt = ctype & 0x3Fu;
+    const bool csm2 = (ctype & 0x80u) != 0u;
+    const size_t pixCount = static_cast<size_t>(w) * static_cast<size_t>(h);
+
+    auto readClutEntry = [&](int idx, uint8_t rgba[4]) {
+        if (clutFmt == 3u)
+        {
+            const size_t p = clutOff + static_cast<size_t>(idx) * 4u;
+            rgba[0] = buf[p + 0u];
+            rgba[1] = buf[p + 1u];
+            rgba[2] = buf[p + 2u];
+            const int a = static_cast<int>(buf[p + 3u]) * 2;
+            rgba[3] = static_cast<uint8_t>(a > 255 ? 255 : a);
+        }
+        else
+        {
+            uint16_t c16 = 0;
+            std::memcpy(&c16, buf + clutOff + static_cast<size_t>(idx) * 2u, 2);
+            rgba[0] = static_cast<uint8_t>((c16 & 0x1Fu) * 255u / 31u);
+            rgba[1] = static_cast<uint8_t>(((c16 >> 5u) & 0x1Fu) * 255u / 31u);
+            rgba[2] = static_cast<uint8_t>(((c16 >> 10u) & 0x1Fu) * 255u / 31u);
+            rgba[3] = (c16 & 0x8000u) ? 255u : ((c16 == 0u) ? 0u : 255u);
+        }
+    };
+
+    out.w = w;
+    out.h = h;
+    out.rgba.resize(pixCount * 4u);
+    if (imgFmt == 5u && ccols == 256u)
+    {
+        const size_t clutBytes = (clutFmt == 3u) ? 1024u : 512u;
+        if (imgOff + pixCount > len || clutOff + clutBytes > len)
+        {
+            return false;
+        }
+        uint8_t pal[256][4];
+        for (int i = 0; i < 256; ++i)
+        {
+            const int si = csm2 ? i : ((i & ~0x18) | ((i & 0x08) << 1) | ((i & 0x10) >> 1));
+            readClutEntry(si, pal[i]);
+        }
+        for (size_t i = 0; i < pixCount; ++i)
+        {
+            std::memcpy(out.rgba.data() + i * 4u, pal[buf[imgOff + i]], 4);
+        }
+        return true;
+    }
+    if (imgFmt == 4u && ccols == 16u)
+    {
+        const size_t clutBytes = (clutFmt == 3u) ? 64u : 32u;
+        if (imgOff + (pixCount + 1u) / 2u > len || clutOff + clutBytes > len)
+        {
+            return false;
+        }
+        uint8_t pal[16][4];
+        for (int i = 0; i < 16; ++i)
+        {
+            readClutEntry(i, pal[i]);
+        }
+        for (size_t i = 0; i < pixCount; ++i)
+        {
+            const uint8_t b = buf[imgOff + (i >> 1u)];
+            const uint8_t idx = (i & 1u) ? (b >> 4u) : (b & 0x0Fu);
+            std::memcpy(out.rgba.data() + i * 4u, pal[idx], 4);
+        }
+        return true;
+    }
+    if (imgFmt == 3u && imgOff + pixCount * 4u <= len)
+    {
+        for (size_t i = 0; i < pixCount; ++i)
+        {
+            const size_t p = imgOff + i * 4u;
+            out.rgba[i * 4u + 0u] = buf[p + 0u];
+            out.rgba[i * 4u + 1u] = buf[p + 1u];
+            out.rgba[i * 4u + 2u] = buf[p + 2u];
+            const int a = static_cast<int>(buf[p + 3u]) * 2;
+            out.rgba[i * 4u + 3u] = static_cast<uint8_t>(a > 255 ? 255 : a);
+        }
+        return true;
+    }
+    return false;
+}
+
+struct Vec3
+{
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+};
+struct Vec2
+{
+    float u = 0.0f, v = 0.0f;
+};
+struct Tri
+{
+    Vec3 v0, v1, v2;
+    Vec2 u0, u1, u2;
+    const SoftTex *tex = nullptr;
+};
+
+} // namespace
+
+IconAtlas renderMonsterIcon(const std::string &modelName)
+{
+    IconAtlas out;
+    if (modelName.empty())
+    {
+        return out;
+    }
+    std::string key = "chara\\mob\\" + modelName;
+    if (key.size() < 4u || key.compare(key.size() - 4u, 4u, ".chr") != 0)
+    {
+        key += ".chr";
+    }
+    DiscCache &cache = discCache();
+    const auto fit = cache.files.find(key);
+    if (fit == cache.files.end() || fit->second.size < 0x50u || fit->second.size > 16u * 1024u * 1024u)
+    {
+        return out;
+    }
+    std::ifstream datFile(cache.datPaths[fit->second.layer], std::ios::binary);
+    if (!datFile)
+    {
+        return out;
+    }
+    datFile.seekg(static_cast<std::streamoff>(fit->second.offset), std::ios::beg);
+    std::vector<uint8_t> chr(static_cast<size_t>(fit->second.size));
+    if (!datFile.read(reinterpret_cast<char *>(chr.data()), static_cast<std::streamsize>(chr.size())))
+    {
+        return out;
+    }
+
+    // Unpack .pac to locate main .mds and .img.
+    const uint8_t *mds = nullptr;
+    size_t mdsLen = 0;
+    const uint8_t *img = nullptr;
+    size_t imgLen = 0;
+    size_t off = 0;
+    while (off + 0x50u <= chr.size())
+    {
+        uint32_t hdrSz = 0, dataSz = 0, stride = 0;
+        std::memcpy(&hdrSz, chr.data() + off + 0x40u, 4);
+        std::memcpy(&dataSz, chr.data() + off + 0x44u, 4);
+        std::memcpy(&stride, chr.data() + off + 0x48u, 4);
+        if (hdrSz == 0xFFFFFFFFu || dataSz == 0xFFFFFFFFu || off + hdrSz + dataSz > chr.size())
+        {
+            break;
+        }
+        size_t nlen = 0;
+        while (nlen < 0x40u && chr[off + nlen] != 0)
+        {
+            ++nlen;
+        }
+        std::string ename(reinterpret_cast<const char *>(chr.data() + off), nlen);
+        for (char &c : ename)
+        {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        if (ename.size() > 4u && ename.compare(ename.size() - 4u, 4u, ".mds") == 0 &&
+            !(ename.size() > 5u && ename.compare(ename.size() - 5u, 5u, "s.mds") == 0) &&
+            ename.find('-') == std::string::npos && dataSz > mdsLen)
+        {
+            mds = chr.data() + off + hdrSz;
+            mdsLen = dataSz;
+        }
+        else if (ename.size() > 4u && ename.compare(ename.size() - 4u, 4u, ".img") == 0 && dataSz > imgLen)
+        {
+            img = chr.data() + off + hdrSz;
+            imgLen = dataSz;
+        }
+        if (stride == 0u)
+        {
+            break;
+        }
+        off += stride;
+    }
+    if (!mds || mdsLen < 0x50u || std::memcmp(mds, " MDS", 4) != 0)
+    {
+        return out;
+    }
+
+    // Decode IM3 textures.
+    std::unordered_map<std::string, SoftTex> textures;
+    if (img && imgLen >= 0x10u && std::memcmp(img, "IM3\0", 4) == 0)
+    {
+        uint32_t texCnt = 0;
+        std::memcpy(&texCnt, img + 8u, 4);
+        if (texCnt > 64u)
+        {
+            texCnt = 64u;
+        }
+        for (uint32_t i = 0; i < texCnt; ++i)
+        {
+            const size_t eo = 0x10u + static_cast<size_t>(i) * 0x40u;
+            if (eo + 0x40u > imgLen)
+            {
+                break;
+            }
+            size_t tlen = 0;
+            while (tlen < 0x20u && img[eo + tlen] != 0)
+            {
+                ++tlen;
+            }
+            std::string tname(reinterpret_cast<const char *>(img + eo), tlen);
+            for (char &c : tname)
+            {
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+            uint32_t toff = 0;
+            std::memcpy(&toff, img + eo + 0x24u, 4);
+            SoftTex tex;
+            if (decodeTim2(img, imgLen, toff, tex))
+            {
+                textures.emplace(std::move(tname), std::move(tex));
+            }
+        }
+    }
+
+    const auto rdU32 = [&](const uint8_t *p, size_t o) {
+        uint32_t v = 0;
+        std::memcpy(&v, p + o, 4);
+        return v;
+    };
+    const auto rdU16 = [&](const uint8_t *p, size_t o) {
+        uint16_t v = 0;
+        std::memcpy(&v, p + o, 2);
+        return v;
+    };
+    const auto rdS16 = [&](const uint8_t *p, size_t o) {
+        int16_t v = 0;
+        std::memcpy(&v, p + o, 2);
+        return v;
+    };
+    const auto rdF32 = [&](const uint8_t *p, size_t o) {
+        float v = 0.0f;
+        std::memcpy(&v, p + o, 4);
+        return v;
+    };
+
+    const uint32_t mdtCnt = rdU32(mds, 0x20u);
+    const uint32_t mdtOff = rdU32(mds, 0x24u);
+    const uint32_t matCnt = rdU32(mds, 0x2Cu);
+    const uint32_t matSz = rdU32(mds, 0x30u);
+    const uint32_t matOff = rdU32(mds, 0x34u);
+    const uint32_t strtab = rdU32(mds, 0x38u);
+
+    std::vector<const SoftTex *> matTex(matCnt, nullptr);
+    for (uint32_t i = 0; i < matCnt && matSz >= 0x38u; ++i)
+    {
+        const size_t mo = static_cast<size_t>(matOff) + static_cast<size_t>(i) * matSz;
+        if (mo + 0x38u > mdsLen)
+        {
+            break;
+        }
+        const uint32_t rel = rdU32(mds, mo + 0x34u);
+        if (rel != 0u && strtab + rel < mdsLen)
+        {
+            size_t end = strtab + rel;
+            while (end < mdsLen && mds[end] != 0)
+            {
+                ++end;
+            }
+            std::string tname(reinterpret_cast<const char *>(mds + strtab + rel), end - (strtab + rel));
+            for (char &c : tname)
+            {
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+            if (const auto tit = textures.find(tname); tit != textures.end())
+            {
+                matTex[i] = &tit->second;
+            }
+        }
+    }
+
+    // Parse MDTs and rotate vertices into 3/4 view.
+    const float yaw = 0.4363323f;   // 25 deg
+    const float pitch = -0.2094395f; // -12 deg
+    const float cyaw = std::cos(yaw), syaw = std::sin(yaw);
+    const float cpit = std::cos(pitch), spit = std::sin(pitch);
+    auto rotV = [&](Vec3 v) -> Vec3 {
+        const float rx = v.x * cyaw + v.z * syaw;
+        const float rz = -v.x * syaw + v.z * cyaw;
+        const float ry = v.y * cpit - rz * spit;
+        const float rz2 = v.y * spit + rz * cpit;
+        return {rx, ry, rz2};
+    };
+
+    std::vector<Tri> tris;
+    float minX = 1e9f, maxX = -1e9f, minY = 1e9f, maxY = -1e9f;
+    size_t cur = mdtOff;
+    for (uint32_t m = 0; m < mdtCnt && cur + 0x90u <= mdsLen; ++m)
+    {
+        if (std::memcmp(mds + cur, " MDT", 4) != 0)
+        {
+            break;
+        }
+        const uint32_t hdrSz = rdU32(mds, cur + 8u);
+        const uint32_t blkSz = rdU32(mds, cur + 12u);
+        if (blkSz == 0u || cur + hdrSz + 0x30u > mdsLen)
+        {
+            break;
+        }
+        const float sx = rdF32(mds, cur + 0x20u) / 32768.0f;
+        const float sy = rdF32(mds, cur + 0x24u) / 32768.0f;
+        const float sz = rdF32(mds, cur + 0x28u) / 32768.0f;
+        const float ox = rdF32(mds, cur + 0x30u);
+        const float oy = rdF32(mds, cur + 0x34u);
+        const float oz = rdF32(mds, cur + 0x38u);
+        const float us = rdF32(mds, cur + 0x50u) / 32768.0f;
+        const float vs = rdF32(mds, cur + 0x54u) / 32768.0f;
+        const uint32_t primCnt = rdU32(mds, cur + 0x70u);
+        const uint32_t primOff = rdU32(mds, cur + 0x74u);
+
+        const size_t subHdr = cur + hdrSz;
+        const uint32_t vCnt = rdU32(mds, subHdr + 0x00u);
+        const uint32_t vOff = rdU32(mds, subHdr + 0x04u);
+        const uint32_t uvCnt = rdU32(mds, subHdr + 0x10u);
+        const uint32_t uvOff = rdU32(mds, subHdr + 0x14u);
+        if (vCnt == 0u || vCnt > 32768u || subHdr + vOff + static_cast<size_t>(vCnt) * 6u > mdsLen)
+        {
+            cur += blkSz;
+            continue;
+        }
+        std::vector<Vec3> verts(vCnt);
+        for (uint32_t vi = 0; vi < vCnt; ++vi)
+        {
+            const size_t vo = subHdr + vOff + static_cast<size_t>(vi) * 6u;
+            verts[vi] = rotV({rdS16(mds, vo) * sx + ox, rdS16(mds, vo + 2u) * sy + oy, rdS16(mds, vo + 4u) * sz + oz});
+        }
+        std::vector<Vec2> uvs;
+        if (uvCnt > 0u && uvCnt <= 32768u && subHdr + uvOff + static_cast<size_t>(uvCnt) * 4u <= mdsLen)
+        {
+            uvs.resize(uvCnt);
+            for (uint32_t ui = 0; ui < uvCnt; ++ui)
+            {
+                const size_t uo = subHdr + uvOff + static_cast<size_t>(ui) * 4u;
+                uvs[ui] = {rdU16(mds, uo) * us, rdU16(mds, uo + 2u) * vs};
+            }
+        }
+
+        size_t po = cur + primOff;
+        for (uint32_t p = 0; p < primCnt && po + 0x30u <= mdsLen; ++p)
+        {
+            const uint32_t pSz = rdU32(mds, po + 0x00u);
+            const uint16_t pType = rdU16(mds, po + 0x04u);
+            const uint16_t idxCnt = rdU16(mds, po + 0x06u);
+            const uint16_t matId = rdU16(mds, po + 0x0Au);
+            const uint32_t pIdxOff = rdU32(mds, po + 0x10u);
+            const uint32_t uvIdxOff = rdU32(mds, po + 0x24u);
+            const SoftTex *tex = (matId < matTex.size()) ? matTex[matId] : nullptr;
+            const bool hasPos = pIdxOff != 0u && po + pIdxOff + static_cast<size_t>(idxCnt) * 2u <= mdsLen;
+            const bool hasUv =
+                !uvs.empty() && uvIdxOff != 0u && po + uvIdxOff + static_cast<size_t>(idxCnt) * 2u <= mdsLen;
+            if (hasPos && idxCnt >= 3u)
+            {
+                auto emitTri = [&](uint16_t i0, uint16_t i1, uint16_t i2, uint32_t k0, uint32_t k1, uint32_t k2) {
+                    if (i0 == i1 || i1 == i2 || i0 == i2 || i0 >= vCnt || i1 >= vCnt || i2 >= vCnt)
+                    {
+                        return;
+                    }
+                    Vec2 t0{}, t1{}, t2{};
+                    if (hasUv)
+                    {
+                        const uint16_t u0 = rdU16(mds, po + uvIdxOff + k0 * 2u);
+                        const uint16_t u1 = rdU16(mds, po + uvIdxOff + k1 * 2u);
+                        const uint16_t u2 = rdU16(mds, po + uvIdxOff + k2 * 2u);
+                        if (u0 < uvs.size()) t0 = uvs[u0];
+                        if (u1 < uvs.size()) t1 = uvs[u1];
+                        if (u2 < uvs.size()) t2 = uvs[u2];
+                    }
+                    const Vec3 &a = verts[i0], &b = verts[i1], &c = verts[i2];
+                    minX = std::min({minX, a.x, b.x, c.x});
+                    maxX = std::max({maxX, a.x, b.x, c.x});
+                    minY = std::min({minY, a.y, b.y, c.y});
+                    maxY = std::max({maxY, a.y, b.y, c.y});
+                    tris.push_back({a, b, c, t0, t1, t2, tex});
+                };
+                if (pType == 4u)
+                {
+                    for (uint32_t k = 0; k + 2u < idxCnt; ++k)
+                    {
+                        const uint16_t i0 = rdU16(mds, po + pIdxOff + k * 2u);
+                        const uint16_t i1 = rdU16(mds, po + pIdxOff + (k + 1u) * 2u);
+                        const uint16_t i2 = rdU16(mds, po + pIdxOff + (k + 2u) * 2u);
+                        if (k & 1u)
+                            emitTri(i0, i2, i1, k, k + 2u, k + 1u);
+                        else
+                            emitTri(i0, i1, i2, k, k + 1u, k + 2u);
+                    }
+                }
+                else if (pType == 3u)
+                {
+                    for (uint32_t k = 0; k + 2u < idxCnt; k += 3u)
+                    {
+                        emitTri(rdU16(mds, po + pIdxOff + k * 2u), rdU16(mds, po + pIdxOff + (k + 1u) * 2u),
+                                rdU16(mds, po + pIdxOff + (k + 2u) * 2u), k, k + 1u, k + 2u);
+                    }
+                }
+            }
+            if (pSz == 0u)
+            {
+                break;
+            }
+            po += pSz;
+        }
+        cur += blkSz;
+    }
+    if (tris.empty())
+    {
+        return out;
+    }
+
+    // Software rasterize at 64x64 with transparent background, then 2x2 downsample to 32x32.
+    constexpr int kW = 64;
+    constexpr int kH = 64;
+    const float cx = (minX + maxX) * 0.5f;
+    const float cy = (minY + maxY) * 0.5f;
+    const float span = std::max({maxX - minX, maxY - minY, 1e-3f});
+    const float sc = (kW * 0.88f) / span;
+
+    std::vector<uint8_t> fb(kW * kH * 4u, 0u);
+    std::vector<float> zb(kW * kH, -1e9f);
+
+    for (const Tri &tr : tris)
+    {
+        const float p0x = kW * 0.5f + (tr.v0.x - cx) * sc;
+        const float p0y = kH * 0.5f - (tr.v0.y - cy) * sc;
+        const float p1x = kW * 0.5f + (tr.v1.x - cx) * sc;
+        const float p1y = kH * 0.5f - (tr.v1.y - cy) * sc;
+        const float p2x = kW * 0.5f + (tr.v2.x - cx) * sc;
+        const float p2y = kH * 0.5f - (tr.v2.y - cy) * sc;
+
+        const float denom = (p1y - p2y) * (p0x - p2x) + (p2x - p1x) * (p0y - p2y);
+        if (std::fabs(denom) < 1e-4f)
+        {
+            continue;
+        }
+        const float invD = 1.0f / denom;
+        const float ax = tr.v1.x - tr.v0.x, ay = tr.v1.y - tr.v0.y, az = tr.v1.z - tr.v0.z;
+        const float bx = tr.v2.x - tr.v0.x, by = tr.v2.y - tr.v0.y, bz = tr.v2.z - tr.v0.z;
+        const float nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+        const float nl = std::sqrt(nx * nx + ny * ny + nz * nz) + 1e-6f;
+        const float ndotl = std::max(0.0f, (nx * 0.25f + ny * 0.55f + nz * 0.80f) / nl);
+        const float light = 1.15f + 0.65f * ndotl;
+
+        const int x0 = std::max(0, static_cast<int>(std::floor(std::min({p0x, p1x, p2x}))));
+        const int x1 = std::min(kW - 1, static_cast<int>(std::ceil(std::max({p0x, p1x, p2x}))));
+        const int y0 = std::max(0, static_cast<int>(std::floor(std::min({p0y, p1y, p2y}))));
+        const int y1 = std::min(kH - 1, static_cast<int>(std::ceil(std::max({p0y, p1y, p2y}))));
+
+        for (int py = y0; py <= y1; ++py)
+        {
+            const float fy = static_cast<float>(py) + 0.5f;
+            for (int px = x0; px <= x1; ++px)
+            {
+                const float fx = static_cast<float>(px) + 0.5f;
+                const float w0 = ((p1y - p2y) * (fx - p2x) + (p2x - p1x) * (fy - p2y)) * invD;
+                const float w1 = ((p2y - p0y) * (fx - p2x) + (p0x - p2x) * (fy - p2y)) * invD;
+                const float w2 = 1.0f - w0 - w1;
+                if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f)
+                {
+                    continue;
+                }
+                const float z = w0 * tr.v0.z + w1 * tr.v1.z + w2 * tr.v2.z;
+                const int idx = py * kW + px;
+                if (z <= zb[idx])
+                {
+                    continue;
+                }
+                int r = 185, g = 190, b = 200;
+                if (tr.tex && tr.tex->w > 0 && tr.tex->h > 0)
+                {
+                    const float u = w0 * tr.u0.u + w1 * tr.u1.u + w2 * tr.u2.u;
+                    const float v = w0 * tr.u0.v + w1 * tr.u1.v + w2 * tr.u2.v;
+                    int tu = static_cast<int>(std::floor(u * static_cast<float>(tr.tex->w))) % tr.tex->w;
+                    int tv = static_cast<int>(std::floor(v * static_cast<float>(tr.tex->h))) % tr.tex->h;
+                    if (tu < 0) tu += tr.tex->w;
+                    if (tv < 0) tv += tr.tex->h;
+                    const size_t tp = (static_cast<size_t>(tv) * static_cast<size_t>(tr.tex->w) + static_cast<size_t>(tu)) * 4u;
+                    if (tr.tex->rgba[tp + 3u] < 64u)
+                    {
+                        continue;
+                    }
+                    r = tr.tex->rgba[tp + 0u];
+                    g = tr.tex->rgba[tp + 1u];
+                    b = tr.tex->rgba[tp + 2u];
+                }
+                zb[idx] = z;
+                fb[idx * 4u + 0u] = static_cast<uint8_t>(std::min(255, static_cast<int>(r * light)));
+                fb[idx * 4u + 1u] = static_cast<uint8_t>(std::min(255, static_cast<int>(g * light)));
+                fb[idx * 4u + 2u] = static_cast<uint8_t>(std::min(255, static_cast<int>(b * light)));
+                fb[idx * 4u + 3u] = 255u;
+            }
+        }
+    }
+
+    // Tight-crop to rendered pixels and resample into 32x32 so wide/thin models
+    // fill the icon cleanly.
+    int bx0 = kW, by0 = kH, bx1 = -1, by1 = -1;
+    for (int y = 0; y < kH; ++y)
+    {
+        for (int x = 0; x < kW; ++x)
+        {
+            if (fb[(static_cast<size_t>(y) * kW + static_cast<size_t>(x)) * 4u + 3u] > 0u)
+            {
+                bx0 = std::min(bx0, x);
+                by0 = std::min(by0, y);
+                bx1 = std::max(bx1, x);
+                by1 = std::max(by1, y);
+            }
+        }
+    }
+    if (bx1 < bx0 || by1 < by0)
+    {
+        return out;
+    }
+    const int bw = bx1 - bx0 + 1;
+    const int bh = by1 - by0 + 1;
+    const int side = std::max(bw, bh);
+    const float padSide = static_cast<float>(side) * 1.08f;
+    const float bcx = (bx0 + bx1 + 1) * 0.5f;
+    const float bcy = (by0 + by1 + 1) * 0.5f;
+
+    constexpr int kOutW = 32;
+    constexpr int kOutH = 32;
+    out.width = kOutW;
+    out.height = kOutH;
+    out.rgba.resize(kOutW * kOutH * 4u, 0u);
+    for (int y = 0; y < kOutH; ++y)
+    {
+        for (int x = 0; x < kOutW; ++x)
+        {
+            int sr = 0, sg = 0, sb = 0, sa = 0, cnt = 0;
+            for (int sy = 0; sy < 2; ++sy)
+            {
+                for (int sx = 0; sx < 2; ++sx)
+                {
+                    const float u = (static_cast<float>(x) + (sx + 0.5f) * 0.5f) / static_cast<float>(kOutW) - 0.5f;
+                    const float v = (static_cast<float>(y) + (sy + 0.5f) * 0.5f) / static_cast<float>(kOutH) - 0.5f;
+                    const int px = static_cast<int>(std::floor(bcx + u * padSide));
+                    const int py = static_cast<int>(std::floor(bcy + v * padSide));
+                    if (px >= 0 && px < kW && py >= 0 && py < kH)
+                    {
+                        const size_t sp = (static_cast<size_t>(py) * kW + static_cast<size_t>(px)) * 4u;
+                        const int a = fb[sp + 3u];
+                        sa += a;
+                        if (a > 0)
+                        {
+                            sr += fb[sp + 0u];
+                            sg += fb[sp + 1u];
+                            sb += fb[sp + 2u];
+                            ++cnt;
+                        }
+                    }
+                }
+            }
+            const size_t dp = (static_cast<size_t>(y) * kOutW + static_cast<size_t>(x)) * 4u;
+            if (cnt > 0)
+            {
+                out.rgba[dp + 0u] = static_cast<uint8_t>(sr / cnt);
+                out.rgba[dp + 1u] = static_cast<uint8_t>(sg / cnt);
+                out.rgba[dp + 2u] = static_cast<uint8_t>(sb / cnt);
+                out.rgba[dp + 3u] = static_cast<uint8_t>(sa / 4);
+            }
+        }
+    }
+    return out;
 }
 
 } // namespace rg::bestiary
