@@ -5,6 +5,11 @@ mostra in questa lingua. I titoli (`## versione - data`) restano come in
 `CHANGELOG.md`: sono loro a collegare una versione alla sua traduzione. Una
 versione che manca in questo file viene mostrata in inglese.
 
+## 0.14.1 - 2026-11-27
+
+- Con «Salta le animazioni degli incantesimi» attivo, gli effetti visivi e i suoni in combattimento di incantesimi come Spada fulmine si caricano e si riproducono di nuovo normalmente.
+- Con il limite oggetti a 999 attivo, i due punti dell'orologio del tempo di gioco vengono mostrati correttamente invece di `11`.
+
 ## 0.13.0 - 2026-11-26
 
 - Nuova «Modalità Remaster» (attiva per impostazione predefinita): upscaling GPU 2x delle texture (Anime4K CNN per il 3D e 2xBR per 2D/interfaccia), mipmap, filtro anisotropico 16x, SSAO a mezza risoluzione, FXAA e nitidezza adattiva (CAS).

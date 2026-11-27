@@ -5,6 +5,11 @@ inicio las muestra en este idioma. Los títulos (`## versión - fecha`) se
 quedan como en `CHANGELOG.md`: son los que unen una versión con su
 traducción. Una versión que falte en este archivo se muestra en inglés.
 
+## 0.14.1 - 2026-11-27
+
+- Con «Saltar animaciones de hechizos» activado, los efectos visuales y sonidos en combate de hechizos como Espada relámpago vuelven a cargarse y reproducirse con normalidad.
+- Con el límite de objetos en 999 activado, los dos puntos del reloj de tiempo de juego se muestran correctamente en lugar de `11`.
+
 ## 0.13.0 - 2026-11-26
 
 - Nuevo «Modo Remaster» (activado por defecto): reescalado GPU 2x de texturas (Anime4K CNN para 3D y 2xBR para 2D/interfaz), mipmaps, filtrado anisotrópico 16x, SSAO a media resolución, FXAA y nitidez adaptativa (CAS).
