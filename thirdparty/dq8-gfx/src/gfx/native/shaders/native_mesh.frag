@@ -6,6 +6,7 @@
 // 0x80, the blend's source alpha and what a target stores (clamped at 1).
 layout(set = 2, binding = 0) uniform sampler2D image;
 layout(set = 2, binding = 1) uniform sampler2D palette;
+layout(set = 2, binding = 2) uniform sampler2D destCopy;
 layout(set = 3, binding = 0) uniform Material {
     // x: 0 untextured, 1 RGBA, 2 Index8 through the palette, 3 a target
     //    (its alpha stored as A / 0x80, the blend's factor)
@@ -26,7 +27,7 @@ layout(set = 3, binding = 0) uniform Material {
     // x: the texel's alpha replaced by this (0-255) when not negative (a
     // CT24 read); y: then 0 where the texel is black (AEM); z: the
     // destination alpha test, 0 none, 1 drawn where the target's alpha is
-    // below 0x80, 2 where at least (read from `palette`, the target's copy)
+    // below 0x80, 2 where at least (read from `destCopy`, the target's copy)
     vec4 texa;
     // The GS's CLAMP: x, y the u region (min, max), z, w the v region;
     // wrap.x, .y the modes (0 repeat, 1 clamp, 2 region clamp, 3 region
@@ -78,7 +79,7 @@ void main() {
 #ifndef DQ8_NO_DISCARD
     if (material.texa.z > 0.0) {
         // Stored as A / 0x80: bit 7 set is 1.0.
-        bool high = texelFetch(palette, ivec2(gl_FragCoord.xy), 0).a >= 0.999;
+        bool high = texelFetch(destCopy, ivec2(gl_FragCoord.xy), 0).a >= 0.999;
         if (high != (material.texa.z > 1.5))
             discard;
     }
