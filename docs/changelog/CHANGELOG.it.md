@@ -5,6 +5,11 @@ mostra in questa lingua. I titoli (`## versione - data`) restano come in
 `CHANGELOG.md`: sono loro a collegare una versione alla sua traduzione. Una
 versione che manca in questo file viene mostrata in inglese.
 
+## 0.14.2 - 2026-11-28
+
+- Risolta una perdita di memoria IOP nelle sessioni lunghe che poteva bloccare il gioco all'avvio di una sequenza animata.
+- Risolto un problema per cui la stella dell'obiettivo non appariva sulla mappa completa.
+
 ## 0.14.1 - 2026-11-27
 
 - Con «Salta le animazioni degli incantesimi» attivo, gli effetti visivi e i suoni in combattimento di incantesimi come Spada fulmine si caricano e si riproducono di nuovo normalmente.

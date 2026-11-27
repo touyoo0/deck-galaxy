@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.14.2 - 2026-11-28
+
+- Fixed a long-session IOP memory leak that could freeze the game when starting a cinematic.
+- Fixed the objective star not showing on the full map.
+
 ## 0.14.1 - 2026-11-27
 
 - With "Skip spell animations" on, combat effects and sounds of spells like Flash Sword load and play normally again.

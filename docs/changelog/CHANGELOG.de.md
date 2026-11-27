@@ -5,6 +5,11 @@ zeigt sie in dieser Sprache. Die Überschriften (`## Version - Datum`) bleiben
 wie in `CHANGELOG.md`: Über sie wird eine Version ihrer Übersetzung
 zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf Englisch.
 
+## 0.14.2 - 2026-11-28
+
+- Behebung eines IOP-Speicherlecks bei längeren Spielsitzungen, das das Spiel beim Start einer Zwischensequenz einfrieren lassen konnte.
+- Behebung eines Fehlers, bei dem der Zielstern auf der großen Karte nicht angezeigt wurde.
+
 ## 0.14.1 - 2026-11-27
 
 - Mit aktiviertem „Zauberanimationen überspringen“ werden Kampfeffekte und Sounds von Zaubern wie Blitzschwert wieder normal geladen und abgespielt.

@@ -5,6 +5,11 @@ les affiche dans cette langue. Les titres (`## version - date`) restent comme
 dans `CHANGELOG.md` : ce sont eux qui relient une version à sa traduction. Une
 version absente de ce fichier s'affiche en anglais.
 
+## 0.14.2 - 2026-11-28
+
+- Correction d'une fuite mémoire IOP sur les longues sessions qui pouvait bloquer le jeu au lancement d'une cinématique.
+- Correction de l'étoile d'objectif qui ne s'affichait pas sur la carte complète.
+
 ## 0.14.1 - 2026-11-27
 
 - Avec « Sauter les animations de sorts » activé, les effets visuels et sons en combat des sorts comme Épée de foudre se chargent et se jouent à nouveau normalement.

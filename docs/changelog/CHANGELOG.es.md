@@ -5,6 +5,11 @@ inicio las muestra en este idioma. Los títulos (`## versión - fecha`) se
 quedan como en `CHANGELOG.md`: son los que unen una versión con su
 traducción. Una versión que falte en este archivo se muestra en inglés.
 
+## 0.14.2 - 2026-11-28
+
+- Corregida una fuga de memoria IOP en sesiones largas que podía bloquear el juego al iniciar una cinemática.
+- Corregida la estrella de objetivo que no se mostraba en el mapa completo.
+
 ## 0.14.1 - 2026-11-27
 
 - Con «Saltar animaciones de hechizos» activado, los efectos visuales y sonidos en combate de hechizos como Espada relámpago vuelven a cargarse y reproducirse con normalidad.
