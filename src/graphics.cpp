@@ -18,6 +18,7 @@
 #include "flip_pacing.h"
 #include "gs_tripwire.h"
 #include "battle_rates.h"
+#include "bestiary.h"
 #include "button_glyphs.h"
 #include "self_update.h"
 #include "update_check.h"
@@ -1263,6 +1264,73 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
         return home;
     };
     host.startUpdate = [] { rg::selfupdate::start(); };
+    host.bestiary = [&runtime] {
+        const rg::bestiary::Snapshot snap = rg::bestiary::read(runtime.memory().getRDRAM());
+        dq8::ui::BestiaryData out;
+        out.ready = snap.ready;
+        out.monsters.reserve(snap.monsters.size());
+        for (const rg::bestiary::Monster &m : snap.monsters)
+        {
+            dq8::ui::BestiaryMonster entry;
+            entry.name = m.name;
+            entry.modelName = m.modelName;
+            entry.defeated = m.defeated;
+            entry.drops.reserve(m.drops.size());
+            for (const rg::bestiary::Drop &d : m.drops)
+            {
+                entry.drops.push_back({d.itemName, d.iconId, d.ratePercent});
+            }
+            out.monsters.push_back(std::move(entry));
+        }
+        out.items.reserve(snap.items.size());
+        for (const rg::bestiary::Item &item : snap.items)
+        {
+            dq8::ui::BestiaryItem entry;
+            entry.name = item.name;
+            entry.iconId = item.iconId;
+            entry.sources.reserve(item.sources.size());
+            for (const rg::bestiary::ItemSource &s : item.sources)
+            {
+                entry.sources.push_back({s.monsterName, s.modelName, s.ratePercent, s.monsterDefeated});
+            }
+            out.items.push_back(std::move(entry));
+        }
+        out.weapons.reserve(snap.weapons.size());
+        for (const rg::bestiary::Weapon &w : snap.weapons)
+        {
+            out.weapons.push_back({w.name, w.iconId, w.charaIndex, w.subWeapon, w.attack});
+        }
+        out.fusions.reserve(snap.fusions.size());
+        for (const rg::bestiary::Fusion &f : snap.fusions)
+        {
+            out.fusions.push_back({f.inputA, f.inputB, f.output, f.charaIndex, f.subWeapon, f.bonus});
+        }
+        return out;
+    };
+    host.bestiaryIcons = [] {
+        rg::bestiary::IconAtlas atlas = rg::bestiary::loadIconAtlas();
+        dq8::ui::BestiaryAtlas out;
+        out.width = atlas.width;
+        out.height = atlas.height;
+        out.rgba = std::move(atlas.rgba);
+        return out;
+    };
+    host.bestiaryMonsterIcon = [](const std::string &modelName) {
+        rg::bestiary::IconAtlas atlas = rg::bestiary::renderMonsterIcon(modelName);
+        dq8::ui::BestiaryAtlas out;
+        out.width = atlas.width;
+        out.height = atlas.height;
+        out.rgba = std::move(atlas.rgba);
+        return out;
+    };
+    host.bestiaryPortraits = [] {
+        rg::bestiary::IconAtlas atlas = rg::bestiary::loadCharaPortraits();
+        dq8::ui::BestiaryAtlas out;
+        out.width = atlas.width;
+        out.height = atlas.height;
+        out.rgba = std::move(atlas.rgba);
+        return out;
+    };
     auto menu = std::make_unique<dq8::ui::Overlay>(backend, std::move(settings), settingsPath, std::move(host));
     std::string error;
     if (!menu->initialize(backend.window(), backend.windowTextureFormat(), error))

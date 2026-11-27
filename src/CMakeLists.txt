@@ -92,6 +92,7 @@ add_executable(roguegalaxy
     main.cpp
     graphics.cpp
     battle_rates.cpp
+    bestiary.cpp
     button_art.cpp
     button_glyphs.cpp
     camera_view.cpp

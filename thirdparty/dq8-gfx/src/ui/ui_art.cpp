@@ -93,6 +93,25 @@ bool fileTexture(const char *path, ImTextureRef &texture, ImVec2 &size) {
     return true;
 }
 
+bool rgbaTexture(const char *key, int width, int height, const unsigned char *rgba,
+                 ImTextureRef &texture, ImVec2 &size) {
+    static std::map<std::string, Picture> pictures;
+    Picture &picture = pictures[key];
+    if (!picture.data) {
+        if (!rgba || width <= 0 || height <= 0)
+            return false;
+        picture.tried = true;
+        picture.data = IM_NEW(ImTextureData)();
+        picture.data->Create(ImTextureFormat_RGBA32, width, height);
+        std::memcpy(picture.data->GetPixels(), rgba,
+                    static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+        ImGui::RegisterUserTexture(picture.data);
+    }
+    texture = picture.data->GetTexRef();
+    size = ImVec2(static_cast<float>(picture.data->Width), static_cast<float>(picture.data->Height));
+    return true;
+}
+
 const char *homeChangelog(unsigned int &size) {
     size = kHomeChangesData_size;
     return reinterpret_cast<const char *>(kHomeChangesData);

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.14.0 - 2026-11-27
+
+- New Bestiary page in the in-game menu with four tabs:
+  - **Monsters** and **Items**: live drop tables read from memory, 2-column grids with smooth marquee scrolling, item icons decoded from the disc, and on-demand 3D thumbnails rendered from monster `.chr` models.
+  - **Weapons**: complete per-character main and sub weapon lists with ATK stats, party character face portraits, and Main/Sub type filtering.
+  - **Fusion**: full Toady weapon synthesis guide decoded from the disc (`gama_matrix2.cfg.bin`), with filtering by character, Main/Sub type, input weapon, output weapon, and input + output partner lookup.
+- Reorganized the in-game menu into a cleaner 2-level sidebar (**Game**, **Settings**, **System**) and renamed the top header to **Menu**.
+- Redesigned the Controls diagram to match the official Steam Deck silhouette.
+- Fixed Jaster's gun texture visibility and opacity in Remaster/native rendering mode.
+
 ## 0.13.0 - 2026-11-26
 
 - New "Remaster mode" (enabled by default): 2x GPU texture upscaling (Anime4K CNN for 3D textures and 2xBR for 2D/UI), mipmaps, 16x anisotropic filtering, half-resolution SSAO, FXAA and contrast-adaptive sharpening (CAS).
