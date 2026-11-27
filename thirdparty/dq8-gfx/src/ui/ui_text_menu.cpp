@@ -311,6 +311,26 @@ const TextEntry kTextsMenu[] = {
     {"Renderer statistics", "Statistiques du rendu", "Renderer-Statistiken", "Estadísticas del renderizador",
      "Statistiche del renderer"},
     {"Help", "Aide", "Hilfe", "Ayuda", "Aiuto"},
+
+    // the Bestiary page
+    {"Bestiary", "Bestiaire", "Bestiarium", "Bestiario", "Bestiario"},
+    {"Monsters", "Monstres", "Monster", "Monstruos", "Mostri"},
+    {"Items", "Objets", "Gegenstände", "Objetos", "Oggetti"},
+    {"Monster", "Monstre", "Monster", "Monstruo", "Mostro"},
+    {"Item", "Objet", "Gegenstand", "Objeto", "Oggetto"},
+    {"Possible drops", "Butins possibles", "Mögliche Beute", "Botines posibles", "Bottini possibili"},
+    {"Dropped by", "Obtenu sur", "Fallengelassen von", "Soltado por", "Ottenuto da"},
+    {"Defeated only", "Vaincus uniquement", "Nur besiegte", "Solo derrotados", "Solo sconfitti"},
+    {"Search...", "Rechercher...", "Suchen...", "Buscar...", "Cerca..."},
+    {"Start or load a game to view the bestiary.", "Lancez ou chargez une partie pour consulter le bestiaire.",
+     "Starte oder lade ein Spiel, um das Bestiarium anzusehen.",
+     "Inicia o carga una partida para ver el bestiario.",
+     "Avvia o carica una partita per consultare il bestiario."},
+    {"%zu monsters (%zu defeated)", "%zu monstres (%zu vaincus)", "%zu Monster (%zu besiegt)",
+     "%zu monstruos (%zu derrotados)", "%zu mostri (%zu sconfitti)"},
+    {"%zu items", "%zu objets", "%zu Gegenstände", "%zu objetos", "%zu oggetti"},
+    {"No matching entries.", "Aucune entrée correspondante.", "Keine passenden Einträge.",
+     "No hay entradas coincidentes.", "Nessuna voce corrispondente."},
 };
 const size_t kTextsMenuCount = sizeof(kTextsMenu) / sizeof(kTextsMenu[0]);
 

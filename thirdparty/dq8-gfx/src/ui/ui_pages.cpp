@@ -12,6 +12,7 @@
 #include <imgui_internal.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
@@ -25,10 +26,10 @@ namespace {
 using gfx::PadInput;
 
 constexpr const char *kTimes = "\xC3\x97"; // U+00D7, spelled out for compilers without /utf-8
-constexpr const char *kPageNames[] = {"Save states", "Actions", "Display",      "Sound",     "Controls", "Game",
-                                      "Language", "Achievements", "Interface", "Help"};
-constexpr Icon kPageIcons[] = {Icon::Disc, Icon::Play, Icon::Display, Icon::Sound,     Icon::Controls, Icon::Disc,
-                               Icon::Info, Icon::Check,   Icon::Interface, Icon::Link};
+constexpr const char *kPageNames[] = {"Save states", "Actions", "Bestiary", "Display", "Sound", "Controls",
+                                      "Game", "Language", "Achievements", "Interface", "Help"};
+constexpr Icon kPageIcons[] = {Icon::Disc, Icon::Play, Icon::Folder, Icon::Display, Icon::Sound, Icon::Controls,
+                               Icon::Disc, Icon::Info, Icon::Check,  Icon::Interface, Icon::Link};
 static_assert(sizeof(kPageNames) / sizeof(kPageNames[0]) == static_cast<size_t>(SettingsPage::Count));
 static_assert(sizeof(kPageIcons) / sizeof(kPageIcons[0]) == static_cast<size_t>(SettingsPage::Count));
 constexpr const char *kProjectUrl = "https://github.com/victor-takai/rogue-galaxy-recomp";
@@ -266,6 +267,7 @@ void Overlay::drawSettingsWindow() {
         switch (m_page) {
         case SettingsPage::Saves: drawSavesPage(); break;
         case SettingsPage::Actions: drawActionsPage(); break;
+        case SettingsPage::Bestiary: drawBestiaryPage(); break;
         case SettingsPage::Display: drawDisplayPage(); break;
         case SettingsPage::Sound: drawSoundPage(); break;
         case SettingsPage::Controls: drawControlsPage(); break;
@@ -377,6 +379,8 @@ void Overlay::drawPadHints(float height) {
 bool Overlay::pageShown(SettingsPage page) const {
     if (page == SettingsPage::Saves)
         return !m_homeOpen && static_cast<bool>(m_host.saveSlots);
+    if (page == SettingsPage::Bestiary)
+        return !m_homeOpen && static_cast<bool>(m_host.bestiary);
     return page != SettingsPage::Actions || !m_homeOpen;
 }
 
@@ -1294,6 +1298,313 @@ void Overlay::drawAchievementsPage() {
         ImGui::EndGroup();
         ImGui::SetCursorScreenPos(after);
         ImGui::PopID();
+    }
+}
+
+void Overlay::drawBestiaryPage() {
+    if (!m_host.bestiary)
+        return;
+
+    if (!m_bestiaryAtlasTried && m_host.bestiaryIcons) {
+        m_bestiaryAtlasTried = true;
+        const BestiaryAtlas atlas = m_host.bestiaryIcons();
+        if (atlas.width > 0 && atlas.height > 0 && !atlas.rgba.empty())
+            m_bestiaryAtlasReady = rgbaTexture("bestiary_icons", atlas.width, atlas.height, atlas.rgba.data(),
+                                               m_bestiaryAtlasTex, m_bestiaryAtlasSize);
+    }
+
+    const double t = now();
+    if (m_bestiaryAt < 0.0 || t - m_bestiaryAt > 0.5) {
+        m_bestiaryCache = m_host.bestiary();
+        m_bestiaryAt = t;
+    }
+
+    const ImVec4 muted = ImGui::ColorConvertU32ToFloat4(palette::kTextMuted);
+
+    if (!m_bestiaryCache.ready) {
+        ImGui::Dummy(ImVec2(0.0f, em(0.4f)));
+        ImGui::PushTextWrapPos(0.0f);
+        mutedText("%s", L("Start or load a game to view the bestiary."));
+        ImGui::PopTextWrapPos();
+        return;
+    }
+
+    static constexpr const char *kTabs[] = {"Monsters", "Items"};
+    ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
+    segmented("bestiary_tab", &m_bestiaryTab, kTabs, 2);
+    ImGui::Dummy(ImVec2(0.0f, em(0.3f)));
+
+    ImGui::SetNextItemWidth(std::max(em(12.0f), ImGui::GetContentRegionAvail().x - em(11.5f)));
+    ImGui::InputTextWithHint("##bestiary-search", L("Search..."), m_bestiarySearch, sizeof m_bestiarySearch);
+    ImGui::SameLine(0.0f, em(0.6f));
+    ImGui::Checkbox(L("Defeated only"), &m_bestiaryDefeatedOnly);
+
+    std::string needle;
+    for (const char *p = m_bestiarySearch; *p; ++p)
+        needle.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(*p))));
+    const auto matches = [&](const std::string &haystack) {
+        if (needle.empty())
+            return true;
+        std::string lower;
+        lower.reserve(haystack.size());
+        for (char c : haystack)
+            lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        return lower.find(needle) != std::string::npos;
+    };
+
+    const ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                                       ImGuiTableFlags_PadOuterX | ImGuiTableFlags_SizingStretchProp;
+    const float iconSize = std::floor(em(1.3f));
+    const float lineH = ImGui::GetTextLineHeight();
+    const float cellRowH = std::max(lineH, iconSize) + em(0.22f);
+    const float colGap = em(0.9f);
+    const ImU32 textCol = ImGui::GetColorU32(ImGuiCol_Text);
+
+    // Draws `text` inside `[pos.x, pos.x + maxW]`, scrolling smoothly back and
+    // forth if the text is wider than `maxW`.
+    const auto drawMarquee = [&](ImDrawList *dl, ImVec2 pos, float maxW, ImU32 col, const char *text) {
+        if (maxW <= 1.0f)
+            return;
+        const float textW = ImGui::CalcTextSize(text).x;
+        if (textW <= maxW) {
+            dl->AddText(pos, col, text);
+            return;
+        }
+        const float overflow = textW - maxW;
+        const float speed = std::max(16.0f, em(2.2f));
+        const double pause = 1.2;
+        const double travel = static_cast<double>(overflow) / static_cast<double>(speed);
+        const double cycle = 2.0 * (pause + travel);
+        const double phase = std::fmod(t, cycle);
+        float offset = 0.0f;
+        if (phase < pause)
+            offset = 0.0f;
+        else if (phase < pause + travel)
+            offset = static_cast<float>((phase - pause) * speed);
+        else if (phase < 2.0 * pause + travel)
+            offset = overflow;
+        else
+            offset = overflow - static_cast<float>((phase - 2.0 * pause - travel) * speed);
+        dl->PushClipRect(ImVec2(pos.x, pos.y - 1.0f), ImVec2(pos.x + maxW, pos.y + lineH + 2.0f), true);
+        dl->AddText(ImVec2(pos.x - std::floor(offset), pos.y), col, text);
+        dl->PopClipRect();
+    };
+
+    const auto drawIconAt = [&](ImDrawList *dl, int iconId, ImVec2 pos, float px) -> bool {
+        if (!m_bestiaryAtlasReady || iconId < 0 || m_bestiaryAtlasSize.x <= 0.0f || m_bestiaryAtlasSize.y <= 0.0f)
+            return false;
+        const int group = iconId / 1000;
+        const int page = (iconId % 1000) / 100;
+        int idx = (iconId % 100) - 1;
+        if (idx < 0 || idx >= 65)
+            idx = 0;
+        int sheetX = 0, sheetY = 0;
+        if (group == 1) {
+            const int p = (page >= 1 && page < 10) ? (page - 1) : 0;
+            sheetX = (p & 3) * 256;
+            sheetY = ((p >> 2) + 1) * 256;
+        } else if (group == 2) {
+            const int p = (page >= 1 && page < 6) ? (page - 1) : 0;
+            sheetX = p * 256;
+            sheetY = 0;
+        } else if (group == 3) {
+            const int p = (page >= 1 && page < 6) ? (page - 1) : 0;
+            sheetX = p * 256;
+            sheetY = 768;
+        } else {
+            return false;
+        }
+        const int cell = (iconId == 0x8FD) ? 40 : 32;
+        const int u = sheetX + (idx & 7) * cell;
+        const int v = sheetY + ((idx >> 3) & 7) * cell;
+        if (u + cell > static_cast<int>(m_bestiaryAtlasSize.x) || v + cell > static_cast<int>(m_bestiaryAtlasSize.y))
+            return false;
+        const ImVec2 uv0(static_cast<float>(u) / m_bestiaryAtlasSize.x, static_cast<float>(v) / m_bestiaryAtlasSize.y);
+        const ImVec2 uv1(static_cast<float>(u + cell) / m_bestiaryAtlasSize.x,
+                         static_cast<float>(v + cell) / m_bestiaryAtlasSize.y);
+        dl->AddImage(m_bestiaryAtlasTex, pos, ImVec2(pos.x + px, pos.y + px), uv0, uv1);
+        return true;
+    };
+
+    if (m_bestiaryTab == 0) {
+        size_t defeatedCount = 0;
+        for (const BestiaryMonster &m : m_bestiaryCache.monsters)
+            if (m.defeated > 0)
+                ++defeatedCount;
+        mutedText(L("%zu monsters (%zu defeated)"), m_bestiaryCache.monsters.size(), defeatedCount);
+        ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
+
+        size_t shown = 0;
+        if (ImGui::BeginTable("##bestiary-monsters", 2, tableFlags)) {
+            ImGui::TableSetupColumn(L("Monster"), ImGuiTableColumnFlags_WidthStretch, 0.32f);
+            ImGui::TableSetupColumn(L("Possible drops"), ImGuiTableColumnFlags_WidthStretch, 0.68f);
+            ImGui::PushStyleColor(ImGuiCol_Text, muted);
+            ImGui::TableHeadersRow();
+            ImGui::PopStyleColor();
+
+            for (size_t i = 0; i < m_bestiaryCache.monsters.size(); ++i) {
+                const BestiaryMonster &monster = m_bestiaryCache.monsters[i];
+                if (m_bestiaryDefeatedOnly && monster.defeated <= 0)
+                    continue;
+                bool ok = matches(monster.name);
+                if (!ok) {
+                    for (const BestiaryDrop &drop : monster.drops) {
+                        if (matches(drop.itemName)) {
+                            ok = true;
+                            break;
+                        }
+                    }
+                }
+                if (!ok)
+                    continue;
+                ++shown;
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                // Focusable span so controller D-pad/stick scrolls the table smoothly.
+                ImGui::SetNextItemAllowOverlap();
+                ImGui::Selectable("##mon", false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0.0f, 0.0f));
+                ImGui::SameLine(0.0f, 0.0f);
+                ImDrawList *dl = ImGui::GetWindowDrawList();
+                const ImVec2 badgePos = ImGui::GetCursorScreenPos();
+                const float badgeR = em(0.26f);
+                ImGui::Dummy(ImVec2(em(0.8f), lineH));
+                if (monster.defeated > 0)
+                    dl->AddCircleFilled(ImVec2(badgePos.x + badgeR, badgePos.y + lineH * 0.5f), badgeR, palette::kGold);
+                else
+                    dl->AddCircle(ImVec2(badgePos.x + badgeR, badgePos.y + lineH * 0.5f), badgeR, palette::kTextMuted,
+                                  0, 1.3f);
+                ImGui::SameLine(0.0f, em(0.2f));
+                const float monW = ImGui::GetContentRegionAvail().x;
+                const ImVec2 monPos = ImGui::GetCursorScreenPos();
+                if (monster.defeated > 0) {
+                    char countBuf[24];
+                    std::snprintf(countBuf, sizeof(countBuf), "%s%d", kTimes, monster.defeated);
+                    const float countW = ImGui::CalcTextSize(countBuf).x;
+                    const float nameW = std::max(0.0f, monW - countW - em(0.35f));
+                    drawMarquee(dl, monPos, nameW, palette::kGold, monster.name.c_str());
+                    dl->AddText(ImVec2(monPos.x + std::min(ImGui::CalcTextSize(monster.name.c_str()).x, nameW) + em(0.35f),
+                                       monPos.y),
+                                palette::kTextMuted, countBuf);
+                } else {
+                    drawMarquee(dl, monPos, monW, textCol, monster.name.c_str());
+                }
+                ImGui::Dummy(ImVec2(monW, lineH));
+
+                ImGui::TableNextColumn();
+                if (monster.drops.empty()) {
+                    ImGui::TextColored(muted, "\xE2\x80\x94");
+                } else {
+                    const float availW = ImGui::GetContentRegionAvail().x;
+                    const float cellW = std::floor(std::max(em(6.0f), (availW - colGap) * 0.5f));
+                    const size_t rows = (monster.drops.size() + 1u) / 2u;
+                    const ImVec2 origin = ImGui::GetCursorScreenPos();
+                    const float iconPad = em(0.35f);
+                    const float pctPad = em(0.35f);
+                    for (size_t d = 0; d < monster.drops.size(); ++d) {
+                        const BestiaryDrop &drop = monster.drops[d];
+                        const size_t r = d / 2u;
+                        const size_t c = d % 2u;
+                        const float x = origin.x + static_cast<float>(c) * (cellW + colGap);
+                        const float y = origin.y + static_cast<float>(r) * cellRowH;
+                        float cursorX = x;
+                        if (drawIconAt(dl, drop.iconId, ImVec2(cursorX, y + std::floor((cellRowH - iconSize) * 0.5f)),
+                                       iconSize))
+                            cursorX += iconSize + iconPad;
+                        char pct[16];
+                        std::snprintf(pct, sizeof(pct), "%d%%", drop.ratePercent);
+                        const float pctW = ImGui::CalcTextSize(pct).x;
+                        const float textY = y + std::floor((cellRowH - lineH) * 0.5f);
+                        const float nameW = std::max(0.0f, (x + cellW) - cursorX - pctW - pctPad);
+                        drawMarquee(dl, ImVec2(cursorX, textY), nameW, textCol, drop.itemName.c_str());
+                        dl->AddText(ImVec2(x + cellW - pctW, textY), palette::kTextMuted, pct);
+                    }
+                    ImGui::Dummy(ImVec2(availW, static_cast<float>(rows) * cellRowH));
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        if (shown == 0) {
+            ImGui::Dummy(ImVec2(0.0f, em(0.3f)));
+            mutedText("%s", L("No matching entries."));
+        }
+    } else {
+        mutedText(L("%zu items"), m_bestiaryCache.items.size());
+        ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
+
+        size_t shown = 0;
+        if (ImGui::BeginTable("##bestiary-items", 2, tableFlags)) {
+            ImGui::TableSetupColumn(L("Item"), ImGuiTableColumnFlags_WidthStretch, 0.32f);
+            ImGui::TableSetupColumn(L("Dropped by"), ImGuiTableColumnFlags_WidthStretch, 0.68f);
+            ImGui::PushStyleColor(ImGuiCol_Text, muted);
+            ImGui::TableHeadersRow();
+            ImGui::PopStyleColor();
+
+            std::vector<const BestiaryItemSource *> visibleSources;
+            for (size_t i = 0; i < m_bestiaryCache.items.size(); ++i) {
+                const BestiaryItem &item = m_bestiaryCache.items[i];
+                visibleSources.clear();
+                bool nameMatch = matches(item.name);
+                bool sourceMatch = false;
+                for (const BestiaryItemSource &src : item.sources) {
+                    if (m_bestiaryDefeatedOnly && src.monsterDefeated <= 0)
+                        continue;
+                    visibleSources.push_back(&src);
+                    if (matches(src.monsterName))
+                        sourceMatch = true;
+                }
+                if (visibleSources.empty() || (!nameMatch && !sourceMatch))
+                    continue;
+                ++shown;
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemAllowOverlap();
+                ImGui::Selectable("##item", false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0.0f, 0.0f));
+                ImGui::SameLine(0.0f, 0.0f);
+                ImDrawList *dl = ImGui::GetWindowDrawList();
+                const float itemIcon = std::floor(em(1.45f));
+                const ImVec2 itemOrigin = ImGui::GetCursorScreenPos();
+                const float itemAvailW = ImGui::GetContentRegionAvail().x;
+                float itemX = itemOrigin.x;
+                if (drawIconAt(dl, item.iconId, ImVec2(itemX, itemOrigin.y), itemIcon))
+                    itemX += itemIcon + em(0.45f);
+                drawMarquee(dl, ImVec2(itemX, itemOrigin.y + std::floor((itemIcon - lineH) * 0.5f)),
+                            std::max(0.0f, itemOrigin.x + itemAvailW - itemX), textCol, item.name.c_str());
+                ImGui::Dummy(ImVec2(itemAvailW, std::max(lineH, itemIcon)));
+
+                ImGui::TableNextColumn();
+                const float availW = ImGui::GetContentRegionAvail().x;
+                const float cellW = std::floor(std::max(em(6.0f), (availW - colGap) * 0.5f));
+                const size_t rows = (visibleSources.size() + 1u) / 2u;
+                const ImVec2 origin = ImGui::GetCursorScreenPos();
+                const float pctPad = em(0.35f);
+                const float srcRowH = lineH + em(0.28f);
+                for (size_t s = 0; s < visibleSources.size(); ++s) {
+                    const BestiaryItemSource &src = *visibleSources[s];
+                    const size_t r = s / 2u;
+                    const size_t c = s % 2u;
+                    const float x = origin.x + static_cast<float>(c) * (cellW + colGap);
+                    const float y = origin.y + static_cast<float>(r) * srcRowH;
+                    char pct[16];
+                    std::snprintf(pct, sizeof(pct), "%d%%", src.ratePercent);
+                    const float pctW = ImGui::CalcTextSize(pct).x;
+                    const float textY = y + std::floor((srcRowH - lineH) * 0.5f);
+                    const float nameW = std::max(0.0f, cellW - pctW - pctPad);
+                    drawMarquee(dl, ImVec2(x, textY), nameW, src.monsterDefeated > 0 ? palette::kGold : textCol,
+                                src.monsterName.c_str());
+                    dl->AddText(ImVec2(x + cellW - pctW, textY), palette::kTextMuted, pct);
+                }
+                ImGui::Dummy(ImVec2(availW, static_cast<float>(rows) * srcRowH));
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        if (shown == 0) {
+            ImGui::Dummy(ImVec2(0.0f, em(0.3f)));
+            mutedText("%s", L("No matching entries."));
+        }
     }
 }
 

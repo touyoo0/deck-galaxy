@@ -100,6 +100,40 @@ struct TravelList {
     std::vector<std::string> names;
 };
 
+// Live bestiary data read from the running game's memory (Rogue Galaxy: added):
+// monsters with their possible drops, and droppable items with which monsters
+// drop them.
+struct BestiaryDrop {
+    std::string itemName;
+    int iconId = -1;
+    int ratePercent = 0;
+};
+struct BestiaryMonster {
+    std::string name;
+    int defeated = 0;
+    std::vector<BestiaryDrop> drops;
+};
+struct BestiaryItemSource {
+    std::string monsterName;
+    int ratePercent = 0;
+    int monsterDefeated = 0;
+};
+struct BestiaryItem {
+    std::string name;
+    int iconId = -1;
+    std::vector<BestiaryItemSource> sources;
+};
+struct BestiaryData {
+    bool ready = false;
+    std::vector<BestiaryMonster> monsters;
+    std::vector<BestiaryItem> items;
+};
+struct BestiaryAtlas {
+    int width = 0;
+    int height = 0;
+    std::vector<uint8_t> rgba;
+};
+
 struct HostServices {
     std::string version;
     // The commit it was built from, beside the version in the About window
@@ -193,12 +227,16 @@ struct HostServices {
     // dark corners): how far along it is, 0 to 1, or below 0 when there is none
     // (Rogue Galaxy: added). Empty when the host has none.
     std::function<float()> screenBurst;
+    // Live bestiary: monsters with drops, and items with the monsters that drop
+    // them. Empty when the host has none (Rogue Galaxy: added).
+    std::function<BestiaryData()> bestiary;
+    std::function<BestiaryAtlas()> bestiaryIcons;
 };
 
 // Game: Rogue Galaxy's own switches (added).
 // Language: the options a host puts there (GameOption::page),
 // apart from Game's (Rogue Galaxy: added).
-enum class SettingsPage : uint8_t { Saves, Actions, Display, Sound, Controls, Game, Language, Achievements, Interface, Help, Count };
+enum class SettingsPage : uint8_t { Saves, Actions, Bestiary, Display, Sound, Controls, Game, Language, Achievements, Interface, Help, Count };
 
 class Overlay final : public gfx::SdlGpuOverlay {
 public:
@@ -336,6 +374,7 @@ private:
     bool pageShown(SettingsPage page) const;
     void drawSavesPage();
     void drawActionsPage();
+    void drawBestiaryPage();
     void drawHelpPage();
     void drawDisplayPage();
     void drawSoundPage();
@@ -420,6 +459,15 @@ private:
     bool m_achievementsSignedInKnown = false;
     char m_raUser[64] = {};
     char m_raPassword[128] = {};
+    int m_bestiaryTab = 0;
+    bool m_bestiaryDefeatedOnly = false;
+    char m_bestiarySearch[64] = {};
+    BestiaryData m_bestiaryCache;
+    double m_bestiaryAt = -1.0;
+    bool m_bestiaryAtlasTried = false;
+    bool m_bestiaryAtlasReady = false;
+    ImTextureRef m_bestiaryAtlasTex{};
+    ImVec2 m_bestiaryAtlasSize{};
     bool m_statsOpen = false;
     // RG_UI_SCRIPT's "icons": every icon on screen, for a screenshot.
     bool m_iconSheet = false;

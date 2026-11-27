@@ -84,9 +84,10 @@ void Overlay::runStep(const ScriptStep &step, uint64_t frame) {
     const bool on = first != "off";
     std::fprintf(stderr, "[ui] script frame %llu, %.1f s: %s %s\n", static_cast<unsigned long long>(frame),
                  now() - m_scriptStart, command.c_str(), joined(step.arguments).c_str());
-    static constexpr const char *kPages[] = {"saves", "actions", "display", "sound", "controls", "game",
+    static constexpr const char *kPages[] = {"saves", "actions", "bestiary", "display", "sound", "controls", "game",
                                              "language", "achievements", "interface", "help"};
-    static constexpr SettingsPage kPageValues[] = {SettingsPage::Saves, SettingsPage::Actions, SettingsPage::Display, SettingsPage::Sound,
+    static constexpr SettingsPage kPageValues[] = {SettingsPage::Saves, SettingsPage::Actions, SettingsPage::Bestiary,
+                                                   SettingsPage::Display, SettingsPage::Sound,
                                                    SettingsPage::Controls, SettingsPage::Game,
                                                    SettingsPage::Language, SettingsPage::Achievements,
                                                    SettingsPage::Interface, SettingsPage::Help};
