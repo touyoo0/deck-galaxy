@@ -5,6 +5,11 @@ zeigt sie in dieser Sprache. Die Überschriften (`## Version - Datum`) bleiben
 wie in `CHANGELOG.md`: Über sie wird eine Version ihrer Übersetzung
 zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf Englisch.
 
+## 0.14.1 - 2026-11-27
+
+- Mit aktiviertem „Zauberanimationen überspringen“ werden Kampfeffekte und Sounds von Zaubern wie Blitzschwert wieder normal geladen und abgespielt.
+- Mit aktiviertem „Item-Limit 999“ werden die Doppelpunkte in der Spielzeituhr wieder korrekt statt als `11` angezeigt.
+
 ## 0.13.0 - 2026-11-26
 
 - Neuer „Remaster-Modus“ (standardmäßig aktiviert): 2x-GPU-Textur-Upscaling (Anime4K CNN für 3D-Texturen und 2xBR für 2D/UI), Mipmaps, 16x anisotrope Filterung, SSAO in halber Auflösung, FXAA und kontrastadaptive Schärfung (CAS).

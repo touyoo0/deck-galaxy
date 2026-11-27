@@ -2,7 +2,10 @@
 
 ## Unreleased
 
+## 0.14.1 - 2026-11-27
+
 - With "Skip spell animations" on, combat effects and sounds of spells like Flash Sword load and play normally again.
+- With "Item limit 999" on, the colons in the play-time clock display properly instead of `11`.
 
 ## 0.14.0 - 2026-11-27
 
