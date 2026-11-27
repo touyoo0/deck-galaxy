@@ -247,9 +247,53 @@ void settingRow(const char *label, const char *help, const char *chipText, const
 
 void endSettings() { ImGui::EndTable(); }
 
-bool navItem(const char *label, Icon kind, bool selected) {
-    const float height = em(2.5f);
+bool navGroup(const char *label, Icon kind, bool open, bool active) {
+    const float height = em(2.35f);
     const float width = ImGui::GetContentRegionAvail().x;
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImGui::PushID(label);
+    const bool pressed = ImGui::InvisibleButton("##group", ImVec2(width, height), ImGuiButtonFlags_EnableNav);
+    ImGui::PopID();
+    const bool hovered = ImGui::IsItemHovered();
+    const float y = pos.y + height * 0.5f;
+
+    ImDrawList *list = ImGui::GetWindowDrawList();
+    const ImVec2 max(pos.x + width, pos.y + height);
+    const float rounding = em(0.65f);
+    if (hovered)
+        list->AddRectFilled(pos, max, IM_COL32(255, 255, 255, 16), rounding);
+    else if (open)
+        list->AddRectFilled(pos, max, IM_COL32(255, 255, 255, 9), rounding);
+    const ImU32 color = (open || active) ? palette::kText : hovered ? IM_COL32(214, 219, 232, 255) : palette::kTextMuted;
+    drawIcon(list, kind, ImVec2(pos.x + em(1.2f), y), em(1.05f), active ? palette::kGold : color);
+    const char *shown = L(label);
+    const ImVec2 text = ImGui::CalcTextSize(shown);
+    list->AddText(ImVec2(pos.x + em(2.35f), std::floor(y - text.y * 0.5f)), color, shown);
+
+    // Chevron on the right: down when open, right when collapsed.
+    const float cx = pos.x + width - em(1.0f);
+    const float e = em(0.24f);
+    if (open) {
+        list->PathLineTo(ImVec2(cx - e * 1.3f, y - e * 0.5f));
+        list->PathLineTo(ImVec2(cx, y + e * 0.7f));
+        list->PathLineTo(ImVec2(cx + e * 1.3f, y - e * 0.5f));
+    } else {
+        list->PathLineTo(ImVec2(cx - e * 0.5f, y - e * 1.3f));
+        list->PathLineTo(ImVec2(cx + e * 0.7f, y));
+        list->PathLineTo(ImVec2(cx - e * 0.5f, y + e * 1.3f));
+    }
+    list->PathStroke(open ? palette::kText : palette::kTextMuted, 1.6f);
+    return pressed;
+}
+
+bool navItem(const char *label, Icon kind, bool selected, bool sub) {
+    const float indent = sub ? em(0.95f) : 0.0f;
+    const float height = sub ? em(2.15f) : em(2.5f);
+    const float avail = ImGui::GetContentRegionAvail().x;
+    const ImVec2 rowPos = ImGui::GetCursorScreenPos();
+    if (sub)
+        ImGui::SetCursorScreenPos(ImVec2(rowPos.x + indent, rowPos.y));
+    const float width = std::max(em(4.0f), avail - indent);
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     ImGui::PushID(label);
     const bool pressed = ImGui::InvisibleButton("##page", ImVec2(width, height), ImGuiButtonFlags_EnableNav);
@@ -258,17 +302,22 @@ bool navItem(const char *label, Icon kind, bool selected) {
     const float y = pos.y + height * 0.5f;
 
     ImDrawList *list = ImGui::GetWindowDrawList();
+    if (sub) {
+        const float lineX = std::floor(rowPos.x + em(0.55f)) + 0.5f;
+        list->AddLine(ImVec2(lineX, rowPos.y), ImVec2(lineX, rowPos.y + height + ImGui::GetStyle().ItemSpacing.y),
+                      IM_COL32(255, 255, 255, 22), 1.0f);
+    }
     const ImVec2 max(pos.x + width, pos.y + height);
-    const float rounding = em(0.7f);
+    const float rounding = em(0.6f);
     if (selected)
         list->AddRectFilled(pos, max, IM_COL32(255, 255, 255, 24), rounding);
     else if (hovered)
         list->AddRectFilled(pos, max, IM_COL32(255, 255, 255, 12), rounding);
     const ImU32 color = selected ? palette::kText : hovered ? IM_COL32(214, 219, 232, 255) : palette::kTextMuted;
-    drawIcon(list, kind, ImVec2(pos.x + em(1.35f), y), em(1.05f), selected ? palette::kGold : color);
+    drawIcon(list, kind, ImVec2(pos.x + em(1.1f), y), em(0.98f), selected ? palette::kGold : color);
     const char *shown = L(label);
     const ImVec2 text = ImGui::CalcTextSize(shown);
-    list->AddText(ImVec2(pos.x + em(2.55f), std::floor(y - text.y * 0.5f)), color, shown);
+    list->AddText(ImVec2(pos.x + em(2.15f), std::floor(y - text.y * 0.5f)), color, shown);
     return pressed;
 }
 

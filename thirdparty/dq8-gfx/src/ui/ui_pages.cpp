@@ -26,12 +26,33 @@ namespace {
 using gfx::PadInput;
 
 constexpr const char *kTimes = "\xC3\x97"; // U+00D7, spelled out for compilers without /utf-8
-constexpr const char *kPageNames[] = {"Save states", "Actions", "Bestiary", "Display", "Sound", "Controls",
-                                      "Game", "Language", "Achievements", "Interface", "Help"};
-constexpr Icon kPageIcons[] = {Icon::Disc, Icon::Play, Icon::Folder, Icon::Display, Icon::Sound, Icon::Controls,
-                               Icon::Disc, Icon::Info, Icon::Check,  Icon::Interface, Icon::Link};
+constexpr const char *kPageNames[] = {"Saves", "Actions", "Bestiary", "Cheats", "Achievements",
+                                      "Display", "Sound", "Controls", "Interface", "Language",
+                                      "Help"};
+constexpr Icon kPageIcons[] = {Icon::Disc, Icon::Play, Icon::Folder, Icon::Disc, Icon::Check,
+                               Icon::Display, Icon::Sound, Icon::Controls, Icon::Interface, Icon::Info,
+                               Icon::Link};
 static_assert(sizeof(kPageNames) / sizeof(kPageNames[0]) == static_cast<size_t>(SettingsPage::Count));
 static_assert(sizeof(kPageIcons) / sizeof(kPageIcons[0]) == static_cast<size_t>(SettingsPage::Count));
+
+int navGroupOf(SettingsPage page) {
+    switch (page) {
+    case SettingsPage::Saves:
+    case SettingsPage::Actions:
+    case SettingsPage::Bestiary:
+    case SettingsPage::Game:
+    case SettingsPage::Achievements:
+        return 0; // Game
+    case SettingsPage::Display:
+    case SettingsPage::Sound:
+    case SettingsPage::Controls:
+    case SettingsPage::Interface:
+    case SettingsPage::Language:
+        return 1; // Settings
+    default:
+        return 2; // System
+    }
+}
 constexpr const char *kProjectUrl = "https://github.com/victor-takai/rogue-galaxy-recomp";
 constexpr const char *kIssuesUrl = "https://github.com/victor-takai/rogue-galaxy-recomp/issues";
 
@@ -189,44 +210,98 @@ void Overlay::drawSettingsWindow() {
                                    ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
                                    ImGuiWindowFlags_NoScrollWithMouse;
     if (beginWindow("Settings##dq8", nullptr, flags)) {
-        dialogHeader(Icon::Gear, "Settings", &m_settingsOpen);
+        dialogHeader(Icon::Gear, "Menu", &m_settingsOpen);
         // The controller's buttons along the bottom edge while one is in use.
         const float hints = padInUse() ? ImGui::GetFrameHeight() + em(1.2f) : 0.0f;
         const int count = static_cast<int>(SettingsPage::Count);
 
-        // The page list and the page are apart for keyboard and controller:
-        // the cursor stays in one until Right or A takes it into the page, and
-        // Left at the page's edge or Back brings it out. Moving along the
-        // list shows each page.
-        const float navWidth = em(12.0f);
+        if (m_page != m_lastNavPage) {
+            m_openNavGroup = navGroupOf(m_page);
+            m_lastNavPage = m_page;
+        }
+
+        // Two-level navigation on the left: three main groups (Game, Settings,
+        // System), each expanding its sub-pages below.
+        const float navWidth = em(12.2f);
         ImGui::BeginChild("##nav", ImVec2(navWidth, -hints), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
         m_listPane = ImGui::GetCurrentWindow();
         const bool inList = g.NavWindow == m_listPane;
         const bool follow = inList && g.NavCursorVisible && !m_focusList;
-        for (int page = 0; page < count; ++page) {
-            const auto which = static_cast<SettingsPage>(page);
-            if (!pageShown(which))
-                continue;
-            if (navItem(kPageNames[page], kPageIcons[page], m_page == which)) {
-                m_page = which;
-                // Chosen with A or Enter rather than a click: on into it.
-                if (g.NavCursorVisible)
-                    m_focusPage = true;
-            } else if (follow && m_page != which && ImGui::IsItemFocused()) {
-                m_page = which;
+
+        struct GroupDef {
+            const char *label;
+            Icon icon;
+            int id;
+        };
+        static constexpr GroupDef kGroups[] = {
+            {"Game", Icon::Play, 0},
+            {"Settings", Icon::Gear, 1},
+            {"System", Icon::Info, 2},
+        };
+        bool expandFocusedGroup = false;
+        int focusedGroupId = -1;
+
+        for (const GroupDef &group : kGroups) {
+            const bool isOpen = (m_openNavGroup == group.id);
+            const bool isActive = (navGroupOf(m_page) == group.id);
+            if (group.id != 0)
+                ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
+            if (navGroup(group.label, group.icon, isOpen, isActive)) {
+                m_openNavGroup = group.id;
+                if (!isActive) {
+                    for (int page = 0; page < count; ++page) {
+                        const auto which = static_cast<SettingsPage>(page);
+                        if (navGroupOf(which) == group.id && pageShown(which)) {
+                            m_page = which;
+                            m_lastNavPage = which;
+                            break;
+                        }
+                    }
+                }
             }
-            if (m_focusList && m_page == which) {
-                ImGui::FocusItem();
-                if (padInUse())
-                    ImGui::SetNavCursorVisible(true);
-                m_focusList = false;
+            if (ImGui::IsItemFocused()) {
+                focusedGroupId = group.id;
+                if (!isOpen && (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight, false) ||
+                                ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))) {
+                    expandFocusedGroup = true;
+                }
+            }
+            if (!isOpen)
+                continue;
+
+            for (int page = 0; page < count; ++page) {
+                const auto which = static_cast<SettingsPage>(page);
+                if (navGroupOf(which) != group.id || !pageShown(which))
+                    continue;
+                if (navItem(kPageNames[page], kPageIcons[page], m_page == which, true)) {
+                    m_page = which;
+                    m_lastNavPage = which;
+                    // Chosen with A or Enter rather than a click: on into it.
+                    if (g.NavCursorVisible)
+                        m_focusPage = true;
+                } else if (follow && m_page != which && ImGui::IsItemFocused()) {
+                    m_page = which;
+                    m_lastNavPage = which;
+                }
+                if (m_focusList && m_page == which) {
+                    ImGui::FocusItem();
+                    if (padInUse())
+                        ImGui::SetNavCursorVisible(true);
+                    m_focusList = false;
+                }
+            }
+            if (group.id == 2) {
+                // A way out for a player with only a controller, asked first.
+                if (navItem("Quit game", Icon::Close, false, true))
+                    m_quitAsk = true;
             }
         }
-        // A way out for a player with only a controller, asked first.
-        if (navItem("Quit game", Icon::Close, false))
-            m_quitAsk = true;
-        if (inList && !m_focusPage &&
-            (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight, false) || ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))) {
+        if (expandFocusedGroup && focusedGroupId >= 0) {
+            ImGui::NavMoveRequestCancel();
+            m_openNavGroup = focusedGroupId;
+        } else if (inList && !m_focusPage &&
+                   (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight, false) ||
+                    ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))) {
             // Nothing lies right of the list in it; the request would only
             // find the page's items once the page has the focus.
             ImGui::NavMoveRequestCancel();

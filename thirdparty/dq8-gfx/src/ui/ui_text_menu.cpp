@@ -7,7 +7,11 @@ namespace dq8::ui {
 
 const TextEntry kTextsMenu[] = {
     // the settings window
+    {"Menu", "Menu", "Menü", "Menú", "Menu"},
     {"Settings", "Réglages", "Einstellungen", "Ajustes", "Impostazioni"},
+    {"Saves", "Sauvegardes", "Spielstände", "Guardados", "Salvataggi"},
+    {"Cheats", "Cheats", "Cheats", "Trucos", "Trucchi"},
+    {"System", "Système", "System", "Sistema", "Sistema"},
     {"Display", "Affichage", "Anzeige", "Pantalla", "Schermo"},
     {"Sound", "Son", "Ton", "Sonido", "Audio"},
     {"Controls", "Commandes", "Steuerung", "Controles", "Comandi"},

@@ -236,10 +236,15 @@ struct HostServices {
     std::function<BestiaryAtlas(const std::string &modelName)> bestiaryMonsterIcon;
 };
 
-// Game: Rogue Galaxy's own switches (added).
+// Game: Rogue Galaxy's own switches/cheats (added).
 // Language: the options a host puts there (GameOption::page),
 // apart from Game's (Rogue Galaxy: added).
-enum class SettingsPage : uint8_t { Saves, Actions, Bestiary, Display, Sound, Controls, Game, Language, Achievements, Interface, Help, Count };
+enum class SettingsPage : uint8_t {
+    Saves, Actions, Bestiary, Game, Achievements,
+    Display, Sound, Controls, Interface, Language,
+    Help,
+    Count
+};
 
 class Overlay final : public gfx::SdlGpuOverlay {
 public:
@@ -455,6 +460,8 @@ private:
     bool m_settingsOpen = false;
     bool m_focusSettings = false;
     SettingsPage m_page = SettingsPage::Saves;
+    int m_openNavGroup = 0;
+    SettingsPage m_lastNavPage = SettingsPage::Count;
     bool m_aboutOpen = false;
     bool m_shortcutsOpen = false;
     bool m_achievementsLockedOnly = false;

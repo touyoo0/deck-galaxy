@@ -43,8 +43,9 @@ void endSettings();
 // it does not fit beside it. Call after SameLine().
 void chip(const char *text, ImU32 color);
 
-// The settings window's page list: the selected entry carries the cursor.
-bool navItem(const char *label, Icon icon, bool selected);
+// The settings window's page list: main group headers and sub-items.
+bool navGroup(const char *label, Icon icon, bool open, bool active);
+bool navItem(const char *label, Icon icon, bool selected, bool sub = false);
 // A menu entry that shows the triangle cursor when hovered or focused.
 bool menuItem(const char *label, const char *shortcut = nullptr, bool selected = false, bool enabled = true);
 // The same for an entry that opens a submenu; EndMenu() when it returns true.
