@@ -892,7 +892,8 @@ void Overlay::drawControlsPage() {
     sectionHeader("Buttons");
     {
         const float width = ImGui::GetContentRegionAvail().x;
-        const ImVec2 size(std::min(width * 0.64f, em(21.0f)), std::min(width * 0.64f, em(21.0f)) * 0.43f);
+        const float deckW = std::min(width * 0.68f, em(23.5f));
+        const ImVec2 size(deckW, deckW * (180.0f / 440.0f));
         const ImVec2 at = ImGui::GetCursorScreenPos();
         ImGui::Dummy(size);
         drawPadDiagram(ImGui::GetWindowDrawList(), at, size, m_backend.padInput().preview(), m_hoveredInput);
