@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- With "Skip spell animations" on, combat effects and sounds of spells like Flash Sword load and play normally again.
+
 ## 0.12.6 - 2026-11-23
 
 - New option "Skip spell animations": the scene of a spell or special move is skipped by itself, with no button to press.
