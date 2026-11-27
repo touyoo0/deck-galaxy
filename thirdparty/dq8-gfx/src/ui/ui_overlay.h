@@ -125,10 +125,27 @@ struct BestiaryItem {
     int iconId = -1;
     std::vector<BestiaryItemSource> sources;
 };
+struct BestiaryWeapon {
+    std::string name;
+    int iconId = -1;
+    int charaIndex = -1;
+    bool subWeapon = false;
+    int attack = 0;
+};
+struct BestiaryFusion {
+    int inputA = -1;
+    int inputB = -1;
+    int output = -1;
+    int charaIndex = -1;
+    bool subWeapon = false;
+    bool bonus = false;
+};
 struct BestiaryData {
     bool ready = false;
     std::vector<BestiaryMonster> monsters;
     std::vector<BestiaryItem> items;
+    std::vector<BestiaryWeapon> weapons;
+    std::vector<BestiaryFusion> fusions;
 };
 struct BestiaryAtlas {
     int width = 0;
@@ -234,6 +251,7 @@ struct HostServices {
     std::function<BestiaryData()> bestiary;
     std::function<BestiaryAtlas()> bestiaryIcons;
     std::function<BestiaryAtlas(const std::string &modelName)> bestiaryMonsterIcon;
+    std::function<BestiaryAtlas()> bestiaryPortraits;
 };
 
 // Game: Rogue Galaxy's own switches/cheats (added).
@@ -470,6 +488,10 @@ private:
     char m_raUser[64] = {};
     char m_raPassword[128] = {};
     int m_bestiaryTab = 0;
+    int m_bestiaryChara = 0; // 0 = All, 1..8 = Jaster..Deego
+    int m_bestiaryWeaponKind = 0; // 0 = All, 1 = Main, 2 = Sub
+    int m_bestiaryFusionInput = -1;  // -1 = Any, else index in m_bestiaryCache.weapons
+    int m_bestiaryFusionOutput = -1; // -1 = Any, else index in m_bestiaryCache.weapons
     bool m_bestiaryDefeatedOnly = false;
     char m_bestiarySearch[64] = {};
     BestiaryData m_bestiaryCache;
@@ -478,6 +500,10 @@ private:
     bool m_bestiaryAtlasReady = false;
     ImTextureRef m_bestiaryAtlasTex{};
     ImVec2 m_bestiaryAtlasSize{};
+    bool m_bestiaryPortraitsTried = false;
+    bool m_bestiaryPortraitsReady = false;
+    ImTextureRef m_bestiaryPortraitsTex{};
+    ImVec2 m_bestiaryPortraitsSize{};
     struct MonsterIconCache {
         bool ready = false;
         ImTextureRef tex{};

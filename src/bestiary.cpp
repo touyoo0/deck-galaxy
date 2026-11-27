@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "ps2_runtime.h"
 #include "runtime/ps2_memory.h"
@@ -32,8 +33,13 @@ constexpr uint32_t kTableEntriesOffset = 0x8Cu;
 
 constexpr uint32_t kItemEntrySize = 0x34u;
 constexpr uint32_t kItemIdOffset = 0x00u;
+constexpr uint32_t kItemKindOffset = 0x02u;
+constexpr uint32_t kItemCharaIdOffset = 0x08u;
 constexpr uint32_t kItemNameOffset = 0x0Cu;
+constexpr uint32_t kItemWeaponDataOffset = 0x20u;
 constexpr uint32_t kItemIconOffset = 0x2Cu;
+constexpr uint32_t kWeaponPowerOffset = 0x06u;
+constexpr int16_t kFirstMainCharaId = 0x2AF9; // Jaster..Deego (8 playable characters)
 
 constexpr uint32_t kMonsterEntrySize = 0xA4u;
 constexpr uint32_t kMonsterIdOffset = 0x00u;
@@ -245,6 +251,18 @@ bool sameDrops(const std::vector<Drop> &a, const std::vector<Drop> &b)
     return true;
 }
 
+struct RawFusion
+{
+    int16_t idA = -1;
+    int16_t idB = -1;
+    int16_t outId = -1;
+    int charaIndex = -1;
+    bool subWeapon = false;
+    bool bonus = false;
+};
+
+const std::vector<RawFusion> &loadRawFusions();
+
 } // namespace
 
 Snapshot read(const uint8_t *rdram)
@@ -299,6 +317,23 @@ Snapshot read(const uint8_t *rdram)
         std::string name = decodeGameText(readGuestString(rdram, namePtr));
         if (!name.empty())
         {
+            int8_t kind = -1;
+            int16_t charaId = -1;
+            if (readGuest(rdram, entry + kItemKindOffset, kind) && (kind == 0 || kind == 1) &&
+                readGuest(rdram, entry + kItemCharaIdOffset, charaId) && charaId >= kFirstMainCharaId &&
+                charaId < kFirstMainCharaId + 8)
+            {
+                int attack = 0;
+                uint32_t weaponData = 0u;
+                uint16_t powerWord = 0u;
+                if (readGuest(rdram, entry + kItemWeaponDataOffset, weaponData) &&
+                    readGuest(rdram, weaponData + kWeaponPowerOffset, powerWord))
+                {
+                    attack = static_cast<int>(powerWord & 0x3FFu);
+                }
+                out.weapons.push_back({id, iconId, static_cast<int>(charaId - kFirstMainCharaId), kind == 1, attack,
+                                       name});
+            }
             itemInfos.emplace(id, ItemInfo{std::move(name), iconId});
         }
     }
@@ -480,6 +515,51 @@ Snapshot read(const uint8_t *rdram)
             return false;
         }
         return a.id < b.id;
+    });
+
+    std::sort(out.weapons.begin(), out.weapons.end(), [](const Weapon &a, const Weapon &b) {
+        if (a.charaIndex != b.charaIndex)
+            return a.charaIndex < b.charaIndex;
+        if (a.subWeapon != b.subWeapon)
+            return !a.subWeapon;
+        if (a.attack != b.attack)
+            return a.attack < b.attack;
+        return lessIgnoreCase(a.name, b.name);
+    });
+
+    // Resolve cached Weapon Combine (Toady synthesis) recipes from
+    // rc\param\purpose\gama_2_*.pac -> gama_matrix2.cfg.bin against out.weapons.
+    std::unordered_map<int16_t, int> weaponIndexById;
+    weaponIndexById.reserve(out.weapons.size());
+    for (size_t i = 0; i < out.weapons.size(); ++i)
+    {
+        weaponIndexById.emplace(out.weapons[i].id, static_cast<int>(i));
+    }
+    const std::vector<RawFusion> &rawFusions = loadRawFusions();
+    out.fusions.reserve(rawFusions.size());
+    for (const RawFusion &rf : rawFusions)
+    {
+        const auto itA = weaponIndexById.find(rf.idA);
+        const auto itB = weaponIndexById.find(rf.idB);
+        const auto itO = weaponIndexById.find(rf.outId);
+        if (itA == weaponIndexById.end() || itB == weaponIndexById.end() || itO == weaponIndexById.end())
+        {
+            continue;
+        }
+        const int wA = std::min(itA->second, itB->second);
+        const int wB = std::max(itA->second, itB->second);
+        out.fusions.push_back({wA, wB, itO->second, rf.charaIndex, rf.subWeapon, rf.bonus});
+    }
+    std::sort(out.fusions.begin(), out.fusions.end(), [&](const Fusion &a, const Fusion &b) {
+        if (a.charaIndex != b.charaIndex)
+            return a.charaIndex < b.charaIndex;
+        if (a.subWeapon != b.subWeapon)
+            return !a.subWeapon;
+        if (a.output != b.output)
+            return a.output < b.output;
+        if (a.inputA != b.inputA)
+            return a.inputA < b.inputA;
+        return a.inputB < b.inputB;
     });
 
     out.monsters = std::move(rawMonsters);
@@ -789,7 +869,10 @@ DiscCache &discCache()
             {
                 c = (c == '/') ? '\\' : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             }
-            if (name.rfind("chara\\mob\\", 0) == 0 && name.size() > 4 && name.compare(name.size() - 4, 4, ".chr") == 0)
+            if ((name.rfind("chara\\mob\\", 0) == 0 && name.size() > 4 &&
+                 name.compare(name.size() - 4, 4, ".chr") == 0) ||
+                name == "menu\\rc\\menu_static_img_en.pac" ||
+                name.rfind("rc\\param\\purpose\\gama_2_", 0) == 0)
             {
                 cache.files.emplace(name, ArchiveFile{layer, ((v >> 18u) & 0x3FFFFFu) * 2048ull,
                                                       (v >> 40u) * static_cast<uint64_t>(unit)});
@@ -797,6 +880,202 @@ DiscCache &discCache()
         }
     }
     return cache;
+}
+
+const std::vector<RawFusion> &loadRawFusions()
+{
+    static bool loaded = false;
+    static std::vector<RawFusion> cached;
+    if (loaded)
+    {
+        return cached;
+    }
+    loaded = true;
+
+    const DiscCache &cache = discCache();
+    auto it = cache.files.find("rc\\param\\purpose\\gama_2_en.pac");
+    if (it == cache.files.end())
+    {
+        for (auto fit = cache.files.begin(); fit != cache.files.end(); ++fit)
+        {
+            if (fit->first.rfind("rc\\param\\purpose\\gama_2_", 0) == 0)
+            {
+                it = fit;
+                break;
+            }
+        }
+    }
+    if (it == cache.files.end() || it->second.size < 0x60u || it->second.size > 4u * 1024u * 1024u)
+    {
+        return cached;
+    }
+
+    std::ifstream datFile(cache.datPaths[it->second.layer], std::ios::binary);
+    if (!datFile)
+    {
+        return cached;
+    }
+    datFile.seekg(static_cast<std::streamoff>(it->second.offset), std::ios::beg);
+    std::vector<uint8_t> blob(static_cast<size_t>(it->second.size));
+    if (!datFile.read(reinterpret_cast<char *>(blob.data()), static_cast<std::streamsize>(blob.size())))
+    {
+        return cached;
+    }
+
+    uint32_t cfgOff = 0u, cfgSize = 0u;
+    std::memcpy(&cfgOff, blob.data() + 0x40u, 4);
+    std::memcpy(&cfgSize, blob.data() + 0x44u, 4);
+    if (cfgOff + cfgSize > blob.size() || cfgSize < 16u)
+    {
+        return cached;
+    }
+
+    const uint8_t *cfg = blob.data() + cfgOff;
+    uint32_t ncmd = 0u;
+    std::memcpy(&ncmd, cfg, 4);
+
+    struct CombineRec
+    {
+        uint8_t byteId = 0;
+        uint8_t groupKey = 0;
+        uint8_t specialPartner = 0;
+        uint8_t family = 0;
+        int16_t itemId = -1;
+    };
+
+    int bonusStep = 0;
+    int curChara = -1;
+    int curKind = -1;
+    uint8_t curKeyA = 0;
+    std::vector<CombineRec> recs;
+    std::unordered_map<uint8_t, int> recByByteId;
+    std::unordered_map<uint16_t, uint8_t> pairResult;
+    std::unordered_set<uint64_t> seen;
+
+    const auto flushGroup = [&]() {
+        if (curChara < 0 || curChara >= 8 || (curKind != 0 && curKind != 1) || recs.empty() || pairResult.empty())
+        {
+            recs.clear();
+            recByByteId.clear();
+            pairResult.clear();
+            return;
+        }
+        for (size_t i = 0; i < recs.size(); ++i)
+        {
+            for (size_t j = i; j < recs.size(); ++j)
+            {
+                const uint16_t kAB =
+                    static_cast<uint16_t>((static_cast<uint16_t>(recs[i].groupKey) << 8u) | recs[j].groupKey);
+                const uint16_t kBA =
+                    static_cast<uint16_t>((static_cast<uint16_t>(recs[j].groupKey) << 8u) | recs[i].groupKey);
+                auto pit = pairResult.find(kAB);
+                if (pit == pairResult.end())
+                {
+                    pit = pairResult.find(kBA);
+                    if (pit == pairResult.end())
+                        continue;
+                }
+                const uint8_t resByteId = pit->second;
+                const auto rit = recByByteId.find(resByteId);
+                if (rit == recByByteId.end())
+                    continue;
+                int resIdx = rit->second;
+                const bool isBonus =
+                    (recs[i].specialPartner == recs[j].byteId) || (recs[j].specialPartner == recs[i].byteId);
+                if (isBonus && bonusStep > 0)
+                {
+                    const uint8_t targetFamily = recs[resIdx].family;
+                    const int maxByteId = static_cast<int>(resByteId) + bonusStep;
+                    int curByteId = static_cast<int>(resByteId);
+                    for (size_t k = 0; k < recs.size(); ++k)
+                    {
+                        const int b = static_cast<int>(recs[k].byteId);
+                        if (b > curByteId && b <= maxByteId && recs[k].family == targetFamily)
+                        {
+                            resIdx = static_cast<int>(k);
+                            curByteId = b;
+                            if (curByteId == maxByteId)
+                                break;
+                        }
+                    }
+                }
+                const int16_t idA = std::min(recs[i].itemId, recs[j].itemId);
+                const int16_t idB = std::max(recs[i].itemId, recs[j].itemId);
+                const int16_t outId = recs[resIdx].itemId;
+                const uint64_t key = (static_cast<uint64_t>(static_cast<uint16_t>(idA)) << 32u) |
+                                     (static_cast<uint64_t>(static_cast<uint16_t>(idB)) << 16u) |
+                                     static_cast<uint64_t>(static_cast<uint16_t>(outId));
+                if (seen.insert(key).second)
+                {
+                    cached.push_back({idA, idB, outId, curChara, curKind == 1, isBonus});
+                }
+            }
+        }
+        recs.clear();
+        recByByteId.clear();
+        pairResult.clear();
+    };
+
+    size_t pos = 16u;
+    for (uint32_t ci = 0; ci < ncmd && pos + 4u <= cfgSize; ++ci)
+    {
+        uint16_t cmd = 0u;
+        std::memcpy(&cmd, cfg + pos, 2);
+        const uint8_t argc = cfg[pos + 2u];
+        const size_t maskBytes = (static_cast<size_t>(argc) + 3u) / 4u;
+        size_t hdr = 3u + maskBytes;
+        if (hdr % 4u != 0u)
+            hdr += 4u - (hdr % 4u);
+        const size_t argsBase = pos + hdr;
+        if (argsBase + static_cast<size_t>(argc) * 4u > cfgSize)
+            break;
+        const auto arg = [&](int idx) -> int32_t {
+            int32_t v = 0;
+            std::memcpy(&v, cfg + argsBase + static_cast<size_t>(idx) * 4u, 4);
+            return v;
+        };
+        pos = argsBase + static_cast<size_t>(argc) * 4u;
+
+        if (cmd == 0x0064u && argc >= 1)
+        {
+            bonusStep = arg(0);
+        }
+        else if (cmd == 0x0066u && argc >= 1)
+        {
+            flushGroup();
+            curChara = static_cast<int>(arg(0)) - static_cast<int>(kFirstMainCharaId);
+            curKind = -1;
+        }
+        else if (cmd == 0x0068u && argc >= 1)
+        {
+            flushGroup();
+            curKind = static_cast<int>(arg(0));
+        }
+        else if (cmd == 0x006Au && argc >= 6)
+        {
+            CombineRec r;
+            r.byteId = static_cast<uint8_t>(arg(0));
+            r.itemId = static_cast<int16_t>(arg(1));
+            r.specialPartner = static_cast<uint8_t>(arg(3));
+            r.family = static_cast<uint8_t>(arg(4) & 0x0F);
+            r.groupKey = static_cast<uint8_t>(arg(5));
+            recByByteId.emplace(r.byteId, static_cast<int>(recs.size()));
+            recs.push_back(r);
+        }
+        else if (cmd == 0x006Cu && argc >= 1)
+        {
+            curKeyA = static_cast<uint8_t>(arg(0));
+        }
+        else if (cmd == 0x006Eu && argc >= 2)
+        {
+            const uint8_t keyB = static_cast<uint8_t>(arg(0));
+            const uint8_t resByteId = static_cast<uint8_t>(arg(1));
+            const uint16_t pairKey = static_cast<uint16_t>((static_cast<uint16_t>(curKeyA) << 8u) | keyB);
+            pairResult.emplace(pairKey, resByteId);
+        }
+    }
+    flushGroup();
+    return cached;
 }
 
 struct SoftTex
@@ -1396,6 +1675,128 @@ IconAtlas renderMonsterIcon(const std::string &modelName)
                 out.rgba[dp + 2u] = static_cast<uint8_t>(sb / cnt);
                 out.rgba[dp + 3u] = static_cast<uint8_t>(sa / 4);
             }
+        }
+    }
+    return out;
+}
+
+IconAtlas loadCharaPortraits()
+{
+    IconAtlas out;
+    DiscCache &cache = discCache();
+    const auto fit = cache.files.find("menu\\rc\\menu_static_img_en.pac");
+    if (fit == cache.files.end() || fit->second.size < 0x100u || fit->second.size > 4u * 1024u * 1024u)
+    {
+        return out;
+    }
+    std::ifstream datFile(cache.datPaths[fit->second.layer], std::ios::binary);
+    if (!datFile)
+    {
+        return out;
+    }
+    datFile.seekg(static_cast<std::streamoff>(fit->second.offset), std::ios::beg);
+    std::vector<uint8_t> pac(static_cast<size_t>(fit->second.size));
+    if (!datFile.read(reinterpret_cast<char *>(pac.data()), static_cast<std::streamsize>(pac.size())))
+    {
+        return out;
+    }
+
+    // Locate menu_pt_b_EN.img inside the pac.
+    const uint8_t *img = nullptr;
+    size_t imgLen = 0;
+    size_t off = 0;
+    while (off + 0x50u <= pac.size())
+    {
+        uint32_t hdrSz = 0, dataSz = 0, stride = 0;
+        std::memcpy(&hdrSz, pac.data() + off + 0x40u, 4);
+        std::memcpy(&dataSz, pac.data() + off + 0x44u, 4);
+        std::memcpy(&stride, pac.data() + off + 0x48u, 4);
+        if (hdrSz == 0xFFFFFFFFu || dataSz == 0xFFFFFFFFu || off + hdrSz + dataSz > pac.size())
+        {
+            break;
+        }
+        size_t nlen = 0;
+        while (nlen < 0x40u && pac[off + nlen] != 0)
+        {
+            ++nlen;
+        }
+        std::string ename(reinterpret_cast<const char *>(pac.data() + off), nlen);
+        for (char &c : ename)
+        {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        if (ename == "menu_pt_b_en.img")
+        {
+            img = pac.data() + off + hdrSz;
+            imgLen = dataSz;
+            break;
+        }
+        if (stride == 0u)
+        {
+            break;
+        }
+        off += stride;
+    }
+    if (!img || imgLen < 0x60u || std::memcmp(img, "IM3\0", 4) != 0)
+    {
+        return out;
+    }
+
+    // First entry (Pty_01): 512x64 PSMT8-swizzled TIM2 with 256-color CSM1 CLUT.
+    uint32_t toff = 0;
+    std::memcpy(&toff, img + 0x10u + 0x24u, 4);
+    if (toff + 0x40u > imgLen || std::memcmp(img + toff, "TIM2", 4) != 0)
+    {
+        return out;
+    }
+    const size_t head = toff + (img[toff + 5u] == 0u ? 0x10u : 0x80u);
+    if (head + 48u > imgLen)
+    {
+        return out;
+    }
+    uint32_t imgSz = 0;
+    uint16_t hsize = 0, ccols = 0, w = 0, h = 0;
+    std::memcpy(&imgSz, img + head + 8u, 4);
+    std::memcpy(&hsize, img + head + 12u, 2);
+    std::memcpy(&ccols, img + head + 14u, 2);
+    const uint8_t ctype = img[head + 18u];
+    const uint8_t itype = img[head + 19u];
+    std::memcpy(&w, img + head + 20u, 2);
+    std::memcpy(&h, img + head + 22u, 2);
+    const size_t imgOff = head + hsize;
+    const size_t clutOff = imgOff + imgSz;
+    if ((itype & 0x3Fu) != 5u || (ctype & 0x3Fu) != 3u || ccols != 256u || w == 0u || h == 0u ||
+        imgOff + static_cast<size_t>(w) * static_cast<size_t>(h) > imgLen || clutOff + 1024u > imgLen)
+    {
+        return out;
+    }
+
+    uint8_t pal[256][4];
+    for (int i = 0; i < 256; ++i)
+    {
+        const int si = (i & ~0x18) | ((i & 0x08) << 1) | ((i & 0x10) >> 1);
+        const size_t p = clutOff + static_cast<size_t>(si) * 4u;
+        pal[i][0] = img[p + 0u];
+        pal[i][1] = img[p + 1u];
+        pal[i][2] = img[p + 2u];
+        const int a = static_cast<int>(img[p + 3u]) * 2;
+        pal[i][3] = static_cast<uint8_t>(a > 255 ? 255 : a);
+    }
+
+    out.width = w;
+    out.height = h;
+    out.rgba.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 4u);
+    for (int y = 0; y < h; ++y)
+    {
+        for (int x = 0; x < w; ++x)
+        {
+            const int block = (y & ~0xF) * w + (x & ~0xF) * 2;
+            const int swap = (((y + 2) >> 2) & 1) * 4;
+            const int row = (((y & ~3) >> 1) + (y & 1)) & 7;
+            const int col = row * w * 2 + ((x + swap) & 7) * 4;
+            const int byte = ((y >> 1) & 1) + ((x >> 2) & 2);
+            const uint8_t idx = img[imgOff + static_cast<size_t>(block + col + byte)];
+            std::memcpy(out.rgba.data() + (static_cast<size_t>(y) * w + static_cast<size_t>(x)) * 4u, pal[idx], 4);
         }
     }
     return out;

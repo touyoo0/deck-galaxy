@@ -41,11 +41,33 @@ struct Item
     std::vector<ItemSource> sources;
 };
 
+struct Weapon
+{
+    int16_t id = -1;
+    int16_t iconId = -1;
+    int charaIndex = -1; // 0..7: Jaster, Kisala, Zegram, Lilika, Steve, Simon, Jupis, Deego
+    bool subWeapon = false;
+    int attack = 0;
+    std::string name;
+};
+
+struct Fusion
+{
+    int inputA = -1; // index into Snapshot::weapons
+    int inputB = -1; // index into Snapshot::weapons
+    int output = -1; // index into Snapshot::weapons
+    int charaIndex = -1;
+    bool subWeapon = false;
+    bool bonus = false;
+};
+
 struct Snapshot
 {
     bool ready = false;
     std::vector<Monster> monsters;
     std::vector<Item> items;
+    std::vector<Weapon> weapons;
+    std::vector<Fusion> fusions;
 };
 
 struct IconAtlas
@@ -67,5 +89,9 @@ IconAtlas loadIconAtlas();
 // Renders a 32x32 anti-aliased 3D thumbnail of a monster's .chr model directly
 // from the player's disc archives (DATA0_0.DAT / DATA1_0.DAT).
 IconAtlas renderMonsterIcon(const std::string &modelName);
+
+// Decodes the 512x64 party character face portrait sheet (Pty_01 inside
+// menu\rc\menu_static_img_en.pac -> menu_pt_b_EN.img) into an RGBA32 image.
+IconAtlas loadCharaPortraits();
 
 } // namespace rg::bestiary

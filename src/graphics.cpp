@@ -1295,6 +1295,16 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
             }
             out.items.push_back(std::move(entry));
         }
+        out.weapons.reserve(snap.weapons.size());
+        for (const rg::bestiary::Weapon &w : snap.weapons)
+        {
+            out.weapons.push_back({w.name, w.iconId, w.charaIndex, w.subWeapon, w.attack});
+        }
+        out.fusions.reserve(snap.fusions.size());
+        for (const rg::bestiary::Fusion &f : snap.fusions)
+        {
+            out.fusions.push_back({f.inputA, f.inputB, f.output, f.charaIndex, f.subWeapon, f.bonus});
+        }
         return out;
     };
     host.bestiaryIcons = [] {
@@ -1307,6 +1317,14 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
     };
     host.bestiaryMonsterIcon = [](const std::string &modelName) {
         rg::bestiary::IconAtlas atlas = rg::bestiary::renderMonsterIcon(modelName);
+        dq8::ui::BestiaryAtlas out;
+        out.width = atlas.width;
+        out.height = atlas.height;
+        out.rgba = std::move(atlas.rgba);
+        return out;
+    };
+    host.bestiaryPortraits = [] {
+        rg::bestiary::IconAtlas atlas = rg::bestiary::loadCharaPortraits();
         dq8::ui::BestiaryAtlas out;
         out.width = atlas.width;
         out.height = atlas.height;
