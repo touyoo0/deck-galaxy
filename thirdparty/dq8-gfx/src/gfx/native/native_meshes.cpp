@@ -204,7 +204,7 @@ bool Renderer::ensureMeshes(SDL_GPUDevice *device, std::string &error)
     fragmentInfo.entrypoint = "main";
     fragmentInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
     fragmentInfo.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
-    fragmentInfo.num_samplers = 2u;
+    fragmentInfo.num_samplers = 3u;
     fragmentInfo.num_uniform_buffers = 1u;
     SDL_GPUShaderCreateInfo opaqueInfo = fragmentInfo;
     opaqueInfo.code = reinterpret_cast<const uint8_t *>(kNativeMeshOpaqueFragSpirv);
@@ -335,7 +335,7 @@ void Renderer::prepareRemasterTextures(SDL_GPUDevice *device, SDL_GPUCommandBuff
     for (const MeshDraw &d : m_frameMeshes)
     {
         const Material &m = d.material;
-        if (d.indexCount == 0u || m.sourceTarget != 0u || m.texture == 0u || m.destinationAlphaTest >= 0)
+        if (d.indexCount == 0u || m.sourceTarget != 0u || m.texture == 0u)
             continue;
         const bool is2d = !d.hasModel;
         const uint64_t fastKey = (uint64_t(m.texture) << 32u) | uint64_t(m.palette);
@@ -640,7 +640,7 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
     const SDL_GPUBufferBinding indexBinding{m_indexBuffer, 0u};
     SDL_BindGPUIndexBuffer(pass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
     SDL_GPUGraphicsPipeline *bound = nullptr;
-    SDL_GPUTexture *boundImage = nullptr, *boundPalette = nullptr;
+    SDL_GPUTexture *boundImage = nullptr, *boundPalette = nullptr, *boundDestCopy = nullptr;
     SDL_GPUSampler *boundSampler = nullptr;
     SDL_Rect boundScissor{-1, -1, -1, -1};
     float boundBlendConst = -1.0f;
@@ -692,11 +692,11 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         MaterialUniforms mu{};
         mu.texa[0] = m.fixedTextureAlpha;
         mu.texa[1] = m.alphaZeroOnBlack ? 1.0f : 0.0f;
-        SDL_GPUTexture *image = m_white, *palette = m_white;
+        SDL_GPUTexture *image = m_white, *palette = m_white, *destCopy = m_white;
         float ownW = 1.0f, ownH = 1.0f;
         const bool remaster3d = remaster && d.hasModel && m.sourceTarget == 0u && m.wrapU < 2u && m.wrapV < 2u &&
                                 m.destinationAlphaTest < 0;
-        const bool remasterResolve = remaster && m.sourceTarget == 0u && m.destinationAlphaTest < 0;
+        const bool remasterResolve = remaster && m.sourceTarget == 0u;
         if (m.sourceTarget != 0u)
         {
             // A target drawn earlier this frame (or kept from before), read
@@ -807,14 +807,14 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         }
         if (m.destinationAlphaTest >= 0)
         {
-            // The target's alpha, from the copy, at the pixel (the palette
-            // slot, which an Index8 texture would need too).
-            if (!copy || n != first || mu.mode[0] == 2u)
+            // The target's alpha, from the copy, at the pixel (in its own
+            // sampler slot so Index8 textures keep their palette).
+            if (!copy || n != first)
             {
                 ++m_meshCounts.feedback;
                 continue;
             }
-            palette = copy;
+            destCopy = copy;
             mu.texa[2] = 1.0f + float(m.destinationAlphaTest);
             ++m_meshCounts.destinationAlpha;
         }
@@ -964,12 +964,13 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         }
         const uint32_t samplerKey = (m.linear ? 1u : 0u) | (m.clampU ? 2u : 0u) | (m.clampV ? 4u : 0u);
         SDL_GPUSampler *sampler = meshSampler(device, samplerKey, remaster3d && mu.mode[0] == 1u);
-        if (image != boundImage || palette != boundPalette || sampler != boundSampler)
+        if (image != boundImage || palette != boundPalette || destCopy != boundDestCopy || sampler != boundSampler)
         {
-            const SDL_GPUTextureSamplerBinding bindings[2] = {{image, sampler}, {palette, sampler}};
-            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 2);
+            const SDL_GPUTextureSamplerBinding bindings[3] = {{image, sampler}, {palette, sampler}, {destCopy, sampler}};
+            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 3);
             boundImage = image;
             boundPalette = palette;
+            boundDestCopy = destCopy;
             boundSampler = sampler;
         }
 
