@@ -251,7 +251,9 @@ void putBackDigits(uint8_t *rdram, R5900Context *, PS2Runtime *, uint32_t)
 
 // (draw state, ..., sub-item): a count the digits cannot hold gets the
 // digits it needs, three for 999. Only with the item limit option on: the
-// game's own numbers fit their digits.
+// game's own numbers fit their digits. Single-digit items (digits == 1) are
+// left alone: the game passes glyph indices >= 10 (such as ':' = 11 in the
+// play-time clock) as a 1-digit value.
 void uiDrawNumber(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
 {
     const uint32_t at = getRegU32(ctx, 6) & 0x1FFFFFFFu;
@@ -260,22 +262,25 @@ void uiDrawNumber(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         const int32_t value = readS32(rdram, at + kNumberValue);
         int16_t digits = 0;
         std::memcpy(&digits, rdram + at + kNumberDigits, sizeof(digits));
-        int16_t need = digits;
-        int64_t limit = 1;
-        for (int i = 0; i < need; ++i)
-            limit *= 10;
-        while (digits > 0 && need < 9 && value >= limit)
+        if (digits >= 2)
         {
-            ++need;
-            limit *= 10;
-        }
-        if (need != digits && digits > 0)
-        {
-            g_numberAt = at;
-            g_numberDigits = digits;
-            writeS16(rdram, at + kNumberDigits, need);
-            rg::hooks::callThen(g_uiDrawNumber, rdram, ctx, runtime, &putBackDigits, 0u);
-            return;
+            int16_t need = digits;
+            int64_t limit = 1;
+            for (int i = 0; i < need; ++i)
+                limit *= 10;
+            while (need < 9 && value >= limit)
+            {
+                ++need;
+                limit *= 10;
+            }
+            if (need != digits)
+            {
+                g_numberAt = at;
+                g_numberDigits = digits;
+                writeS16(rdram, at + kNumberDigits, need);
+                rg::hooks::callThen(g_uiDrawNumber, rdram, ctx, runtime, &putBackDigits, 0u);
+                return;
+            }
         }
     }
     g_uiDrawNumber(rdram, ctx, runtime);
