@@ -145,6 +145,8 @@ stubs = [
     "sceSifInitIopHeap@0x0011E850",
     "sceSifAllocIopHeap@0x0011E8D8",
     "sceSifAllocSysMemory@0x0011E948",
+    "sceSifFreeIopHeap@0x0011E9C8",
+    "sceSifFreeSysMemory@0x0011EA40",
     "sceSifLoadIopHeap@0x0011EA60",
     "sceSifLoadFileReset@0x0011EF30",
     "sceSifLoadModule@0x0011F7A0",
