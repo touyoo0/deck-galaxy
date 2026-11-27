@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- With "Skip spell animations" on, combat effects and sounds of spells like Flash Sword load and play normally again.
+
 ## 0.14.0 - 2026-11-27
 
 - New Bestiary page in the in-game menu with four tabs:
