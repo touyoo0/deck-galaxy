@@ -5,6 +5,16 @@ les affiche dans cette langue. Les titres (`## version - date`) restent comme
 dans `CHANGELOG.md` : ce sont eux qui relient une version à sa traduction. Une
 version absente de ce fichier s'affiche en anglais.
 
+## 0.13.0 - 2026-11-26
+
+- Nouveau « Mode Remaster » (activé par défaut) : upscaling GPU 2x des textures (Anime4K CNN pour la 3D et 2xBR pour la 2D/interface), mipmaps, filtrage anisotrope 16x, SSAO demi-résolution, FXAA et netteté adaptative (CAS).
+- Optimisations majeures des performances et de la consommation sur Steam Deck : génération directe des contours et volumes d'ombres VU1, skinning et culling 3D SIMD (SSE/AVX2), fusion des draw calls, compilation Zen 2 + ThinLTO et réduction de la charge au repos.
+- Menu Affichage allégé : suppression des options obsolètes « Filtre de mise à l'échelle » et « Image plus nette ».
+
+## 0.12.7 - 2026-11-25
+
+- 60 ips plus stables, consommation et chauffe réduites sur Steam Deck en exploration comme en combat.
+
 ## 0.12.6 - 2026-11-23
 
 - Nouvelle option « Sauter les animations de sorts » : la scène d'un sort ou d'une technique spéciale est passée toute seule, sans bouton à presser.

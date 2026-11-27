@@ -18,6 +18,11 @@ bool homeArt(HomePicture which, ImTextureRef &texture, ImVec2 &size);
 // host downloads).
 bool fileTexture(const char *path, ImTextureRef &texture, ImVec2 &size);
 
+// An in-memory RGBA32 image registered as a texture, cached by `key` for the
+// life of the process.
+bool rgbaTexture(const char *key, int width, int height, const unsigned char *rgba,
+                 ImTextureRef &texture, ImVec2 &size);
+
 // The embedded CHANGELOG.md as text; empty when the build has none.
 const char *homeChangelog(unsigned int &size);
 // The same notes in a language of the menu (1 French, 2 German, 3 Spanish, 4

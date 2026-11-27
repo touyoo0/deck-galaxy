@@ -13,6 +13,7 @@
 #include "return_hook.h"
 #include "runtime/gs/gs_backend.h"
 #include "scene_timing.h"
+#include "vif1_thread.h"
 
 #if defined(RG_HAS_SDLGPU)
 #include "gfx/backends/sdlgpu/sdlgpu_backend.h"
@@ -215,6 +216,10 @@ bool presentNative(uint64_t frame)
 void afterFlip(uint8_t *, R5900Context *, PS2Runtime *, uint32_t)
 {
     rg::nativefx::endFlip();
+    // Under the native pipeline with the producer thread on, ensure all queued
+    // VIF1/GIF draws of this frame have been pushed before Present closes it.
+    if (rg::nativeproducer::pipelineOn())
+        rg::vif1::drainForSnapshot();
     // Under the pipeline the presenting thread shows the frame the Present
     // record closed (graphics.cpp's presentHook, step 7d), not the GS's
     // display: nothing is prepared on the GS queue to pace.

@@ -59,6 +59,7 @@ Most of these set an option of the F1 menu for one run, without saving it.
 | `RG_FREE_CAMERA=1` | Starts with the free camera on (the menu's "Free camera"; `src/free_camera.h`) |
 | `RG_INSTANT_TEXT=1` | Text in the message windows a page at a time (the menu's "Instant text"; `src/instant_text.h`) |
 | `RG_SKIP_ABILITY_SCENE=1` | The scene of a spell or special move skipped as soon as the game allows it (the menu's "Skip spell animations"; `src/skip_ability_scene.h`) |
+| `RG_REMASTER=0` / `1` | Modernizes the native renderer with mipmaps, 16x anisotropic filtering, smooth palette textures and CAS sharpening (the menu's "Remaster mode", on by default; `src/remaster.h`) |
 | `RG_INSTANT_RECAP=1` | The loading screen's story so far appears whole at once, then Press X (the menu's "Quick loading recap") |
 | `RG_VOICE_LANG=JA` | Voices (and the movies that differ) from `disc/JA`, whatever the menu's "Undub (Japanese voices)" says; any language of the game's table works for the voice token (`src/voice_language.h`). Logs `[rg] voice <path>` for each voice asked |
 | `RG_TEXT_LANG=FR` | The text in that language (FR, DE, ES, IT; EN for the game's), whatever the menu's "Text" says; needs `disc/EU/<LANG>.idx` from `setup.py extract-european` (`src/text_language.h`). Logs `[rg] text in FR`, and `[rg] in English: <path>` for a file the language has none of |
@@ -128,6 +129,7 @@ The GS backend, the VIF1 and VU1 threads, and the native VU1 work.
 | `RG_PRESENT_TICK=1` | Shows a flip only at a guest vsync tick, as before: a flip that lands just after the presenter's look at a tick waits for the next one, so at 30 fps frames reach the screen 1 and 3 ticks apart in turn, and at 60 fps the next flip replaces it there, unseen. By default, in the game's own window (not `RG_GS_NO_WINDOW`) and with the GS worker (not `RG_GS_WORKER=0`, which presents at vsyncs, as `RG_PRESENT=vblank` does), a flip is shown at the presenter's first pass after it lands (`src/flip_pacing.h`, `showLateFlip`; the native pipeline's switch is `RG_NATIVE_PRESENT_TICK`) |
 | `RG_VIF1_THREAD=0` | Run VIF1 lists (VU1) on the game's thread instead of their own |
 | `RG_GIF_THREAD=0` | Run the GS packets of the VIF1 lists on the VIF1 thread instead of a GIF stage of their own |
+| `RG_PRODUCER_THREAD=0` | Under the native pipeline, run `nativeproducer::mesh`, `piece` and resident texture updates synchronously on the VIF1 thread instead of offloading them in FIFO order to the GIF stage thread |
 | `RG_GS_DEPTH_READS=queue` | Serve the game's depth readbacks through the GS worker queue |
 | `RG_CROP=N` | GS pixels left off each edge of the picture (default 2: the border the game leaves black or half drawn, which a television's overscan hid; 0 shows the whole frame) |
 | `RG_GS_CAPTURE=DIR` | F7 writes the next frame's batches, GS memory and the renderer's target trace (`RG_GS_FRAMELOG`'s files, as `DIR/capture-N.txt`); use `build/captures` for a picture that looks wrong |
@@ -152,7 +154,8 @@ The GS backend, the VIF1 and VU1 threads, and the native VU1 work.
 | `DQ8_GFX_HIDDEN_WINDOW=1` | The window is never shown or raised, for scripted runs; the GS work is the same, and frames still reach `DQ8_GFX_SCREENSHOT_DIR` (`tools/bench/walk.sh` sets it) |
 | `DQ8_GFX_REMOVE_LINE_BLEND` | Set: no PS2 one-line display blend, for runs without the menu (the trace replay). In the game the menu's setting replaces it at start: use `RG_SETTINGS_FILE` with `remove_line_blend = 1` instead |
 | `DQ8_GFX_NATIVE_CAPTURE=FILE` | When the file `FILE.trigger` exists, the next presented frame is saved as a BMP at FILE, once; `DQ8_GFX_NATIVE_CAPTURE_SERIES=1` deletes each trigger and numbers the frames `FILE.N.bmp` |
-| `DQ8_GFX_EFFECT_SCALE=N` | Scale of the blur buffers (0x2C40 and 0x3800, at most 256 pixels wide; `DQ8_GFX_EFFECT_BASES` for others): 2 unless set, 0 for the scene's scale. At 8x they would be 1536x1536; at 2 the frame differs from the scene's scale by 814 of 229,376 pixels at 3x, none by more than 8 levels |
+| `DQ8_GFX_EFFECT_SCALE=N` | Scale of small offscreen effect buffers: under the GS backend, the blur buffers (0x2C40 and 0x3800, at most 256 pixels wide; `DQ8_GFX_EFFECT_BASES` for others), 2 unless set; under the native pipeline, offscreen targets at most 256x256 without a full-size depth target, 1 unless set; 0 keeps the scene's scale |
+| `DQ8_GFX_SYNC_PRESENT=1` | Wait synchronously on `slot.prepared` before presenting to the window (restores the pre-pipelined CPU/GPU barrier for diagnosing presentation issues) |
 | `DQ8_GFX_GPU_TIMES=1` | Label the backend's GPU work and print `[gputime]` lines every two seconds (GPU ms and count a second per label, heaviest first); Vulkan only, about a tenth of the frame at 8x |
 | `DQ8_GFX_NO_DUAL_SOURCE=1` | No dual-source blending: the source-alpha blends go back to the alpha replay (two passes), for comparing frames or a driver without `dualSrcBlend` |
 | `DQ8_GFX_NO_DESTINATION_COPY=1` | No shader that reads the destination from a snapshot: the draws that need it keep their approximation |

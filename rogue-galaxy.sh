@@ -53,6 +53,9 @@ fi
 # The [gfx] line a second unless one is set already. The Vulkan layers are
 # left alone: gamescope's and Steam's overlay are among them.
 export DQ8_GFX_STATS_EVERY="${DQ8_GFX_STATS_EVERY:-60}"
+# Reduce presenter idle polling from 1000 Hz to ~333 Hz on Steam Deck to cut
+# SMT wakeups and let Zen 2 cores enter deeper C-states without adding latency.
+export DQ8_PRESENT_IDLE_US="${DQ8_PRESENT_IDLE_US:-3000}"
 # The window's app id, so the desktop matches it to rogue-galaxy.desktop (icon).
 export SDL_APP_ID="${SDL_APP_ID:-rogue-galaxy}"
 

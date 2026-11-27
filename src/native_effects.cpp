@@ -88,13 +88,17 @@ struct Range
 };
 std::mutex g_mutex;
 std::vector<Range> g_ranges;
+std::atomic<uint64_t> g_rangesGen{1u};
 
 // The ranges `start`-`end` overlaps go: the memory is something else's now.
 void dropRangesLocked(uint32_t start, uint32_t end)
 {
+    const size_t before = g_ranges.size();
     g_ranges.erase(std::remove_if(g_ranges.begin(), g_ranges.end(),
                                   [&](const Range &range) { return range.start < end && start < range.end; }),
                    g_ranges.end());
+    if (g_ranges.size() != before)
+        g_rangesGen.fetch_add(1u, std::memory_order_release);
 }
 
 void addRange(uint32_t start, uint32_t end, Effect effect, uint32_t unit = 0u)
@@ -111,6 +115,7 @@ void addRange(uint32_t start, uint32_t end, Effect effect, uint32_t unit = 0u)
     g_ranges.insert(std::upper_bound(g_ranges.begin(), g_ranges.end(), range,
                                      [](const Range &a, const Range &b) { return a.start < b.start; }),
                     range);
+    g_rangesGen.fetch_add(1u, std::memory_order_release);
 }
 
 // A frame begins in a buffer: what the effects wrote there before is some
@@ -1273,10 +1278,35 @@ bool flipPacket(const uint8_t *data, uint32_t size, GSNativeEffect &out,
 Place placeAt(uint32_t address)
 {
     address = physical(address);
-    std::lock_guard lock(g_mutex);
-    auto it = std::upper_bound(g_ranges.begin(), g_ranges.end(), address,
+    thread_local uint64_t t_gen = 0u;
+    thread_local std::vector<Range> t_ranges;
+    thread_local uint32_t t_minStart = ~0u;
+    thread_local uint32_t t_maxEnd = 0u;
+    const uint64_t gen = g_rangesGen.load(std::memory_order_acquire);
+    if (gen != t_gen)
+    {
+        std::lock_guard lock(g_mutex);
+        t_ranges = g_ranges;
+        t_gen = g_rangesGen.load(std::memory_order_relaxed);
+        if (t_ranges.empty())
+        {
+            t_minStart = ~0u;
+            t_maxEnd = 0u;
+        }
+        else
+        {
+            t_minStart = t_ranges.front().start;
+            t_maxEnd = 0u;
+            for (const Range &r : t_ranges)
+                if (r.end > t_maxEnd)
+                    t_maxEnd = r.end;
+        }
+    }
+    if (t_ranges.empty() || address < t_minStart || address >= t_maxEnd)
+        return Place{};
+    auto it = std::upper_bound(t_ranges.begin(), t_ranges.end(), address,
                                [](uint32_t value, const Range &range) { return value < range.start; });
-    if (it == g_ranges.begin())
+    if (it == t_ranges.begin())
         return Place{};
     --it;
     return address < it->end ? it->place : Place{};

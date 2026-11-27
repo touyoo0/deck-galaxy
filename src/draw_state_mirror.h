@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <utility>
 
 #include "runtime/gs/gs_types.h"
 #include "runtime/ps2_savestate.h"
@@ -26,6 +28,10 @@ bool enabled();
 // the VIF1 thread and the game thread take turns (the VIF1 thread's lists
 // are drained before the game thread sends).
 void observe(const uint8_t *data, uint32_t size);
+
+// Direct (reg, value) register writes already decoded by native2d::build,
+// avoiding an encode->decode GIF packet round-trip.
+void writeRegisters(const std::pair<uint8_t, uint64_t> *writes, size_t count);
 
 // After something wrote the front end's registers without a packet (the
 // libgraph stubs): the mirror takes them from the front end.

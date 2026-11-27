@@ -7,9 +7,11 @@
 #include "gfx/native/native_pipeline.h"
 
 #include "native_mesh.frag.spv.h"
+#include "native_mesh.frag.nodiscard.spv.h"
 #include "native_mesh.vert.spv.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -27,6 +29,11 @@ struct GpuVertex
     float fog;
 };
 static_assert(sizeof(GpuVertex) == 40u, "tightly packed");
+static_assert(sizeof(Vertex) == sizeof(GpuVertex) && offsetof(Vertex, position) == offsetof(GpuVertex, position) &&
+                  offsetof(Vertex, uv) == offsetof(GpuVertex, uv) &&
+                  offsetof(Vertex, color) == offsetof(GpuVertex, color) &&
+                  offsetof(Vertex, fog) == offsetof(GpuVertex, fog),
+              "Vertex must match GpuVertex for direct upload");
 
 struct DrawUniforms
 {
@@ -50,8 +57,9 @@ struct MaterialUniforms
     uint32_t wrap[4];   // u, v: 0 repeat, 1 clamp, 2 region clamp, 3 region repeat
 };
 
-// a x b x c in double, rounded once: the clip matrix of a model under a
-// camera, and the reversed-depth row taken from it before rounding.
+// a x vp in double (vp = view x projection, precomputed per camera), rounded once:
+// the clip matrix of a model under a camera, and the reversed-depth row taken
+// from it before rounding.
 // (w - z) / 2 computed in the shader from a float matrix loses most of its
 // bits to cancellation (w and z are nearly equal over most of the scene),
 // and two meshes on one surface (a wall and the light laid on it, terrain
@@ -63,24 +71,16 @@ struct MaterialUniforms
 // the row. Without it a decal (S = 1.01) tied the surface it lies on and
 // lost about half its pixels each frame where the GS has it hundreds of
 // units in front.
-void clipAndDepth(const float a[16], const float b[16], const float c[16], float clip[16], float depthRow[4],
+void clipAndDepth(const float a[16], const double vp[16], float clip[16], float depthRow[4],
                   double depthScale, double depthConstant)
 {
-    double ab[16], abc[16];
+    double abc[16];
     for (int i = 0; i < 4; ++i)
         for (int j = 0; j < 4; ++j)
         {
             double sum = 0.0;
             for (int k = 0; k < 4; ++k)
-                sum += double(a[i * 4 + k]) * double(b[k * 4 + j]);
-            ab[i * 4 + j] = sum;
-        }
-    for (int i = 0; i < 4; ++i)
-        for (int j = 0; j < 4; ++j)
-        {
-            double sum = 0.0;
-            for (int k = 0; k < 4; ++k)
-                sum += ab[i * 4 + k] * double(c[k * 4 + j]);
+                sum += double(a[i * 4 + k]) * vp[k * 4 + j];
             abc[i * 4 + j] = sum;
         }
     for (int i = 0; i < 16; ++i)
@@ -90,15 +90,36 @@ void clipAndDepth(const float a[16], const float b[16], const float c[16], float
         depthRow[i] = float(depthScale * 0.5 * (abc[i * 4 + 3] - abc[i * 4 + 2]) + depthConstant * abc[i * 4 + 3]);
 }
 
+void windowModelClipAndDepth(const float a[16], double zScale, double zBias, float clip[16], float depthRow[4],
+                             double depthScale, double depthConstant)
+{
+    for (int i = 0; i < 4; ++i)
+    {
+        const double m0 = double(a[i * 4 + 0]);
+        const double m1 = double(a[i * 4 + 1]);
+        const double m2 = double(a[i * 4 + 2]);
+        const double m3 = double(a[i * 4 + 3]);
+        const double z = m2 * zScale + m3 * zBias;
+        clip[i * 4 + 0] = float(m0);
+        clip[i * 4 + 1] = float(m1);
+        clip[i * 4 + 2] = float(z);
+        clip[i * 4 + 3] = float(m3);
+        depthRow[i] = float(depthScale * 0.5 * (m3 - z) + depthConstant * m3);
+    }
+}
+
 // The pipeline's state as one key: depth compare (3 bits), depth write (1),
 // depth used at all (1), color write mask (4), a depth target attached to
-// the pass (1), blending (1), its source and destination factors (3 each)
-// and op (2).
+// the pass (1), blending (1), its source and destination factors (3 each),
+// op (2), and no-discard Early-Z shader variant (1).
 uint32_t pipelineKey(const Material &m, bool attached)
 {
     const bool depth = m.depthTest != Compare::Always || m.depthWrite;
+    const bool noDiscard =
+        m.destinationAlphaTest < 0 && (m.alphaTest == Compare::Always || m.alphaFail != AlphaFail::Nothing);
     uint32_t key = static_cast<uint32_t>(m.depthTest) | (m.depthWrite ? 1u << 3 : 0u) | (depth ? 1u << 4 : 0u) |
-                   (static_cast<uint32_t>(m.colorWrite & 0xFu) << 5) | (attached ? 1u << 9 : 0u);
+                   (static_cast<uint32_t>(m.colorWrite & 0xFu) << 5) | (attached ? 1u << 9 : 0u) |
+                   (noDiscard ? 1u << 19 : 0u);
     if (m.blending)
         key |= (1u << 10) | (static_cast<uint32_t>(m.srcFactor) << 11) | (static_cast<uint32_t>(m.dstFactor) << 14) |
                (static_cast<uint32_t>(m.blendOp) << 17);
@@ -160,7 +181,7 @@ bool growBuffer(SDL_GPUDevice *device, SDL_GPUBuffer *&buffer, uint32_t &capacit
 
 bool Renderer::ensureMeshes(SDL_GPUDevice *device, std::string &error)
 {
-    if (m_meshVertex && m_meshFragment)
+    if (m_meshVertex && m_meshFragment && m_meshFragmentOpaque)
         return true;
     if (m_meshFailed)
         return false;
@@ -185,9 +206,13 @@ bool Renderer::ensureMeshes(SDL_GPUDevice *device, std::string &error)
     fragmentInfo.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
     fragmentInfo.num_samplers = 2u;
     fragmentInfo.num_uniform_buffers = 1u;
+    SDL_GPUShaderCreateInfo opaqueInfo = fragmentInfo;
+    opaqueInfo.code = reinterpret_cast<const uint8_t *>(kNativeMeshOpaqueFragSpirv);
+    opaqueInfo.code_size = sizeof(kNativeMeshOpaqueFragSpirv);
     m_meshVertex = SDL_CreateGPUShader(device, &vertexInfo);
     m_meshFragment = m_meshVertex ? SDL_CreateGPUShader(device, &fragmentInfo) : nullptr;
-    if (!m_meshVertex || !m_meshFragment)
+    m_meshFragmentOpaque = m_meshFragment ? SDL_CreateGPUShader(device, &opaqueInfo) : nullptr;
+    if (!m_meshVertex || !m_meshFragment || !m_meshFragmentOpaque)
     {
         error = std::string("SDL_CreateGPUShader(native mesh): ") + SDL_GetError();
         return false;
@@ -196,31 +221,37 @@ bool Renderer::ensureMeshes(SDL_GPUDevice *device, std::string &error)
                                                  SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)
                         ? SDL_GPU_TEXTUREFORMAT_D32_FLOAT
                         : SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+    m_depthCanSample = SDL_GPUTextureSupportsFormat(
+        device, m_depthFormat, SDL_GPU_TEXTURETYPE_2D,
+        SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
     // A white texel for untextured draws: the shader ignores it, but a
     // sampler binding must be made.
-    m_white = createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, 1u, 1u, error);
+    m_white = createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, 1u, 1u, 1u, SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                            error);
     if (!m_white)
         return false;
     static const Bytes white = std::make_shared<const std::vector<uint8_t>>(std::vector<uint8_t>{255, 255, 255, 255});
-    m_uploads.push_back({m_white, 1u, 1u, white});
+    m_uploads.push_back({m_white, 1u, 1u, white, false});
     m_meshFailed = false;
     return true;
 }
 
 SDL_GPUTexture *Renderer::targetTexture(SDL_GPUDevice *device, Id id, bool depth, uint32_t minW, uint32_t minH,
-                                        bool &fresh, std::string &error)
+                                        uint32_t targetScale, bool &fresh, std::string &error)
 {
     GpuTarget &t = m_gpuTargets[id];
     fresh = false;
-    if (t.texture && t.width >= minW && t.height >= minH)
+    if (t.texture && t.width >= minW && t.height >= minH && (id == kFeedbackCopy || t.scale == targetScale))
         return t.texture;
-    const uint32_t width = std::max(t.width, minW), height = std::max(t.height, minH);
+    const uint32_t width = (id == kFeedbackCopy || t.scale == targetScale) ? std::max(t.width, minW) : minW;
+    const uint32_t height = (id == kFeedbackCopy || t.scale == targetScale) ? std::max(t.height, minH) : minH;
     if (t.texture)
         SDL_ReleaseGPUTexture(device, t.texture);
     SDL_GPUTextureCreateInfo info{};
     info.type = SDL_GPU_TEXTURETYPE_2D;
     info.format = depth ? m_depthFormat : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    info.usage = depth ? SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET
+    info.usage = depth ? (m_depthCanSample ? (SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER)
+                                           : SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)
                        : (SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
     info.width = width;
     info.height = height;
@@ -229,27 +260,259 @@ SDL_GPUTexture *Renderer::targetTexture(SDL_GPUDevice *device, Id id, bool depth
     t.texture = SDL_CreateGPUTexture(device, &info);
     t.width = t.texture ? width : 0u;
     t.height = t.texture ? height : 0u;
+    t.scale = t.texture ? targetScale : 0u;
     if (!t.texture)
         error = std::string("SDL_CreateGPUTexture(native target): ") + SDL_GetError();
     fresh = t.texture != nullptr;
     return t.texture;
 }
 
-SDL_GPUSampler *Renderer::meshSampler(SDL_GPUDevice *device, uint32_t key)
+SDL_GPUSampler *Renderer::meshSampler(SDL_GPUDevice *device, uint32_t key, bool remaster)
 {
-    SDL_GPUSampler *&sampler = m_meshSamplers[key & 7u];
+    SDL_GPUSampler *&sampler = remaster ? m_remasterSamplers[key & 7u] : m_meshSamplers[key & 7u];
     if (sampler)
         return sampler;
     SDL_GPUSamplerCreateInfo info{};
     const bool linear = key & 1u;
-    info.min_filter = linear ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
-    info.mag_filter = info.min_filter;
-    info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+    if (remaster)
+    {
+        info.min_filter = SDL_GPU_FILTER_LINEAR;
+        info.mag_filter = linear ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
+        info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
+        info.enable_anisotropy = true;
+        info.max_anisotropy = 16.0f;
+        info.mip_lod_bias = -0.35f;
+        info.min_lod = 0.0f;
+        info.max_lod = 1000.0f;
+    }
+    else
+    {
+        info.min_filter = linear ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
+        info.mag_filter = info.min_filter;
+        info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        info.min_lod = 0.0f;
+        info.max_lod = 0.0f;
+    }
     info.address_mode_u = (key & 2u) ? SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE : SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
     info.address_mode_v = (key & 4u) ? SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE : SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
     info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     sampler = SDL_CreateGPUSampler(device, &info);
     return sampler;
+}
+
+void Renderer::prepareRemasterTextures(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands)
+{
+    if (!remasterEnabled())
+        return;
+    if (!m_bc7Checked)
+    {
+        m_bc7Checked = true;
+        m_bc7Supported = SDL_GPUTextureSupportsFormat(device, SDL_GPU_TEXTUREFORMAT_BC7_RGBA_UNORM,
+                                                      SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_SAMPLER);
+        m_aiCache.init(m_bc7Supported);
+    }
+    pollAiCache(device, commands);
+
+    struct PendingUpscale
+    {
+        SDL_GPUTexture *src = nullptr;
+        SDL_GPUTexture *dst = nullptr;
+        uint32_t srcW = 0, srcH = 0;
+        uint32_t dstW = 0, dstH = 0;
+        bool generateMips = false;
+        bool clampU = false, clampV = false;
+        bool releaseSrc = false;
+        bool useCnn = false;
+        bool is2d = false;
+    };
+    std::vector<PendingUpscale> upscaleJobs;
+    std::string xbrErr, cnnErr;
+    const bool xbrReady = ensureXbr(device, xbrErr);
+    const bool cnnReady = ensureCnn(device, cnnErr);
+    bool added = false;
+    uint64_t lastCheckedKey = 0u;
+    bool lastCheckedIs2d = false;
+    for (const MeshDraw &d : m_frameMeshes)
+    {
+        const Material &m = d.material;
+        if (d.indexCount == 0u || m.sourceTarget != 0u || m.texture == 0u || m.destinationAlphaTest >= 0)
+            continue;
+        const bool is2d = !d.hasModel;
+        const uint64_t fastKey = (uint64_t(m.texture) << 32u) | uint64_t(m.palette);
+        if (fastKey == lastCheckedKey && is2d == lastCheckedIs2d)
+            continue;
+        lastCheckedKey = fastKey;
+        lastCheckedIs2d = is2d;
+        auto it = m_images.find(m.texture);
+        if (it == m_images.end())
+            continue;
+        Image &img = it->second;
+        const bool clampU = m.clampU || m.wrapU >= 2u;
+        const bool clampV = m.clampV || m.wrapV >= 2u;
+        const bool isPow2 = (img.width & (img.width - 1u)) == 0u && (img.height & (img.height - 1u)) == 0u;
+        // Skip large 2D RGBA8 uploads (>256px, e.g. 512x512 FMV video frames) so transient movie frames never churn m_resolved.
+        // Cap 2D Index8 2xBR at 512x512 (1024x1024 output = 4 MiB max) so 1024px sheets don't blow the 256 MiB cache budget.
+        const bool sizeOk =
+            is2d ? (img.format == PixelFormat::Rgba8
+                        ? (isPow2 && img.width >= 8u && img.height >= 8u && img.width <= 256u && img.height <= 256u)
+                        : (img.width >= 8u && img.height >= 8u && img.width <= 512u && img.height <= 512u))
+                 : (img.width >= 16u && img.height >= 16u && img.width <= 512u && img.height <= 512u);
+
+        if (img.format == PixelFormat::Rgba8)
+        {
+            const bool canUpscale = sizeOk && (is2d ? xbrReady : (cnnReady || xbrReady));
+            if (!canUpscale)
+                continue;
+            const uint64_t key = uint64_t(m.texture) << 32u;
+            if (m_resolved.find(key) != m_resolved.end())
+                continue;
+            const bool useCnn = !is2d && cnnReady;
+            const uint32_t outW = img.width * 2u, outH = img.height * 2u;
+            uint32_t dim = std::max(outW, outH), levels = 1u;
+            while (dim > 1u) { dim >>= 1u; ++levels; }
+            std::string err;
+            SDL_GPUTexture *dstTex = createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, outW, outH, levels,
+                                                   SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET,
+                                                   err);
+            if (!dstTex)
+                continue;
+            upscaleJobs.push_back(
+                {img.texture, dstTex, img.width, img.height, outW, outH, levels > 1u, clampU, clampV, false, useCnn, is2d});
+            const uint64_t bytes = uint64_t(outW) * outH * 4u;
+            m_resolved[key] = Image{dstTex, PixelFormat::Rgba8, outW, outH, 0u, bytes, nullptr};
+            m_resolvedOrder.push_back(key);
+            m_resolvedBytes += bytes;
+            if (is2d)
+                ++m_resolved2dCount;
+            if (m_aiCache.enabled() && img.cpuBytes)
+            {
+                const uint64_t hash = AiTextureCache::hashRgba(img.width, img.height, img.cpuBytes->data(),
+                                                               size_t(img.width) * img.height * 4u);
+                m_aiCache.request(key, hash, img.width, img.height, img.cpuBytes, !is2d);
+                img.cpuBytes.reset();
+            }
+            added = true;
+            continue;
+        }
+        if (img.format != PixelFormat::Index8 || !img.cpuBytes)
+            continue;
+        const Id palId = m.palette ? m.palette : img.palette;
+        const auto p = m_palettes.find(palId);
+        if (p == m_palettes.end() || !p->second.cpuBytes || p->second.width == 0u)
+            continue;
+        const uint64_t key = (uint64_t(m.texture) << 32u) | uint64_t(palId);
+        if (m_resolved.find(key) != m_resolved.end())
+            continue;
+        const bool doUpscale = sizeOk && (is2d ? xbrReady : (cnnReady || xbrReady));
+        const bool useCnn = doUpscale && !is2d && cnnReady;
+        const Image &pal = p->second;
+        const size_t pixelCount = size_t(img.width) * img.height;
+        if (pixelCount == 0u || img.cpuBytes->size() < pixelCount || pal.cpuBytes->size() < size_t(pal.width) * 4u)
+            continue;
+        auto rgba = std::make_shared<std::vector<uint8_t>>(pixelCount * 4u);
+        const uint8_t *src = img.cpuBytes->data();
+        const uint8_t *palData = pal.cpuBytes->data();
+        const uint32_t maxIdx = pal.width - 1u;
+        uint8_t *dst = rgba->data();
+        for (size_t k = 0; k < pixelCount; ++k)
+        {
+            const uint32_t idx = std::min<uint32_t>(src[k], maxIdx);
+            std::memcpy(dst + k * 4u, palData + size_t(idx) * 4u, 4u);
+        }
+        const uint32_t outW = doUpscale ? img.width * 2u : img.width;
+        const uint32_t outH = doUpscale ? img.height * 2u : img.height;
+        uint32_t dim = std::max(outW, outH);
+        uint32_t levels = 1u;
+        while (dim > 1u)
+        {
+            dim >>= 1u;
+            ++levels;
+        }
+        const SDL_GPUTextureUsageFlags dstUsage =
+            (levels > 1u || doUpscale) ? (SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)
+                                       : SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        std::string err;
+        SDL_GPUTexture *dstTex = createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, outW, outH, levels,
+                                               dstUsage, err);
+        if (!dstTex)
+            continue;
+        if (doUpscale)
+        {
+            SDL_GPUTexture *srcTex = createTexture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, img.width, img.height,
+                                                   1u, SDL_GPU_TEXTUREUSAGE_SAMPLER, err);
+            if (!srcTex)
+            {
+                SDL_ReleaseGPUTexture(device, dstTex);
+                continue;
+            }
+            m_uploads.push_back({srcTex, img.width, img.height, rgba, false});
+            upscaleJobs.push_back(
+                {srcTex, dstTex, img.width, img.height, outW, outH, levels > 1u, clampU, clampV, true, useCnn, is2d});
+        }
+        else
+        {
+            m_uploads.push_back({dstTex, img.width, img.height, rgba, levels > 1u});
+        }
+        const uint64_t bytes = uint64_t(outW) * outH * 4u;
+        m_resolved[key] = Image{dstTex, PixelFormat::Rgba8, outW, outH, palId, bytes, nullptr};
+        m_resolvedOrder.push_back(key);
+        m_resolvedBytes += bytes;
+        if (is2d)
+            ++m_resolved2dCount;
+        if (m_aiCache.enabled() && sizeOk)
+        {
+            const uint64_t hash = AiTextureCache::hashRgba(img.width, img.height, rgba->data(), rgba->size());
+            m_aiCache.request(key, hash, img.width, img.height, rgba, !is2d);
+        }
+        added = true;
+    }
+    if (added)
+    {
+        std::string failed;
+        if (!m_uploads.empty() && !upload(device, commands, failed))
+        {
+            std::fprintf(stderr, "[native-pipeline] remaster texture upload failed: %s\n", failed.c_str());
+            m_uploads.clear();
+            for (const PendingUpscale &job : upscaleJobs)
+                if (job.releaseSrc)
+                    SDL_ReleaseGPUTexture(device, job.src);
+            return;
+        }
+        for (const PendingUpscale &job : upscaleJobs)
+        {
+            if (job.useCnn)
+            {
+                runCnnUpscale(device, commands, job.src, job.dst, job.srcW, job.srcH, job.clampU, job.clampV);
+                if (job.generateMips)
+                    SDL_GenerateMipmapsForGPUTexture(commands, job.dst);
+            }
+            else
+            {
+                SDL_GPUColorTargetInfo target{};
+                target.texture = job.dst;
+                target.load_op = SDL_GPU_LOADOP_DONT_CARE;
+                target.store_op = SDL_GPU_STOREOP_STORE;
+                SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(commands, &target, 1u, nullptr);
+                if (pass)
+                {
+                    const SDL_GPUViewport viewport{0.0f, 0.0f, float(job.dstW), float(job.dstH), 0.0f, 1.0f};
+                    SDL_SetGPUViewport(pass, &viewport);
+                    SDL_BindGPUGraphicsPipeline(pass, job.is2d ? m_xbr2dPipeline : m_xbrPipeline);
+                    const SDL_GPUTextureSamplerBinding binding{job.src, m_casSampler};
+                    SDL_BindGPUFragmentSamplers(pass, 0u, &binding, 1u);
+                    const uint32_t wrap[4] = {job.clampU ? 1u : 0u, job.clampV ? 1u : 0u, 0u, 0u};
+                    SDL_PushGPUFragmentUniformData(commands, 0u, wrap, sizeof(wrap));
+                    SDL_DrawGPUPrimitives(pass, 3u, 1u, 0u, 0u);
+                    SDL_EndGPURenderPass(pass);
+                    if (job.generateMips)
+                        SDL_GenerateMipmapsForGPUTexture(commands, job.dst);
+                }
+            }
+            if (job.releaseSrc)
+                SDL_ReleaseGPUTexture(device, job.src);
+        }
+        evictResolved(device);
+    }
 }
 
 SDL_GPUGraphicsPipeline *Renderer::meshPipeline(SDL_GPUDevice *device, uint32_t key)
@@ -290,7 +553,7 @@ SDL_GPUGraphicsPipeline *Renderer::meshPipeline(SDL_GPUDevice *device, uint32_t 
 
     SDL_GPUGraphicsPipelineCreateInfo info{};
     info.vertex_shader = m_meshVertex;
-    info.fragment_shader = m_meshFragment;
+    info.fragment_shader = ((key >> 19) & 1u) ? m_meshFragmentOpaque : m_meshFragment;
     info.vertex_input_state.vertex_buffer_descriptions = &buffer;
     info.vertex_input_state.num_vertex_buffers = 1u;
     info.vertex_input_state.vertex_attributes = attributes;
@@ -316,17 +579,8 @@ SDL_GPUGraphicsPipeline *Renderer::meshPipeline(SDL_GPUDevice *device, uint32_t 
 
 bool Renderer::uploadMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, std::string &error)
 {
-    m_firstIndex.clear();
-    m_vertexOffset.clear();
-    uint64_t vertices = 0u, indices = 0u;
-    for (const MeshDraw &d : m_frameMeshes)
-    {
-        m_firstIndex.push_back(static_cast<uint32_t>(indices));
-        m_vertexOffset.push_back(static_cast<int32_t>(vertices));
-        vertices += d.vertices.size();
-        indices += d.indices.size();
-    }
-    if (indices == 0u)
+    const uint64_t vertices = m_frameVerts.size(), indices = m_frameIndices.size();
+    if (indices == 0u || vertices == 0u)
         return true;
     const uint64_t vertexBytes = vertices * sizeof(GpuVertex), indexBytes = indices * sizeof(uint32_t);
     if (vertexBytes + indexBytes > (1ull << 31))
@@ -361,21 +615,8 @@ bool Renderer::uploadMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *command
         error = std::string("SDL_MapGPUTransferBuffer(native meshes): ") + SDL_GetError();
         return false;
     }
-    auto *v = reinterpret_cast<GpuVertex *>(mapped);
-    auto *ix = reinterpret_cast<uint32_t *>(mapped + vertexBytes);
-    for (const MeshDraw &d : m_frameMeshes)
-    {
-        for (const Vertex &in : d.vertices)
-        {
-            std::memcpy(v->position, in.position, sizeof(v->position));
-            std::memcpy(v->uv, in.uv, sizeof(v->uv));
-            std::memcpy(v->color, in.color, sizeof(v->color));
-            v->fog = in.fog;
-            ++v;
-        }
-        std::memcpy(ix, d.indices.data(), d.indices.size() * sizeof(uint32_t));
-        ix += d.indices.size();
-    }
+    std::memcpy(mapped, m_frameVerts.data(), vertexBytes);
+    std::memcpy(mapped + vertexBytes, m_frameIndices.data(), indexBytes);
     SDL_UnmapGPUTransferBuffer(device, m_meshTransfer);
     SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(commands);
     SDL_GPUTransferBufferLocation source{m_meshTransfer, 0u};
@@ -390,7 +631,7 @@ bool Renderer::uploadMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *command
 
 void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, SDL_GPURenderPass *pass,
                           size_t first, size_t last, Id target, bool depthAttached, float targetW, float targetH,
-                          uint32_t scale, SDL_GPUTexture *copy, uint32_t copyW, uint32_t copyH)
+                          uint32_t targetScale, uint32_t sceneScale, SDL_GPUTexture *copy, uint32_t copyW, uint32_t copyH)
 {
     if (!m_vertexBuffer || !m_indexBuffer)
         return;
@@ -399,14 +640,45 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
     const SDL_GPUBufferBinding indexBinding{m_indexBuffer, 0u};
     SDL_BindGPUIndexBuffer(pass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
     SDL_GPUGraphicsPipeline *bound = nullptr;
+    SDL_GPUTexture *boundImage = nullptr, *boundPalette = nullptr;
+    SDL_GPUSampler *boundSampler = nullptr;
+    SDL_Rect boundScissor{-1, -1, -1, -1};
+    float boundBlendConst = -1.0f;
+    Id lastCamId = 0u;
+    const CachedCamera *lastCam = nullptr;
+    bool hasCached3d = false;
+    Id cached3dCam = 0u;
+    float cached3dModel[16] = {};
+    float cached3dDepthScale = 0.0f, cached3dDepthMax = 0.0f;
+    float cached3dClip[16] = {}, cached3dDepthRow[4] = {}, cached3dDepthLimit[2] = {};
+    const bool remaster = remasterEnabled();
+    Id lastTexId = 0u, lastPalId = 0u;
+    bool lastTexResolved = false;
+    SDL_GPUTexture *lastTexImage = nullptr, *lastTexPalette = nullptr;
+    float lastTexOwnW = 1.0f, lastTexOwnH = 1.0f;
+    uint32_t lastTexMode0 = 0u, lastTexMode3 = 0u;
+    bool hasLastDu = false, hasLastMu = false;
+    DrawUniforms lastDu{};
+    MaterialUniforms lastMu{};
     for (size_t n = first; n < last; ++n)
     {
         const MeshDraw &d = m_frameMeshes[n];
-        if (d.indices.empty())
+        if (d.indexCount == 0u)
             continue;
-        const Camera *camera = nullptr;
-        if (const auto it = m_cameras.find(d.camera); d.camera != 0u && it != m_cameras.end())
-            camera = &it->second;
+        const CachedCamera *cachedCam = nullptr;
+        if (d.camera != 0u)
+        {
+            if (d.camera == lastCamId)
+                cachedCam = lastCam;
+            else
+            {
+                const auto it = m_cameras.find(d.camera);
+                cachedCam = it != m_cameras.end() ? &it->second : nullptr;
+                lastCamId = d.camera;
+                lastCam = cachedCam;
+            }
+        }
+        const Camera *camera = cachedCam ? &cachedCam->cam : nullptr;
         const Material &m = d.material;
         // A 3D draw needs its camera; a window-space one only to map its
         // depth when it tests it. One that only writes depth (test ALWAYS:
@@ -422,11 +694,13 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         mu.texa[1] = m.alphaZeroOnBlack ? 1.0f : 0.0f;
         SDL_GPUTexture *image = m_white, *palette = m_white;
         float ownW = 1.0f, ownH = 1.0f;
+        const bool remaster3d = remaster && d.hasModel && m.sourceTarget == 0u && m.wrapU < 2u && m.wrapV < 2u &&
+                                m.destinationAlphaTest < 0;
+        const bool remasterResolve = remaster && m.sourceTarget == 0u && m.destinationAlphaTest < 0;
         if (m.sourceTarget != 0u)
         {
             // A target drawn earlier this frame (or kept from before), read
-            // in game pixels: its texture may be larger and is upscaled.
-            const float s = float(std::max(scale, 1u));
+            // in game pixels: each target carries its own scale.
             if (m.sourceTarget == target)
             {
                 // The copy drawFrame took just before (only the run's
@@ -436,12 +710,14 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
                     ++m_meshCounts.feedback;
                     continue;
                 }
+                const float s = float(std::max(targetScale, 1u));
                 image = palette = copy;
                 ownW = float(copyW) / s;
                 ownH = float(copyH) / s;
             }
             else if (m.sourceTarget == m_sceneTarget)
             {
+                const float s = float(std::max(sceneScale, 1u));
                 image = palette = m_scene;
                 ownW = float(m_sceneWidth) / s;
                 ownH = float(m_sceneHeight) / s;
@@ -454,6 +730,7 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
                     ++m_meshCounts.sourceNotDrawn;
                     continue;
                 }
+                const float s = float(std::max(it->second.scale ? it->second.scale : sceneScale, 1u));
                 image = palette = it->second.texture;
                 ownW = float(it->second.width) / s;
                 ownH = float(it->second.height) / s;
@@ -465,28 +742,65 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         }
         else if (m.texture != 0u)
         {
-            const auto it = m_images.find(m.texture);
-            if (it == m_images.end())
+            if (m.texture == lastTexId && m.palette == lastPalId && remasterResolve == lastTexResolved &&
+                lastTexImage != nullptr)
             {
-                ++m_meshCounts.noTexture;
-                continue;
+                image = lastTexImage;
+                palette = lastTexPalette;
+                ownW = lastTexOwnW;
+                ownH = lastTexOwnH;
+                mu.mode[0] = lastTexMode0;
+                mu.mode[3] = lastTexMode3;
             }
-            const Image &img = it->second;
-            image = palette = img.texture;
-            ownW = float(img.width);
-            ownH = float(img.height);
-            mu.mode[0] = 1u;
-            if (img.format == PixelFormat::Index8)
+            else
             {
-                const auto p = m_palettes.find(m.palette ? m.palette : img.palette);
-                if (p == m_palettes.end())
+                const auto it = m_images.find(m.texture);
+                if (it == m_images.end())
                 {
                     ++m_meshCounts.noTexture;
                     continue;
                 }
-                palette = p->second.texture;
-                mu.mode[0] = 2u;
-                mu.mode[3] = p->second.width;
+                const Image &img = it->second;
+                image = palette = img.texture;
+                ownW = float(img.width);
+                ownH = float(img.height);
+                mu.mode[0] = 1u;
+                if (img.format == PixelFormat::Rgba8 && remasterResolve)
+                {
+                    if (const auto r = m_resolved.find(uint64_t(m.texture) << 32u); r != m_resolved.end())
+                        image = palette = r->second.texture;
+                }
+                else if (img.format == PixelFormat::Index8)
+                {
+                    const Id palId = m.palette ? m.palette : img.palette;
+                    const uint64_t rkey = (uint64_t(m.texture) << 32u) | uint64_t(palId);
+                    if (const auto r = remasterResolve ? m_resolved.find(rkey) : m_resolved.end(); r != m_resolved.end())
+                    {
+                        image = palette = r->second.texture;
+                        mu.mode[0] = 1u;
+                    }
+                    else
+                    {
+                        const auto p = m_palettes.find(palId);
+                        if (p == m_palettes.end())
+                        {
+                            ++m_meshCounts.noTexture;
+                            continue;
+                        }
+                        palette = p->second.texture;
+                        mu.mode[0] = 2u;
+                        mu.mode[3] = p->second.width;
+                    }
+                }
+                lastTexId = m.texture;
+                lastPalId = m.palette;
+                lastTexResolved = remasterResolve;
+                lastTexImage = image;
+                lastTexPalette = palette;
+                lastTexOwnW = ownW;
+                lastTexOwnH = ownH;
+                lastTexMode0 = mu.mode[0];
+                lastTexMode3 = mu.mode[3];
             }
             mu.mode[1] = static_cast<uint32_t>(m.function);
             mu.mode[2] = m.textureAlpha ? 1u : 0u;
@@ -514,6 +828,8 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         {
             SDL_BindGPUGraphicsPipeline(pass, pipeline);
             bound = pipeline;
+            hasLastDu = false;
+            hasLastMu = false;
         }
         mu.test[0] = static_cast<uint32_t>(m.alphaTest);
         mu.test[1] = m.alphaRef;
@@ -524,10 +840,12 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         mu.size[2] = ownW;
         mu.size[3] = ownH;
         mu.blend[0] = m.shuffle == ChannelShuffle::GreenToAlpha ? 1.0f : 0.0f;
+        mu.blend[1] = remaster ? (d.hasModel ? 2.0f : 1.0f) : 0.0f;
         mu.blend[2] = m.clampU ? 1.0f : 0.0f;
         mu.blend[3] = m.clampV ? 1.0f : 0.0f;
         mu.wrap[0] = m.wrapU;
         mu.wrap[1] = m.wrapV;
+        mu.wrap[2] = (!m.blending && m.fba) ? 1u : 0u;
         mu.region[0] = m.regionU[0];
         mu.region[1] = m.regionU[1];
         mu.region[2] = m.regionV[0];
@@ -542,19 +860,12 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
             // depth needs mapping, Zgs to the clip z (Zgs - V32) / V22 as the
             // window-space draws below, with the program's depthScale.
             const double v22 = camera ? camera->viewport[10] : 0.0, v32 = camera ? camera->viewport[14] : 0.0;
-            float zMap[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-            float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-            if (v22 != 0.0)
-            {
-                zMap[10] = float(1.0 / v22);
-                zMap[14] = float(-v32 / v22);
-            }
-            else
-                zMap[10] = 0.0f; // no depth map yet: a constant, as a window draw with no camera
+            const double zScale = v22 != 0.0 ? (1.0 / v22) : 0.0;
+            const double zBias = v22 != 0.0 ? (-v32 / v22) : 0.0;
             const bool scaled = d.depthScale != 1.0f && v22 != 0.0;
             const double s = scaled ? double(d.depthScale) : 1.0;
-            clipAndDepth(d.model, zMap, identity, du.clip, du.depthRow, s,
-                         scaled ? (1.0 - s) * (1.0 + v32 / v22) * 0.5 : 0.0);
+            windowModelClipAndDepth(d.model, zScale, zBias, du.clip, du.depthRow, s,
+                                    scaled ? (1.0 - s) * (1.0 + v32 / v22) * 0.5 : 0.0);
             if (v22 != 0.0 && d.depthMax < 3.0e38f)
             {
                 du.depthLimit[0] = float((1.0 - (double(d.depthMax) - v32) / v22) * 0.5);
@@ -566,17 +877,37 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
         }
         else if (d.hasModel)
         {
-            // The program's depthScale and depthMax (see clipAndDepth). The
-            // cap is per vertex, before interpolation, as the program's.
-            const double v22 = camera->viewport[10], v32 = camera->viewport[14];
-            const bool scaled = d.depthScale != 1.0f && v22 != 0.0;
-            const double s = scaled ? double(d.depthScale) : 1.0;
-            clipAndDepth(d.model, camera->view, camera->projection, du.clip, du.depthRow, s,
-                         scaled ? (1.0 - s) * (1.0 + v32 / v22) * 0.5 : 0.0);
-            if (v22 != 0.0 && d.depthMax < 3.0e38f)
+            if (hasCached3d && cached3dCam == d.camera && cached3dDepthScale == d.depthScale &&
+                cached3dDepthMax == d.depthMax && std::memcmp(cached3dModel, d.model, sizeof(cached3dModel)) == 0)
             {
-                du.depthLimit[0] = float((1.0 - (double(d.depthMax) - v32) / v22) * 0.5);
-                du.depthLimit[1] = 1.0f;
+                std::memcpy(du.clip, cached3dClip, sizeof(du.clip));
+                std::memcpy(du.depthRow, cached3dDepthRow, sizeof(du.depthRow));
+                du.depthLimit[0] = cached3dDepthLimit[0];
+                du.depthLimit[1] = cached3dDepthLimit[1];
+            }
+            else
+            {
+                // The program's depthScale and depthMax (see clipAndDepth). The
+                // cap is per vertex, before interpolation, as the program's.
+                const double v22 = camera->viewport[10], v32 = camera->viewport[14];
+                const bool scaled = d.depthScale != 1.0f && v22 != 0.0;
+                const double s = scaled ? double(d.depthScale) : 1.0;
+                clipAndDepth(d.model, cachedCam->viewProj, du.clip, du.depthRow, s,
+                             scaled ? (1.0 - s) * (1.0 + v32 / v22) * 0.5 : 0.0);
+                if (v22 != 0.0 && d.depthMax < 3.0e38f)
+                {
+                    du.depthLimit[0] = float((1.0 - (double(d.depthMax) - v32) / v22) * 0.5);
+                    du.depthLimit[1] = 1.0f;
+                }
+                hasCached3d = true;
+                cached3dCam = d.camera;
+                std::memcpy(cached3dModel, d.model, sizeof(cached3dModel));
+                cached3dDepthScale = d.depthScale;
+                cached3dDepthMax = d.depthMax;
+                std::memcpy(cached3dClip, du.clip, sizeof(cached3dClip));
+                std::memcpy(cached3dDepthRow, du.depthRow, sizeof(cached3dDepthRow));
+                cached3dDepthLimit[0] = du.depthLimit[0];
+                cached3dDepthLimit[1] = du.depthLimit[1];
             }
             std::memcpy(du.viewport, camera->viewport, sizeof(du.viewport));
         }
@@ -613,24 +944,91 @@ void Renderer::drawMeshes(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands,
                            m.dstFactor == BlendFactor::Fixed || m.dstFactor == BlendFactor::InvFixed))
         {
             const float f = std::min(float(m.blendFactor) / 128.0f, 1.0f);
-            SDL_SetGPUBlendConstants(pass, SDL_FColor{f, f, f, f});
+            if (f != boundBlendConst)
+            {
+                SDL_SetGPUBlendConstants(pass, SDL_FColor{f, f, f, f});
+                boundBlendConst = f;
+            }
         }
-        SDL_PushGPUVertexUniformData(commands, 0, &du, sizeof(du));
-        SDL_PushGPUFragmentUniformData(commands, 0, &mu, sizeof(mu));
+        if (!hasLastDu || std::memcmp(&du, &lastDu, sizeof(du)) != 0)
+        {
+            SDL_PushGPUVertexUniformData(commands, 0, &du, sizeof(du));
+            lastDu = du;
+            hasLastDu = true;
+        }
+        if (!hasLastMu || std::memcmp(&mu, &lastMu, sizeof(mu)) != 0)
+        {
+            SDL_PushGPUFragmentUniformData(commands, 0, &mu, sizeof(mu));
+            lastMu = mu;
+            hasLastMu = true;
+        }
         const uint32_t samplerKey = (m.linear ? 1u : 0u) | (m.clampU ? 2u : 0u) | (m.clampV ? 4u : 0u);
-        SDL_GPUSampler *sampler = meshSampler(device, samplerKey);
-        const SDL_GPUTextureSamplerBinding bindings[2] = {{image, sampler}, {palette, sampler}};
-        SDL_BindGPUFragmentSamplers(pass, 0, bindings, 2);
+        SDL_GPUSampler *sampler = meshSampler(device, samplerKey, remaster3d && mu.mode[0] == 1u);
+        if (image != boundImage || palette != boundPalette || sampler != boundSampler)
+        {
+            const SDL_GPUTextureSamplerBinding bindings[2] = {{image, sampler}, {palette, sampler}};
+            SDL_BindGPUFragmentSamplers(pass, 0, bindings, 2);
+            boundImage = image;
+            boundPalette = palette;
+            boundSampler = sampler;
+        }
 
         const int32_t sx0 = std::clamp(d.scissor.x0, 0, int32_t(targetW));
         const int32_t sy0 = std::clamp(d.scissor.y0, 0, int32_t(targetH));
         const int32_t sx1 = std::clamp(d.scissor.x1, sx0, int32_t(targetW));
         const int32_t sy1 = std::clamp(d.scissor.y1, sy0, int32_t(targetH));
-        const int32_t s = int32_t(std::max(scale, 1u));
+        const int32_t s = int32_t(std::max(targetScale, 1u));
         const SDL_Rect scissor{sx0 * s, sy0 * s, (sx1 - sx0) * s, (sy1 - sy0) * s};
-        SDL_SetGPUScissor(pass, &scissor);
-        SDL_DrawGPUIndexedPrimitives(pass, static_cast<uint32_t>(d.indices.size()), 1, m_firstIndex[n],
-                                     m_vertexOffset[n], 0);
+        if (scissor.x != boundScissor.x || scissor.y != boundScissor.y || scissor.w != boundScissor.w ||
+            scissor.h != boundScissor.h)
+        {
+            SDL_SetGPUScissor(pass, &scissor);
+            boundScissor = scissor;
+        }
+        // Merge consecutive draws sharing identical GPU state into one indexed draw call
+        // (indices are pre-rebased into m_frameIndices, so vertexOffset is 0).
+        const uint32_t startIndex = d.firstIndex;
+        uint32_t totalIndices = d.indexCount;
+        const bool isFeedback = (m.sourceTarget == target || m.destinationAlphaTest >= 0);
+        if (!isFeedback)
+        {
+            while (n + 1 < last)
+            {
+                const MeshDraw &next = m_frameMeshes[n + 1];
+                if (next.indexCount == 0u || next.firstIndex != startIndex + totalIndices)
+                    break;
+                const Material &nm = next.material;
+                if (nm.sourceTarget == target || nm.destinationAlphaTest >= 0)
+                    break;
+                if (next.hasModel != d.hasModel || next.windowModel != d.windowModel || next.camera != d.camera ||
+                    next.clips != d.clips || next.depthScale != d.depthScale || next.depthMax != d.depthMax ||
+                    next.scissor.x0 != d.scissor.x0 || next.scissor.y0 != d.scissor.y0 ||
+                    next.scissor.x1 != d.scissor.x1 || next.scissor.y1 != d.scissor.y1 ||
+                    std::memcmp(next.fog, d.fog, sizeof(d.fog)) != 0 ||
+                    std::memcmp(next.fogColor, d.fogColor, sizeof(d.fogColor)) != 0)
+                    break;
+                if (d.hasModel && std::memcmp(next.model, d.model, sizeof(d.model)) != 0)
+                    break;
+                if (nm.texture != m.texture || nm.palette != m.palette || nm.sourceTarget != m.sourceTarget ||
+                    nm.fixedTextureAlpha != m.fixedTextureAlpha || nm.alphaZeroOnBlack != m.alphaZeroOnBlack ||
+                    nm.textureWidth != m.textureWidth || nm.textureHeight != m.textureHeight ||
+                    nm.linear != m.linear || nm.clampU != m.clampU || nm.clampV != m.clampV ||
+                    nm.wrapU != m.wrapU || nm.wrapV != m.wrapV ||
+                    nm.regionU[0] != m.regionU[0] || nm.regionU[1] != m.regionU[1] ||
+                    nm.regionV[0] != m.regionV[0] || nm.regionV[1] != m.regionV[1] ||
+                    nm.function != m.function || nm.shuffle != m.shuffle || nm.textureAlpha != m.textureAlpha ||
+                    nm.blending != m.blending || nm.srcFactor != m.srcFactor || nm.dstFactor != m.dstFactor ||
+                    nm.blendOp != m.blendOp || nm.blendFactor != m.blendFactor ||
+                    nm.alphaTest != m.alphaTest || nm.alphaRef != m.alphaRef || nm.alphaFail != m.alphaFail ||
+                    nm.depthTest != m.depthTest || nm.depthWrite != m.depthWrite || nm.colorWrite != m.colorWrite ||
+                    nm.fog != m.fog || nm.fba != m.fba)
+                    break;
+                totalIndices += next.indexCount;
+                ++n;
+                ++m_meshCounts.merged;
+            }
+        }
+        SDL_DrawGPUIndexedPrimitives(pass, totalIndices, 1, startIndex, 0, 0);
         ++m_meshCounts.drawn;
     }
 }
@@ -656,13 +1054,15 @@ bool Renderer::drawFrame(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, 
     }
     if (!uploadMeshes(device, commands, error))
         return false;
+    prepareRemasterTextures(device, commands);
     // RG_NATIVE_FRAME_DUMP=N: the N-th frame's draws, one line each.
     static const uint64_t dumpFrame = [] {
         const char *v = std::getenv("RG_NATIVE_FRAME_DUMP");
         return v ? std::strtoull(v, nullptr, 10) : 0ull;
     }();
     // Or the frame after build/run/dump-gpu appears (the producer's trigger).
-    const bool triggered = std::remove("build/run/dump-gpu") == 0;
+    // Check once every 60 frames instead of issuing an unlink() syscall every frame.
+    const bool triggered = (m_meshCounts.frames % 60u == 0u) && std::remove("build/run/dump-gpu") == 0;
     if (triggered)
     {
         std::fprintf(stderr, "[frame-dump] frame %llu (%zu draws)\n", (unsigned long long)m_meshCounts.frames,
@@ -675,29 +1075,47 @@ bool Renderer::drawFrame(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, 
         {
             const MeshDraw &d = m_frameMeshes[n];
             float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
-            for (const Vertex &v : d.vertices)
+            const Vertex *vs = d.vertexCount ? (m_frameVerts.data() + d.firstVertex) : nullptr;
+            for (uint32_t k = 0; k < d.vertexCount; ++k)
             {
+                const Vertex &v = vs[k];
                 x0 = std::min(x0, v.position[0]);
                 y0 = std::min(y0, v.position[1]);
                 x1 = std::max(x1, v.position[0]);
                 y1 = std::max(y1, v.position[1]);
             }
             const Material &m = d.material;
-            const float *c = d.vertices.empty() ? nullptr : d.vertices[0].color;
+            const float *c = vs ? vs[0].color : nullptr;
             std::fprintf(stderr,
                          "[frame-dump] %4zu target %u depth %u %s src %s%u fn %d tcc %d blend %d/%d/%d fix %u write %x "
-                         "atest %d/%u ztest %d zw %d tris %zu box %.0f,%.0f-%.0f,%.0f rgba %.0f,%.0f,%.0f,%.0f z %.0f fog %.0f cam %u%s\n",
+                         "atest %d/%u ztest %d zw %d tris %u box %.0f,%.0f-%.0f,%.0f rgba %.0f,%.0f,%.0f,%.0f z %.0f fog %.0f cam %u%s\n",
                          n, d.target, d.depthTarget, d.hasModel ? "3d" : "2d", m.sourceTarget ? "target " : "tex ",
                          m.sourceTarget ? m.sourceTarget : m.texture, int(m.function), int(m.textureAlpha),
                          m.blending ? int(m.srcFactor) : -1, int(m.dstFactor), int(m.blendOp), m.blendFactor, m.colorWrite, int(m.alphaTest), m.alphaRef, int(m.depthTest),
-                         int(m.depthWrite), d.indices.size() / 3, d.hasModel ? 0.f : x0, d.hasModel ? 0.f : y0,
+                         int(m.depthWrite), d.indexCount / 3u, d.hasModel ? 0.f : x0, d.hasModel ? 0.f : y0,
                          d.hasModel ? 0.f : x1, d.hasModel ? 0.f : y1, c ? c[0] : 0.f, c ? c[1] : 0.f,
-                         c ? c[2] : 0.f, c ? c[3] : 0.f, d.vertices.empty() ? 0.f : d.vertices[0].position[2],
-                         d.vertices.empty() ? 0.f : d.vertices[0].fog, d.camera, m.known ? "" : " (unknown)");
+                         c ? c[2] : 0.f, c ? c[3] : 0.f, vs ? vs[0].position[2] : 0.f,
+                         vs ? vs[0].fog : 0.f, d.camera, m.known ? "" : " (unknown)");
         }
     }
     std::vector<Id> depthsCleared;
     const size_t count = m_frameMeshes.size();
+    // Locate the last 3D draw into the scene target so Remaster SSAO composites
+    // right after 3D geometry and before 2D HUD/menus are drawn.
+    size_t last3dSceneDraw = count;
+    if (remasterEnabled() && m_depthCanSample)
+    {
+        for (size_t k = count; k-- > 0;)
+        {
+            const MeshDraw &d = m_frameMeshes[k];
+            if (d.target == m_sceneTarget && d.hasModel && d.depthTarget != 0u && d.indexCount != 0u)
+            {
+                last3dSceneDraw = k;
+                break;
+            }
+        }
+    }
+    bool ssaoApplied = false;
     size_t i = 0;
     while (i < count)
     {
@@ -730,12 +1148,29 @@ bool Renderer::drawFrame(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, 
         const bool scene = target == m_sceneTarget;
         if (!scene)
             m_meshCounts.offscreen += j - first;
+        // Small offscreen effect buffers (blur/bloom, <= 256x256, not sharing a
+        // full-size depth target) run at DQ8_GFX_EFFECT_SCALE (default 1; 0 = scene scale).
+        static const uint32_t effectScale = [] {
+            const char *v = std::getenv("DQ8_GFX_EFFECT_SCALE");
+            if (!v || !*v)
+                return 1u;
+            return static_cast<uint32_t>(std::strtoul(v, nullptr, 10));
+        }();
+        bool smallEffect = !scene && declared->second.role == TargetRole::Offscreen && gameW <= 256u && gameH <= 256u;
+        if (smallEffect && depthId != 0u)
+        {
+            const auto dt = m_targets.find(depthId);
+            if (dt == m_targets.end() || dt->second.role == TargetRole::SceneDepth || dt->second.width > 256u ||
+                dt->second.height > 256u)
+                smallEffect = false;
+        }
+        const uint32_t targetScale = (smallEffect && effectScale != 0u) ? std::min(scale, effectScale) : scale;
         SDL_GPUTexture *color = m_scene;
         uint32_t colorW = m_sceneWidth, colorH = m_sceneHeight;
         bool fresh = false;
         if (!scene)
         {
-            color = targetTexture(device, target, false, gameW * scale, gameH * scale, fresh, error);
+            color = targetTexture(device, target, false, gameW * targetScale, gameH * targetScale, targetScale, fresh, error);
             if (!color)
                 return false;
             colorW = m_gpuTargets[target].width;
@@ -750,7 +1185,7 @@ bool Renderer::drawFrame(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, 
         if (depthId != 0u)
         {
             bool depthFresh = false;
-            depthInfo.texture = targetTexture(device, depthId, true, colorW, colorH, depthFresh, error);
+            depthInfo.texture = targetTexture(device, depthId, true, colorW, colorH, targetScale, depthFresh, error);
             if (!depthInfo.texture)
                 return false;
             const bool firstUse = std::find(depthsCleared.begin(), depthsCleared.end(), depthId) == depthsCleared.end();
@@ -775,20 +1210,82 @@ bool Renderer::drawFrame(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, 
             size_t b = a + 1;
             while (b < j && !readsTarget(m_frameMeshes[b]))
                 ++b;
+            // End the pass right after the last 3D scene draw so Remaster SSAO
+            // composites onto 3D geometry before any 2D HUD/menus are drawn.
+            if (!ssaoApplied && scene && depthId != 0u && a <= last3dSceneDraw && last3dSceneDraw + 1u < b)
+                b = last3dSceneDraw + 1u;
             SDL_GPUTexture *copy = nullptr;
             if (reads)
             {
                 bool copyFresh = false;
-                copy = targetTexture(device, kFeedbackCopy, false, colorW, colorH, copyFresh, error);
+                copy = targetTexture(device, kFeedbackCopy, false, colorW, colorH, targetScale, copyFresh, error);
                 if (!copy)
                     return false;
-                SDL_GPUCopyPass *pass = SDL_BeginGPUCopyPass(commands);
-                SDL_GPUTextureLocation from{}, to{};
-                from.texture = color;
-                to.texture = copy;
-                SDL_CopyGPUTextureToTexture(pass, &from, &to, colorW, colorH, 1, false);
-                SDL_EndGPUCopyPass(pass);
-                ++m_meshCounts.copies;
+                // Copy only the texel region that draw `a` actually reads, at the
+                // same (x, y) offset in `copy` so shader UVs & gl_FragCoord stay identical.
+                const MeshDraw &fd = m_frameMeshes[a];
+                int32_t rx0 = int32_t(gameW), ry0 = int32_t(gameH), rx1 = 0, ry1 = 0;
+                bool fullCopy = fd.hasModel || fd.vertexCount == 0u;
+                if (!fullCopy && fd.material.sourceTarget == target)
+                {
+                    const float sx = fd.material.textureWidth ? float(fd.material.textureWidth) : float(colorW) / float(targetScale);
+                    const float sy = fd.material.textureHeight ? float(fd.material.textureHeight) : float(colorH) / float(targetScale);
+                    float umin = 1e9f, vmin = 1e9f, umax = -1e9f, vmax = -1e9f;
+                    const Vertex *vs = m_frameVerts.data() + fd.firstVertex;
+                    for (uint32_t k = 0; k < fd.vertexCount; ++k)
+                    {
+                        const float u = vs[k].uv[0] * sx;
+                        const float v = vs[k].uv[1] * sy;
+                        umin = std::min(umin, u);
+                        vmin = std::min(vmin, v);
+                        umax = std::max(umax, u);
+                        vmax = std::max(vmax, v);
+                    }
+                    // If repeat wrap crosses the target boundary, fall back to full copy.
+                    if ((!fd.material.clampU && (umin < 0.0f || umax > float(gameW))) ||
+                        (!fd.material.clampV && (vmin < 0.0f || vmax > float(gameH))))
+                        fullCopy = true;
+                    else
+                    {
+                        rx0 = std::min(rx0, int32_t(std::floor(umin)) - 2);
+                        ry0 = std::min(ry0, int32_t(std::floor(vmin)) - 2);
+                        rx1 = std::max(rx1, int32_t(std::ceil(umax)) + 2);
+                        ry1 = std::max(ry1, int32_t(std::ceil(vmax)) + 2);
+                    }
+                }
+                if (!fullCopy && fd.material.destinationAlphaTest >= 0)
+                {
+                    rx0 = std::min(rx0, fd.scissor.x0);
+                    ry0 = std::min(ry0, fd.scissor.y0);
+                    rx1 = std::max(rx1, fd.scissor.x1);
+                    ry1 = std::max(ry1, fd.scissor.y1);
+                }
+                uint32_t cx = 0u, cy = 0u, cw = colorW, ch = colorH;
+                if (!fullCopy)
+                {
+                    rx0 = std::clamp(rx0, 0, int32_t(gameW));
+                    ry0 = std::clamp(ry0, 0, int32_t(gameH));
+                    rx1 = std::clamp(rx1, rx0, int32_t(gameW));
+                    ry1 = std::clamp(ry1, ry0, int32_t(gameH));
+                    cx = uint32_t(rx0) * targetScale;
+                    cy = uint32_t(ry0) * targetScale;
+                    cw = std::min(uint32_t(rx1 - rx0) * targetScale, colorW - std::min(cx, colorW));
+                    ch = std::min(uint32_t(ry1 - ry0) * targetScale, colorH - std::min(cy, colorH));
+                }
+                if (cw > 0u && ch > 0u)
+                {
+                    SDL_GPUCopyPass *pass = SDL_BeginGPUCopyPass(commands);
+                    SDL_GPUTextureLocation from{}, to{};
+                    from.texture = color;
+                    from.x = cx;
+                    from.y = cy;
+                    to.texture = copy;
+                    to.x = cx;
+                    to.y = cy;
+                    SDL_CopyGPUTextureToTexture(pass, &from, &to, cw, ch, 1, false);
+                    SDL_EndGPUCopyPass(pass);
+                    ++m_meshCounts.copies;
+                }
             }
             SDL_GPURenderPass *pass =
                 SDL_BeginGPURenderPass(commands, &colorInfo, 1, depthId ? &depthInfo : nullptr);
@@ -798,12 +1295,18 @@ bool Renderer::drawFrame(SDL_GPUDevice *device, SDL_GPUCommandBuffer *commands, 
                 return false;
             }
             ++m_meshCounts.passes;
-            const SDL_GPUViewport viewport{0.0f, 0.0f, float(gameW * scale), float(gameH * scale), 0.0f, 1.0f};
+            const SDL_GPUViewport viewport{0.0f, 0.0f, float(gameW * targetScale), float(gameH * targetScale), 0.0f, 1.0f};
             SDL_SetGPUViewport(pass, &viewport);
             const GpuTarget &copied = m_gpuTargets[kFeedbackCopy]; // its texture may be the larger
-            drawMeshes(device, commands, pass, a, b, target, depthId != 0u, float(gameW), float(gameH), scale,
-                       copy, copied.width, copied.height);
+            drawMeshes(device, commands, pass, a, b, target, depthId != 0u, float(gameW), float(gameH), targetScale,
+                       scale, copy, copied.width, copied.height);
             SDL_EndGPURenderPass(pass);
+            if (!ssaoApplied && scene && depthId != 0u && depthInfo.texture &&
+                a <= last3dSceneDraw && last3dSceneDraw < b)
+            {
+                applySsao(device, commands, m_scene, depthInfo.texture, m_sceneWidth, m_sceneHeight);
+                ssaoApplied = true;
+            }
             colorInfo.load_op = SDL_GPU_LOADOP_LOAD;
             depthInfo.load_op = SDL_GPU_LOADOP_LOAD;
             a = b;
@@ -824,10 +1327,18 @@ void Renderer::releaseMeshes(SDL_GPUDevice *device)
             SDL_ReleaseGPUSampler(device, sampler);
         sampler = nullptr;
     }
+    for (SDL_GPUSampler *&sampler : m_remasterSamplers)
+    {
+        if (sampler)
+            SDL_ReleaseGPUSampler(device, sampler);
+        sampler = nullptr;
+    }
     if (m_meshVertex)
         SDL_ReleaseGPUShader(device, m_meshVertex);
     if (m_meshFragment)
         SDL_ReleaseGPUShader(device, m_meshFragment);
+    if (m_meshFragmentOpaque)
+        SDL_ReleaseGPUShader(device, m_meshFragmentOpaque);
     for (auto &[id, target] : m_gpuTargets)
         if (target.texture)
             SDL_ReleaseGPUTexture(device, target.texture);
@@ -840,7 +1351,7 @@ void Renderer::releaseMeshes(SDL_GPUDevice *device)
         SDL_ReleaseGPUBuffer(device, m_indexBuffer);
     if (m_meshTransfer)
         SDL_ReleaseGPUTransferBuffer(device, m_meshTransfer);
-    m_meshVertex = m_meshFragment = nullptr;
+    m_meshVertex = m_meshFragment = m_meshFragmentOpaque = nullptr;
     m_white = nullptr;
     m_vertexBuffer = m_indexBuffer = nullptr;
     m_meshTransfer = nullptr;

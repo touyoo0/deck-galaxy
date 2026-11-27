@@ -78,7 +78,7 @@ bugs the recompilation may have. This table is updated as the playthrough goes.
 | Chapter | Status | Settings used | Notes |
 |---|---|---|---|
 | 1 | ✅ Tested | French text, 2x, 60 fps, sharp filter, instant text, opening skipped, bag 99. English voices, no Director's Cut. | No bug found. |
-| 2 | ⏳ TBD | | |
+| 2 | ✅ Tested | Same as chapter 1. | No bug found. |
 | 3 | ⏳ TBD | | |
 | 4 | ⏳ TBD | | |
 | 5 | ⏳ TBD | | |

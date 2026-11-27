@@ -5,6 +5,16 @@ inicio las muestra en este idioma. Los títulos (`## versión - fecha`) se
 quedan como en `CHANGELOG.md`: son los que unen una versión con su
 traducción. Una versión que falte en este archivo se muestra en inglés.
 
+## 0.13.0 - 2026-11-26
+
+- Nuevo «Modo Remaster» (activado por defecto): reescalado GPU 2x de texturas (Anime4K CNN para 3D y 2xBR para 2D/interfaz), mipmaps, filtrado anisotrópico 16x, SSAO a media resolución, FXAA y nitidez adaptativa (CAS).
+- Grandes optimizaciones de rendimiento y consumo en Steam Deck: generación directa de contornos y volúmenes de sombra VU1, skinning y culling 3D SIMD (SSE/AVX2), agrupación de draw calls, compilación Zen 2 + ThinLTO y menor carga en reposo.
+- Menú de Pantalla simplificado: se eliminaron las opciones obsoletas «Filtro de escalado» e «Imagen más nítida».
+
+## 0.12.7 - 2026-11-25
+
+- 60 fps más estables y menor consumo y temperatura en Steam Deck tanto al explorar como en combate.
+
 ## 0.12.6 - 2026-11-23
 
 - Nueva opción «Saltar animaciones de hechizos»: la escena de un hechizo o ataque especial se salta sola, sin pulsar ningún botón.

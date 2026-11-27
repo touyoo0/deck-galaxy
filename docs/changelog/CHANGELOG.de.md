@@ -5,6 +5,16 @@ zeigt sie in dieser Sprache. Die Überschriften (`## Version - Datum`) bleiben
 wie in `CHANGELOG.md`: Über sie wird eine Version ihrer Übersetzung
 zugeordnet. Eine Version, die in dieser Datei fehlt, erscheint auf Englisch.
 
+## 0.13.0 - 2026-11-26
+
+- Neuer „Remaster-Modus“ (standardmäßig aktiviert): 2x-GPU-Textur-Upscaling (Anime4K CNN für 3D-Texturen und 2xBR für 2D/UI), Mipmaps, 16x anisotrope Filterung, SSAO in halber Auflösung, FXAA und kontrastadaptive Schärfung (CAS).
+- Große Leistungs- und Energieoptimierungen für das Steam Deck: direkte VU1-Kontur- und Schattenvolumen-Erzeugung, SSE/AVX2-Skinning und 3D-Culling, Draw-Call-Batching, Zen-2- und ThinLTO-Optimierungen sowie geringere Leerlauf-Last.
+- Anzeigemenü aufgeräumt: veraltete Optionen „Skalierungsfilter“ und „Schärferes Bild“ entfernt.
+
+## 0.12.7 - 2026-11-25
+
+- Stabilere 60 FPS sowie geringerer Stromverbrauch und weniger Wärme auf dem Steam Deck beim Erkunden und im Kampf.
+
 ## 0.12.6 - 2026-11-23
 
 - Neue Option „Zauberanimationen überspringen“: Die Szene eines Zaubers oder einer Spezialattacke wird von selbst übersprungen, ohne dass eine Taste gedrückt werden muss.

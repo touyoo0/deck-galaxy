@@ -42,7 +42,8 @@ GSNativeMesh::Header screenHeader()
 struct Carried
 {
     rg::gif::GifState state;
-    std::vector<rg::gif::GifEvent> queue;
+    rg::gif::GifEvent queue[3];
+    uint32_t queueCount = 0u;
     uint16_t queuePrim = 0xFFFFu;
     bool attributesFromPrim = true; // PRMODECONT AC
     uint16_t prmode = 0u;
@@ -62,6 +63,33 @@ bool enabled()
         return rg::nativeproducer::pipelineOn() && !(value && std::strcmp(value, "0") == 0);
     }();
     return on;
+}
+
+void observeRegister(uint8_t reg, uint64_t value)
+{
+    Carried &carried = t_carried;
+    if (reg == 0x1Au)
+        carried.attributesFromPrim = (value & 1u) != 0u;
+    else if (reg == 0x1Bu)
+        carried.prmode = static_cast<uint16_t>(value & 0x7F8u);
+    else if (reg == 0x01u)
+    {
+        carried.state.rgba[0] = static_cast<uint8_t>(value & 0xFFu);
+        carried.state.rgba[1] = static_cast<uint8_t>((value >> 8) & 0xFFu);
+        carried.state.rgba[2] = static_cast<uint8_t>((value >> 16) & 0xFFu);
+        carried.state.rgba[3] = static_cast<uint8_t>((value >> 24) & 0xFFu);
+    }
+    else if (reg == 0x00u)
+    {
+        carried.state.prim = static_cast<uint16_t>(value & 0x7FFu);
+        carried.queueCount = 0u;
+        carried.queuePrim = 0xFFFFu;
+    }
+}
+
+void currentRgba(uint8_t out[4])
+{
+    std::memcpy(out, t_carried.state.rgba, 4u);
 }
 
 void observe(const uint8_t *data, uint32_t size)
@@ -84,7 +112,7 @@ void observe(const uint8_t *data, uint32_t size)
             }
             // A PRIM write, or a vertex the GS queued itself: whatever strip
             // the converter had under way is not the GS's any more.
-            carried.queue.clear();
+            carried.queueCount = 0u;
             carried.queuePrim = 0xFFFFu;
         }
     });
@@ -92,23 +120,44 @@ void observe(const uint8_t *data, uint32_t size)
 
 bool build(const Span *packets, size_t count, std::vector<Piece> &out, std::string &why)
 {
-    // The last call's meshes' vertex storage, for this call's meshes: a
-    // packet's meshes would otherwise allocate and free it each time.
+    // The last call's meshes' vertex storage and register buffers, for this call:
+    // a packet's pieces would otherwise allocate and free them each time.
     thread_local std::vector<std::vector<GSNativeMesh::Vertex>> spare;
+    thread_local std::vector<std::vector<std::pair<uint8_t, uint64_t>>> spareWrites;
+    thread_local std::vector<std::vector<uint8_t>> sparePackets;
     for (Piece &old : out)
+    {
         if (old.mesh.vertices.capacity() != 0u && spare.size() < 64u)
         {
             old.mesh.vertices.clear();
             spare.push_back(std::move(old.mesh.vertices));
         }
+        if (old.writes.capacity() != 0u && spareWrites.size() < 64u)
+        {
+            old.writes.clear();
+            spareWrites.push_back(std::move(old.writes));
+        }
+        if (old.packet.capacity() != 0u && sparePackets.size() < 64u)
+        {
+            old.packet.clear();
+            sparePackets.push_back(std::move(old.packet));
+        }
+    }
     out.clear();
     Carried &carried = t_carried;
     rg::gif::GifState &state = carried.state;
-    std::vector<rg::gif::GifEvent> &queue = carried.queue;
+    rg::gif::GifEvent *queue = carried.queue;
+    uint32_t &queueCount = carried.queueCount;
     uint16_t &queuePrim = carried.queuePrim;
     thread_local std::vector<rg::gif::GifEvent> events;
-    std::vector<std::pair<uint8_t, uint64_t>> writes;
+    thread_local std::vector<std::pair<uint8_t, uint64_t>> writes;
+    writes.clear();
     Piece mesh;
+    if (!spare.empty())
+    {
+        mesh.mesh.vertices = std::move(spare.back());
+        spare.pop_back();
+    }
     uint16_t meshPrim = 0xFFFFu;
 
     const auto closeMesh = [&] {
@@ -157,7 +206,41 @@ bool build(const Span *packets, size_t count, std::vector<Piece> &out, std::stri
         {
             closeMesh();
             Piece piece;
-            piece.packet = adPacket(writes);
+            bool hasTransfer = false;
+            for (const auto &[reg, val] : writes)
+            {
+                if (reg >= 0x50u && reg <= 0x53u)
+                {
+                    hasTransfer = true;
+                    break;
+                }
+            }
+            if (hasTransfer)
+            {
+                if (!sparePackets.empty())
+                {
+                    piece.packet = std::move(sparePackets.back());
+                    sparePackets.pop_back();
+                }
+                const size_t bytes = 16u + writes.size() * 16u;
+                piece.packet.resize(bytes);
+                const uint64_t tag[2] = {static_cast<uint64_t>(writes.size()) | (1ull << 15) | (1ull << 60), 0xEull};
+                std::memcpy(piece.packet.data(), tag, sizeof(tag));
+                for (size_t i = 0; i < writes.size(); ++i)
+                {
+                    const uint64_t pair[2] = {writes[i].second, writes[i].first};
+                    std::memcpy(piece.packet.data() + 16u + i * 16u, pair, sizeof(pair));
+                }
+            }
+            else
+            {
+                if (!spareWrites.empty())
+                {
+                    piece.writes = std::move(spareWrites.back());
+                    spareWrites.pop_back();
+                }
+                piece.writes.assign(writes.begin(), writes.end());
+            }
             out.push_back(std::move(piece));
             writes.clear();
         }
@@ -223,7 +306,15 @@ bool build(const Span *packets, size_t count, std::vector<Piece> &out, std::stri
         const GSNativeMesh::Vertex v1 = vertexOf(corner[1], b, prim & ~0x08u, ok);
         const GSNativeMesh::Vertex v2 = vertexOf(corner[2], b, prim & ~0x08u, ok);
         const GSNativeMesh::Vertex v3 = vertexOf(corner[3], b, prim & ~0x08u, ok);
-        mesh.mesh.vertices.insert(mesh.mesh.vertices.end(), {v0, v1, v3, v0, v3, v2});
+        auto &verts = mesh.mesh.vertices;
+        const size_t base = verts.size();
+        verts.resize(base + 6u);
+        verts[base + 0u] = v0;
+        verts[base + 1u] = v1;
+        verts[base + 2u] = v3;
+        verts[base + 3u] = v0;
+        verts[base + 4u] = v3;
+        verts[base + 5u] = v2;
     };
 
     bool ok = true;
@@ -250,7 +341,7 @@ bool build(const Span *packets, size_t count, std::vector<Piece> &out, std::stri
                 // An upload: on as it is, in its place.
                 flushWrites();
                 closeMesh();
-                queue.clear();
+                queueCount = 0u;
                 Piece piece;
                 piece.view = packet.data + at;
                 piece.viewSize = size;
@@ -267,7 +358,7 @@ bool build(const Span *packets, size_t count, std::vector<Piece> &out, std::stri
                         carried.prmode = static_cast<uint16_t>(e.value & 0x7F8u);
                     if (e.reg == 0x00u)
                     {
-                        queue.clear();
+                        queueCount = 0u;
                         queuePrim = 0xFFFFu;
                     }
                     closeMesh();
@@ -287,7 +378,7 @@ bool build(const Span *packets, size_t count, std::vector<Piece> &out, std::stri
                 }
                 if (prim != queuePrim)
                 {
-                    queue.clear();
+                    queueCount = 0u;
                     queuePrim = prim;
                 }
                 switch (type)
@@ -305,10 +396,12 @@ bool build(const Span *packets, size_t count, std::vector<Piece> &out, std::stri
                     break;
                 case 1u: // line
                 case 2u: // line strip
-                    queue.push_back(e);
-                    if (queue.size() > 2u)
-                        queue.erase(queue.begin());
-                    if (queue.size() == 2u && e.drawing)
+                    if (queueCount == 2u)
+                        queue[0] = queue[1];
+                    else
+                        ++queueCount;
+                    queue[queueCount - 1u] = e;
+                    if (queueCount == 2u && e.drawing)
                     {
                         // Half a pixel either side of the centre line, as the
                         // backend widens the GS's lines.
@@ -316,57 +409,77 @@ bool build(const Span *packets, size_t count, std::vector<Piece> &out, std::stri
                         const float dx = (static_cast<float>(p1.x) - p0.x) / 16.0f;
                         const float dy = (static_cast<float>(p1.y) - p0.y) / 16.0f;
                         const float length = std::sqrt(dx * dx + dy * dy);
-                        const float nx = length > 1e-6f ? -dy / length * 0.5f : 0.5f;
-                        const float ny = length > 1e-6f ? dx / length * 0.5f : 0.0f;
+                        const float invLen = length > 1e-6f ? (0.5f / length) : 0.0f;
+                        const float nx = length > 1e-6f ? -dy * invLen : 0.5f;
+                        const float ny = length > 1e-6f ? dx * invLen : 0.0f;
                         openMesh(prim);
-                        GSNativeMesh::Vertex v[4] = {vertexOf(p0, p1, prim, ok), vertexOf(p0, p1, prim, ok),
-                                                     vertexOf(p1, p1, prim, ok), vertexOf(p1, p1, prim, ok)};
-                        v[0].x += nx; v[0].y += ny;
-                        v[1].x -= nx; v[1].y -= ny;
-                        v[2].x -= nx; v[2].y -= ny;
-                        v[3].x += nx; v[3].y += ny;
-                        mesh.mesh.vertices.insert(mesh.mesh.vertices.end(), {v[0], v[1], v[2], v[0], v[2], v[3]});
+                        const GSNativeMesh::Vertex base0 = vertexOf(p0, p1, prim, ok);
+                        const GSNativeMesh::Vertex base1 = vertexOf(p1, p1, prim, ok);
+                        GSNativeMesh::Vertex v0 = base0, v1 = base0, v2 = base1, v3 = base1;
+                        v0.x += nx; v0.y += ny;
+                        v1.x -= nx; v1.y -= ny;
+                        v2.x -= nx; v2.y -= ny;
+                        v3.x += nx; v3.y += ny;
+                        auto &verts = mesh.mesh.vertices;
+                        const size_t base = verts.size();
+                        verts.resize(base + 6u);
+                        verts[base + 0u] = v0;
+                        verts[base + 1u] = v1;
+                        verts[base + 2u] = v2;
+                        verts[base + 3u] = v0;
+                        verts[base + 4u] = v2;
+                        verts[base + 5u] = v3;
                         if (type == 1u)
-                            queue.clear();
+                            queueCount = 0u;
                     }
-                    else if (type == 1u && queue.size() == 2u)
+                    else if (type == 1u && queueCount == 2u)
                     {
-                        queue.clear();
+                        queueCount = 0u;
                     }
                     break;
                 case 6u: // sprite
-                    queue.push_back(e);
-                    if (queue.size() == 2u)
+                    queue[queueCount++] = e;
+                    if (queueCount == 2u)
                     {
                         if (e.drawing)
                             sprite(queue[0], queue[1], prim, ok);
-                        queue.clear();
+                        queueCount = 0u;
                     }
                     break;
                 case 3u: // triangle
-                    queue.push_back(e);
-                    if (queue.size() == 3u)
+                    queue[queueCount++] = e;
+                    if (queueCount == 3u)
                     {
                         if (e.drawing)
                             triangle(queue[0], queue[1], queue[2], prim, ok);
-                        queue.clear();
+                        queueCount = 0u;
                     }
                     break;
                 case 4u: // strip
-                    queue.push_back(e);
-                    if (queue.size() > 3u)
-                        queue.erase(queue.begin());
-                    if (queue.size() == 3u && e.drawing)
+                    if (queueCount == 3u)
+                    {
+                        queue[0] = queue[1];
+                        queue[1] = queue[2];
+                        queue[2] = e;
+                    }
+                    else
+                    {
+                        queue[queueCount++] = e;
+                    }
+                    if (queueCount == 3u && e.drawing)
                         triangle(queue[0], queue[1], queue[2], prim, ok);
                     break;
                 case 5u: // fan
-                    if (queue.size() == 3u)
+                    if (queueCount == 3u)
                     {
                         queue[1] = queue[2];
-                        queue.pop_back();
+                        queue[2] = e;
                     }
-                    queue.push_back(e);
-                    if (queue.size() == 3u && e.drawing)
+                    else
+                    {
+                        queue[queueCount++] = e;
+                    }
+                    if (queueCount == 3u && e.drawing)
                         triangle(queue[0], queue[1], queue[2], prim, ok);
                     break;
                 default:

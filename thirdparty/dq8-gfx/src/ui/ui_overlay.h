@@ -100,6 +100,59 @@ struct TravelList {
     std::vector<std::string> names;
 };
 
+// Live bestiary data read from the running game's memory (Rogue Galaxy: added):
+// monsters with their possible drops, and droppable items with which monsters
+// drop them.
+struct BestiaryDrop {
+    std::string itemName;
+    int iconId = -1;
+    int ratePercent = 0;
+};
+struct BestiaryMonster {
+    std::string name;
+    std::string modelName;
+    int defeated = 0;
+    std::vector<BestiaryDrop> drops;
+};
+struct BestiaryItemSource {
+    std::string monsterName;
+    std::string modelName;
+    int ratePercent = 0;
+    int monsterDefeated = 0;
+};
+struct BestiaryItem {
+    std::string name;
+    int iconId = -1;
+    std::vector<BestiaryItemSource> sources;
+};
+struct BestiaryWeapon {
+    std::string name;
+    int iconId = -1;
+    int charaIndex = -1;
+    bool subWeapon = false;
+    int attack = 0;
+};
+struct BestiaryFusion {
+    int inputA = -1;
+    int inputB = -1;
+    int output = -1;
+    int charaIndex = -1;
+    bool subWeapon = false;
+    bool bonus = false;
+};
+struct BestiaryData {
+    bool ready = false;
+    std::vector<BestiaryMonster> monsters;
+    std::vector<BestiaryItem> items;
+    std::vector<BestiaryWeapon> weapons;
+    std::vector<BestiaryFusion> fusions;
+};
+struct BestiaryAtlas {
+    int width = 0;
+    int height = 0;
+    std::vector<uint8_t> rgba;
+};
+
 struct HostServices {
     std::string version;
     // The commit it was built from, beside the version in the About window
@@ -193,12 +246,23 @@ struct HostServices {
     // dark corners): how far along it is, 0 to 1, or below 0 when there is none
     // (Rogue Galaxy: added). Empty when the host has none.
     std::function<float()> screenBurst;
+    // Live bestiary: monsters with drops, and items with the monsters that drop
+    // them. Empty when the host has none (Rogue Galaxy: added).
+    std::function<BestiaryData()> bestiary;
+    std::function<BestiaryAtlas()> bestiaryIcons;
+    std::function<BestiaryAtlas(const std::string &modelName)> bestiaryMonsterIcon;
+    std::function<BestiaryAtlas()> bestiaryPortraits;
 };
 
-// Game: Rogue Galaxy's own switches (added).
+// Game: Rogue Galaxy's own switches/cheats (added).
 // Language: the options a host puts there (GameOption::page),
 // apart from Game's (Rogue Galaxy: added).
-enum class SettingsPage : uint8_t { Saves, Actions, Display, Sound, Controls, Game, Language, Achievements, Interface, Help, Count };
+enum class SettingsPage : uint8_t {
+    Saves, Actions, Bestiary, Game, Achievements,
+    Display, Sound, Controls, Interface, Language,
+    Help,
+    Count
+};
 
 class Overlay final : public gfx::SdlGpuOverlay {
 public:
@@ -336,6 +400,7 @@ private:
     bool pageShown(SettingsPage page) const;
     void drawSavesPage();
     void drawActionsPage();
+    void drawBestiaryPage();
     void drawHelpPage();
     void drawDisplayPage();
     void drawSoundPage();
@@ -413,6 +478,8 @@ private:
     bool m_settingsOpen = false;
     bool m_focusSettings = false;
     SettingsPage m_page = SettingsPage::Saves;
+    int m_openNavGroup = 0;
+    SettingsPage m_lastNavPage = SettingsPage::Count;
     bool m_aboutOpen = false;
     bool m_shortcutsOpen = false;
     bool m_achievementsLockedOnly = false;
@@ -420,6 +487,28 @@ private:
     bool m_achievementsSignedInKnown = false;
     char m_raUser[64] = {};
     char m_raPassword[128] = {};
+    int m_bestiaryTab = 0;
+    int m_bestiaryChara = 0; // 0 = All, 1..8 = Jaster..Deego
+    int m_bestiaryWeaponKind = 0; // 0 = All, 1 = Main, 2 = Sub
+    int m_bestiaryFusionInput = -1;  // -1 = Any, else index in m_bestiaryCache.weapons
+    int m_bestiaryFusionOutput = -1; // -1 = Any, else index in m_bestiaryCache.weapons
+    bool m_bestiaryDefeatedOnly = false;
+    char m_bestiarySearch[64] = {};
+    BestiaryData m_bestiaryCache;
+    double m_bestiaryAt = -1.0;
+    bool m_bestiaryAtlasTried = false;
+    bool m_bestiaryAtlasReady = false;
+    ImTextureRef m_bestiaryAtlasTex{};
+    ImVec2 m_bestiaryAtlasSize{};
+    bool m_bestiaryPortraitsTried = false;
+    bool m_bestiaryPortraitsReady = false;
+    ImTextureRef m_bestiaryPortraitsTex{};
+    ImVec2 m_bestiaryPortraitsSize{};
+    struct MonsterIconCache {
+        bool ready = false;
+        ImTextureRef tex{};
+    };
+    std::map<std::string, MonsterIconCache> m_bestiaryMonsterIcons;
     bool m_statsOpen = false;
     // RG_UI_SCRIPT's "icons": every icon on screen, for a screenshot.
     bool m_iconSheet = false;

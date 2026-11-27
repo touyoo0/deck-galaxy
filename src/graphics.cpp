@@ -18,6 +18,7 @@
 #include "flip_pacing.h"
 #include "gs_tripwire.h"
 #include "battle_rates.h"
+#include "bestiary.h"
 #include "button_glyphs.h"
 #include "self_update.h"
 #include "update_check.h"
@@ -34,6 +35,7 @@
 #include "fast_travel.h"
 #include "map_chests.h"
 #include "native_renderer.h"
+#include "remaster.h"
 #include "loading_screen.h"
 #include "opening.h"
 #include "quick_scenes.h"
@@ -432,6 +434,8 @@ void applyGameOption(const std::string &key, bool on)
         rg::cameraview::setFasterTurn(on);
     else if (key == "fast_transporter")
         rg::quickscenes::setFastTransporter(on);
+    else if (key == "remaster_mode")
+        rg::remaster::setEnabled(on);
 }
 
 void applyGameNumber(const std::string &key, int value)
@@ -730,21 +734,32 @@ bool pump(void *userData)
     // In the game's menus the right click and Esc (on Triangle) go back and
     // the wheel moves up and down; in play Esc opens the menu. Before the
     // events are read.
-    backend->padInput().setInMenus(g_runtime != nullptr &&
-                                     rg::mousecamera::inGameMenu(g_runtime->memory().getRDRAM()));
+    static uint64_t lastHousekeepingFlip = ~0ull;
+    static auto lastHousekeepingAt = std::chrono::steady_clock::time_point{};
+    const uint64_t currentFlips = rg::graphics::guestFlips();
+    const auto pumpNow = std::chrono::steady_clock::now();
+    const bool doHousekeeping =
+        currentFlips != lastHousekeepingFlip || (pumpNow - lastHousekeepingAt) >= std::chrono::milliseconds(16);
+    if (doHousekeeping)
+    {
+        lastHousekeepingFlip = currentFlips;
+        lastHousekeepingAt = pumpNow;
+        backend->padInput().setInMenus(g_runtime != nullptr &&
+                                         rg::mousecamera::inGameMenu(g_runtime->memory().getRDRAM()));
+    }
     if (!backend->pumpEvents())
     {
         // Quitting: a slot still being written is waited for.
         rg::savestate::flush();
         return false;
     }
+    if (doHousekeeping)
     {
         const dq8::gfx::SdlPadInput &pad = backend->padInput();
         rg::mousecamera::pump(backend->window(),
                               (g_menu && g_menu->capturesInput()) || g_hostPaused.load(std::memory_order_relaxed),
                               {pad.keyboardMouseAt(), pad.mouseMotionAt(), pad.controllerAt()});
-    }
-    updateButtonGlyphs(*backend);
+        updateButtonGlyphs(*backend);
     // F9 writes "[mark] N s" to the log: pressed when a drop is felt, it
     // puts the moment next to the [gfx] lines of that second.
     static const auto markStart = std::chrono::steady_clock::now();
@@ -843,6 +858,7 @@ bool pump(void *userData)
                            10.0);
         }
     }
+    } // if (doHousekeeping)
     uint32_t held = 0u, pressed = 0u, sticks = 0u;
     backend->hostPadState(held, pressed, sticks);
     sticks = rg::pad::shapeSticks(sticks);
@@ -1049,6 +1065,10 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
     // Numbers against the game's own (100) show as multipliers, 1.0x.
     constexpr const char *kTimes = dq8::ui::kMultiplierFormat;
     host.gameOptions = {
+        {"remaster_mode", "Remaster mode",
+         "Modernizes the native renderer with mipmaps, 16x anisotropic filtering, smooth palette textures and "
+         "contrast-adaptive sharpening, while keeping low GPU power draw on Steam Deck.",
+         true, 0, 0, 0, "", 1, true, false, "display"},
         {"sixty_fps", "60 frames per second",
          "The game runs at 60 frames a second instead of its own 30, its logic still at the PS2's pace; movies "
          "and the loading screen keep 30. Takes effect the next time the game starts.",
@@ -1244,6 +1264,73 @@ std::unique_ptr<dq8::ui::Overlay> createMenu(PS2Runtime &runtime, dq8::gfx::SdlG
         return home;
     };
     host.startUpdate = [] { rg::selfupdate::start(); };
+    host.bestiary = [&runtime] {
+        const rg::bestiary::Snapshot snap = rg::bestiary::read(runtime.memory().getRDRAM());
+        dq8::ui::BestiaryData out;
+        out.ready = snap.ready;
+        out.monsters.reserve(snap.monsters.size());
+        for (const rg::bestiary::Monster &m : snap.monsters)
+        {
+            dq8::ui::BestiaryMonster entry;
+            entry.name = m.name;
+            entry.modelName = m.modelName;
+            entry.defeated = m.defeated;
+            entry.drops.reserve(m.drops.size());
+            for (const rg::bestiary::Drop &d : m.drops)
+            {
+                entry.drops.push_back({d.itemName, d.iconId, d.ratePercent});
+            }
+            out.monsters.push_back(std::move(entry));
+        }
+        out.items.reserve(snap.items.size());
+        for (const rg::bestiary::Item &item : snap.items)
+        {
+            dq8::ui::BestiaryItem entry;
+            entry.name = item.name;
+            entry.iconId = item.iconId;
+            entry.sources.reserve(item.sources.size());
+            for (const rg::bestiary::ItemSource &s : item.sources)
+            {
+                entry.sources.push_back({s.monsterName, s.modelName, s.ratePercent, s.monsterDefeated});
+            }
+            out.items.push_back(std::move(entry));
+        }
+        out.weapons.reserve(snap.weapons.size());
+        for (const rg::bestiary::Weapon &w : snap.weapons)
+        {
+            out.weapons.push_back({w.name, w.iconId, w.charaIndex, w.subWeapon, w.attack});
+        }
+        out.fusions.reserve(snap.fusions.size());
+        for (const rg::bestiary::Fusion &f : snap.fusions)
+        {
+            out.fusions.push_back({f.inputA, f.inputB, f.output, f.charaIndex, f.subWeapon, f.bonus});
+        }
+        return out;
+    };
+    host.bestiaryIcons = [] {
+        rg::bestiary::IconAtlas atlas = rg::bestiary::loadIconAtlas();
+        dq8::ui::BestiaryAtlas out;
+        out.width = atlas.width;
+        out.height = atlas.height;
+        out.rgba = std::move(atlas.rgba);
+        return out;
+    };
+    host.bestiaryMonsterIcon = [](const std::string &modelName) {
+        rg::bestiary::IconAtlas atlas = rg::bestiary::renderMonsterIcon(modelName);
+        dq8::ui::BestiaryAtlas out;
+        out.width = atlas.width;
+        out.height = atlas.height;
+        out.rgba = std::move(atlas.rgba);
+        return out;
+    };
+    host.bestiaryPortraits = [] {
+        rg::bestiary::IconAtlas atlas = rg::bestiary::loadCharaPortraits();
+        dq8::ui::BestiaryAtlas out;
+        out.width = atlas.width;
+        out.height = atlas.height;
+        out.rgba = std::move(atlas.rgba);
+        return out;
+    };
     auto menu = std::make_unique<dq8::ui::Overlay>(backend, std::move(settings), settingsPath, std::move(host));
     std::string error;
     if (!menu->initialize(backend.window(), backend.windowTextureFormat(), error))

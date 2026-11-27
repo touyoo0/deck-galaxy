@@ -12,6 +12,7 @@
 #include <imgui_internal.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
@@ -25,12 +26,33 @@ namespace {
 using gfx::PadInput;
 
 constexpr const char *kTimes = "\xC3\x97"; // U+00D7, spelled out for compilers without /utf-8
-constexpr const char *kPageNames[] = {"Save states", "Actions", "Display",      "Sound",     "Controls", "Game",
-                                      "Language", "Achievements", "Interface", "Help"};
-constexpr Icon kPageIcons[] = {Icon::Disc, Icon::Play, Icon::Display, Icon::Sound,     Icon::Controls, Icon::Disc,
-                               Icon::Info, Icon::Check,   Icon::Interface, Icon::Link};
+constexpr const char *kPageNames[] = {"Saves", "Actions", "Bestiary", "Cheats", "Achievements",
+                                      "Display", "Sound", "Controls", "Interface", "Language",
+                                      "Help"};
+constexpr Icon kPageIcons[] = {Icon::Disc, Icon::Play, Icon::Folder, Icon::Disc, Icon::Check,
+                               Icon::Display, Icon::Sound, Icon::Controls, Icon::Interface, Icon::Info,
+                               Icon::Link};
 static_assert(sizeof(kPageNames) / sizeof(kPageNames[0]) == static_cast<size_t>(SettingsPage::Count));
 static_assert(sizeof(kPageIcons) / sizeof(kPageIcons[0]) == static_cast<size_t>(SettingsPage::Count));
+
+int navGroupOf(SettingsPage page) {
+    switch (page) {
+    case SettingsPage::Saves:
+    case SettingsPage::Actions:
+    case SettingsPage::Bestiary:
+    case SettingsPage::Game:
+    case SettingsPage::Achievements:
+        return 0; // Game
+    case SettingsPage::Display:
+    case SettingsPage::Sound:
+    case SettingsPage::Controls:
+    case SettingsPage::Interface:
+    case SettingsPage::Language:
+        return 1; // Settings
+    default:
+        return 2; // System
+    }
+}
 constexpr const char *kProjectUrl = "https://github.com/victor-takai/rogue-galaxy-recomp";
 constexpr const char *kIssuesUrl = "https://github.com/victor-takai/rogue-galaxy-recomp/issues";
 
@@ -188,44 +210,98 @@ void Overlay::drawSettingsWindow() {
                                    ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
                                    ImGuiWindowFlags_NoScrollWithMouse;
     if (beginWindow("Settings##dq8", nullptr, flags)) {
-        dialogHeader(Icon::Gear, "Settings", &m_settingsOpen);
+        dialogHeader(Icon::Gear, "Menu", &m_settingsOpen);
         // The controller's buttons along the bottom edge while one is in use.
         const float hints = padInUse() ? ImGui::GetFrameHeight() + em(1.2f) : 0.0f;
         const int count = static_cast<int>(SettingsPage::Count);
 
-        // The page list and the page are apart for keyboard and controller:
-        // the cursor stays in one until Right or A takes it into the page, and
-        // Left at the page's edge or Back brings it out. Moving along the
-        // list shows each page.
-        const float navWidth = em(12.0f);
+        if (m_page != m_lastNavPage) {
+            m_openNavGroup = navGroupOf(m_page);
+            m_lastNavPage = m_page;
+        }
+
+        // Two-level navigation on the left: three main groups (Game, Settings,
+        // System), each expanding its sub-pages below.
+        const float navWidth = em(12.2f);
         ImGui::BeginChild("##nav", ImVec2(navWidth, -hints), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
         m_listPane = ImGui::GetCurrentWindow();
         const bool inList = g.NavWindow == m_listPane;
         const bool follow = inList && g.NavCursorVisible && !m_focusList;
-        for (int page = 0; page < count; ++page) {
-            const auto which = static_cast<SettingsPage>(page);
-            if (!pageShown(which))
-                continue;
-            if (navItem(kPageNames[page], kPageIcons[page], m_page == which)) {
-                m_page = which;
-                // Chosen with A or Enter rather than a click: on into it.
-                if (g.NavCursorVisible)
-                    m_focusPage = true;
-            } else if (follow && m_page != which && ImGui::IsItemFocused()) {
-                m_page = which;
+
+        struct GroupDef {
+            const char *label;
+            Icon icon;
+            int id;
+        };
+        static constexpr GroupDef kGroups[] = {
+            {"Game", Icon::Play, 0},
+            {"Settings", Icon::Gear, 1},
+            {"System", Icon::Info, 2},
+        };
+        bool expandFocusedGroup = false;
+        int focusedGroupId = -1;
+
+        for (const GroupDef &group : kGroups) {
+            const bool isOpen = (m_openNavGroup == group.id);
+            const bool isActive = (navGroupOf(m_page) == group.id);
+            if (group.id != 0)
+                ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
+            if (navGroup(group.label, group.icon, isOpen, isActive)) {
+                m_openNavGroup = group.id;
+                if (!isActive) {
+                    for (int page = 0; page < count; ++page) {
+                        const auto which = static_cast<SettingsPage>(page);
+                        if (navGroupOf(which) == group.id && pageShown(which)) {
+                            m_page = which;
+                            m_lastNavPage = which;
+                            break;
+                        }
+                    }
+                }
             }
-            if (m_focusList && m_page == which) {
-                ImGui::FocusItem();
-                if (padInUse())
-                    ImGui::SetNavCursorVisible(true);
-                m_focusList = false;
+            if (ImGui::IsItemFocused()) {
+                focusedGroupId = group.id;
+                if (!isOpen && (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight, false) ||
+                                ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))) {
+                    expandFocusedGroup = true;
+                }
+            }
+            if (!isOpen)
+                continue;
+
+            for (int page = 0; page < count; ++page) {
+                const auto which = static_cast<SettingsPage>(page);
+                if (navGroupOf(which) != group.id || !pageShown(which))
+                    continue;
+                if (navItem(kPageNames[page], kPageIcons[page], m_page == which, true)) {
+                    m_page = which;
+                    m_lastNavPage = which;
+                    // Chosen with A or Enter rather than a click: on into it.
+                    if (g.NavCursorVisible)
+                        m_focusPage = true;
+                } else if (follow && m_page != which && ImGui::IsItemFocused()) {
+                    m_page = which;
+                    m_lastNavPage = which;
+                }
+                if (m_focusList && m_page == which) {
+                    ImGui::FocusItem();
+                    if (padInUse())
+                        ImGui::SetNavCursorVisible(true);
+                    m_focusList = false;
+                }
+            }
+            if (group.id == 2) {
+                // A way out for a player with only a controller, asked first.
+                if (navItem("Quit game", Icon::Close, false, true))
+                    m_quitAsk = true;
             }
         }
-        // A way out for a player with only a controller, asked first.
-        if (navItem("Quit game", Icon::Close, false))
-            m_quitAsk = true;
-        if (inList && !m_focusPage &&
-            (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight, false) || ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))) {
+        if (expandFocusedGroup && focusedGroupId >= 0) {
+            ImGui::NavMoveRequestCancel();
+            m_openNavGroup = focusedGroupId;
+        } else if (inList && !m_focusPage &&
+                   (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight, false) ||
+                    ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))) {
             // Nothing lies right of the list in it; the request would only
             // find the page's items once the page has the focus.
             ImGui::NavMoveRequestCancel();
@@ -266,6 +342,7 @@ void Overlay::drawSettingsWindow() {
         switch (m_page) {
         case SettingsPage::Saves: drawSavesPage(); break;
         case SettingsPage::Actions: drawActionsPage(); break;
+        case SettingsPage::Bestiary: drawBestiaryPage(); break;
         case SettingsPage::Display: drawDisplayPage(); break;
         case SettingsPage::Sound: drawSoundPage(); break;
         case SettingsPage::Controls: drawControlsPage(); break;
@@ -377,6 +454,8 @@ void Overlay::drawPadHints(float height) {
 bool Overlay::pageShown(SettingsPage page) const {
     if (page == SettingsPage::Saves)
         return !m_homeOpen && static_cast<bool>(m_host.saveSlots);
+    if (page == SettingsPage::Bestiary)
+        return !m_homeOpen && static_cast<bool>(m_host.bestiary);
     return page != SettingsPage::Actions || !m_homeOpen;
 }
 
@@ -574,23 +653,6 @@ void Overlay::drawDisplayPage() {
                     requestScale(scale);
             }
             ImGui::EndCombo();
-        }
-
-        static constexpr const char *kFilterHelp[] = {"Crisp pixels with no uneven columns, at any size.",
-                                                      "Soft, smooth scaling."};
-        settingRow("Scaling filter", kFilterHelp[std::min(static_cast<int>(m_settings.display.filter), 1)]);
-        static constexpr const char *kFilters[] = {"Sharp", "Smooth"};
-        int filter = std::min(static_cast<int>(m_settings.display.filter), 1);
-        if (segmented("filter", &filter, kFilters, 2)) {
-            m_settings.display.filter = static_cast<gfx::SdlGpuFilter>(filter);
-            m_backend.setDisplayOptions(m_settings.display);
-            markDirty();
-        }
-
-        settingRow("Sharper picture", "Drops the PS2's line blending, a deflicker for TVs that only blurs on a monitor.");
-        if (toggle("sharper", &m_settings.display.removeLineBlend)) {
-            m_backend.setDisplayOptions(m_settings.display);
-            markDirty();
         }
         endSettings();
     }
@@ -830,7 +892,8 @@ void Overlay::drawControlsPage() {
     sectionHeader("Buttons");
     {
         const float width = ImGui::GetContentRegionAvail().x;
-        const ImVec2 size(std::min(width * 0.64f, em(21.0f)), std::min(width * 0.64f, em(21.0f)) * 0.43f);
+        const float deckW = std::min(width * 0.68f, em(23.5f));
+        const ImVec2 size(deckW, deckW * (180.0f / 440.0f));
         const ImVec2 at = ImGui::GetCursorScreenPos();
         ImGui::Dummy(size);
         drawPadDiagram(ImGui::GetWindowDrawList(), at, size, m_backend.padInput().preview(), m_hoveredInput);
@@ -1311,6 +1374,703 @@ void Overlay::drawAchievementsPage() {
         ImGui::EndGroup();
         ImGui::SetCursorScreenPos(after);
         ImGui::PopID();
+    }
+}
+
+void Overlay::drawBestiaryPage() {
+    if (!m_host.bestiary)
+        return;
+
+    if (!m_bestiaryAtlasTried && m_host.bestiaryIcons) {
+        m_bestiaryAtlasTried = true;
+        const BestiaryAtlas atlas = m_host.bestiaryIcons();
+        if (atlas.width > 0 && atlas.height > 0 && !atlas.rgba.empty())
+            m_bestiaryAtlasReady = rgbaTexture("bestiary_icons", atlas.width, atlas.height, atlas.rgba.data(),
+                                               m_bestiaryAtlasTex, m_bestiaryAtlasSize);
+    }
+    if (!m_bestiaryPortraitsTried && m_host.bestiaryPortraits) {
+        m_bestiaryPortraitsTried = true;
+        const BestiaryAtlas atlas = m_host.bestiaryPortraits();
+        if (atlas.width > 0 && atlas.height > 0 && !atlas.rgba.empty())
+            m_bestiaryPortraitsReady = rgbaTexture("bestiary_portraits", atlas.width, atlas.height, atlas.rgba.data(),
+                                                   m_bestiaryPortraitsTex, m_bestiaryPortraitsSize);
+    }
+
+    const double t = now();
+    if (m_bestiaryAt < 0.0 || t - m_bestiaryAt > 0.5) {
+        m_bestiaryCache = m_host.bestiary();
+        m_bestiaryAt = t;
+    }
+
+    const ImVec4 muted = ImGui::ColorConvertU32ToFloat4(palette::kTextMuted);
+
+    if (!m_bestiaryCache.ready) {
+        ImGui::Dummy(ImVec2(0.0f, em(0.4f)));
+        ImGui::PushTextWrapPos(0.0f);
+        mutedText("%s", L("Start or load a game to view the bestiary."));
+        ImGui::PopTextWrapPos();
+        return;
+    }
+
+    static constexpr const char *kTabs[] = {"Monsters", "Items", "Weapons", "Fusion"};
+    ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
+    segmented("bestiary_tab", &m_bestiaryTab, kTabs, 4);
+    ImGui::Dummy(ImVec2(0.0f, em(0.3f)));
+
+    static constexpr const char *kCharaNames[] = {
+        "Jaster", "Kisala", "Zegram", "Lilika", "Steve", "Simon", "Jupis", "Deego",
+    };
+    // Horizontal offset (u) of each 54x64 portrait in Pty_01 (512x64):
+    // Jaster, Kisala, Zegram, Lilika, Steve, Simon, Jupis, Deego.
+    static constexpr float kPortraitU[8] = {0.0f, 162.0f, 378.0f, 270.0f, 216.0f, 108.0f, 324.0f, 54.0f};
+    const auto drawCharaPortrait = [&](ImDrawList *dl, int charaIndex, ImVec2 pos, float h) -> float {
+        if (!m_bestiaryPortraitsReady || charaIndex < 0 || charaIndex >= 8 || m_bestiaryPortraitsSize.x <= 0.0f ||
+            m_bestiaryPortraitsSize.y <= 0.0f)
+            return 0.0f;
+        const float w = std::floor(h * (54.0f / 64.0f));
+        const ImVec2 uv0(kPortraitU[charaIndex] / m_bestiaryPortraitsSize.x, 0.0f);
+        const ImVec2 uv1((kPortraitU[charaIndex] + 54.0f) / m_bestiaryPortraitsSize.x,
+                         64.0f / m_bestiaryPortraitsSize.y);
+        dl->AddImage(m_bestiaryPortraitsTex, pos, ImVec2(pos.x + w, pos.y + h), uv0, uv1);
+        return w;
+    };
+    if (m_bestiaryTab == 2 || m_bestiaryTab == 3) {
+        const float comboW = em(11.5f);
+        const float kindW = em(9.0f);
+        ImGui::SetNextItemWidth(std::max(em(8.0f), ImGui::GetContentRegionAvail().x - comboW - kindW - em(1.2f)));
+        ImGui::InputTextWithHint("##bestiary-search", L("Search..."), m_bestiarySearch, sizeof m_bestiarySearch);
+        ImGui::SameLine(0.0f, em(0.6f));
+        ImGui::SetNextItemWidth(comboW);
+        const char *preview = m_bestiaryChara == 0 ? L("All characters") : kCharaNames[m_bestiaryChara - 1];
+        if (beginCombo("##bestiary-chara", preview)) {
+            if (ImGui::Selectable(L("All characters"), m_bestiaryChara == 0))
+                m_bestiaryChara = 0;
+            const float faceH = std::floor(em(1.45f));
+            for (int c = 0; c < 8; ++c) {
+                ImGui::PushID(c);
+                const ImVec2 pos = ImGui::GetCursorScreenPos();
+                if (ImGui::Selectable("##chara", m_bestiaryChara == c + 1, 0, ImVec2(0.0f, faceH)))
+                    m_bestiaryChara = c + 1;
+                ImDrawList *cdl = ImGui::GetWindowDrawList();
+                const float fw = drawCharaPortrait(cdl, c, pos, faceH);
+                const float textY = pos.y + std::floor((faceH - ImGui::GetTextLineHeight()) * 0.5f);
+                cdl->AddText(ImVec2(pos.x + (fw > 0.0f ? fw + em(0.45f) : em(0.2f)), textY),
+                             ImGui::GetColorU32(ImGuiCol_Text), kCharaNames[c]);
+                ImGui::PopID();
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine(0.0f, em(0.6f));
+        ImGui::SetNextItemWidth(kindW);
+        static constexpr const char *kKindLabels[] = {"All types", "Main", "Sub"};
+        if (beginCombo("##bestiary-kind", L(kKindLabels[m_bestiaryWeaponKind]))) {
+            for (int k = 0; k < 3; ++k) {
+                if (ImGui::Selectable(L(kKindLabels[k]), m_bestiaryWeaponKind == k))
+                    m_bestiaryWeaponKind = k;
+            }
+            ImGui::EndCombo();
+        }
+    } else {
+        ImGui::SetNextItemWidth(std::max(em(12.0f), ImGui::GetContentRegionAvail().x - em(11.5f)));
+        ImGui::InputTextWithHint("##bestiary-search", L("Search..."), m_bestiarySearch, sizeof m_bestiarySearch);
+        ImGui::SameLine(0.0f, em(0.6f));
+        ImGui::Checkbox(L("Defeated only"), &m_bestiaryDefeatedOnly);
+    }
+
+    std::string needle;
+    for (const char *p = m_bestiarySearch; *p; ++p)
+        needle.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(*p))));
+    const auto matches = [&](const std::string &haystack) {
+        if (needle.empty())
+            return true;
+        std::string lower;
+        lower.reserve(haystack.size());
+        for (char c : haystack)
+            lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        return lower.find(needle) != std::string::npos;
+    };
+
+    const ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                                       ImGuiTableFlags_PadOuterX | ImGuiTableFlags_SizingStretchProp;
+    const float iconSize = std::floor(em(1.3f));
+    const float lineH = ImGui::GetTextLineHeight();
+    const float cellRowH = std::max(lineH, iconSize) + em(0.22f);
+    const float colGap = em(0.9f);
+    const ImU32 textCol = ImGui::GetColorU32(ImGuiCol_Text);
+
+    // Draws `text` inside `[pos.x, pos.x + maxW]`, scrolling smoothly back and
+    // forth if the text is wider than `maxW`.
+    const auto drawMarquee = [&](ImDrawList *dl, ImVec2 pos, float maxW, ImU32 col, const char *text) {
+        if (maxW <= 1.0f)
+            return;
+        const float textW = ImGui::CalcTextSize(text).x;
+        if (textW <= maxW) {
+            dl->AddText(pos, col, text);
+            return;
+        }
+        const float overflow = textW - maxW;
+        const float speed = std::max(16.0f, em(2.2f));
+        const double pause = 1.2;
+        const double travel = static_cast<double>(overflow) / static_cast<double>(speed);
+        const double cycle = 2.0 * (pause + travel);
+        const double phase = std::fmod(t, cycle);
+        float offset = 0.0f;
+        if (phase < pause)
+            offset = 0.0f;
+        else if (phase < pause + travel)
+            offset = static_cast<float>((phase - pause) * speed);
+        else if (phase < 2.0 * pause + travel)
+            offset = overflow;
+        else
+            offset = overflow - static_cast<float>((phase - 2.0 * pause - travel) * speed);
+        dl->PushClipRect(ImVec2(pos.x, pos.y - 1.0f), ImVec2(pos.x + maxW, pos.y + lineH + 2.0f), true);
+        dl->AddText(ImVec2(pos.x - std::floor(offset), pos.y), col, text);
+        dl->PopClipRect();
+    };
+
+    const auto drawIconAt = [&](ImDrawList *dl, int iconId, ImVec2 pos, float px) -> bool {
+        if (!m_bestiaryAtlasReady || iconId < 0 || m_bestiaryAtlasSize.x <= 0.0f || m_bestiaryAtlasSize.y <= 0.0f)
+            return false;
+        const int group = iconId / 1000;
+        const int page = (iconId % 1000) / 100;
+        int idx = (iconId % 100) - 1;
+        if (idx < 0 || idx >= 65)
+            idx = 0;
+        int sheetX = 0, sheetY = 0;
+        if (group == 1) {
+            const int p = (page >= 1 && page < 10) ? (page - 1) : 0;
+            sheetX = (p & 3) * 256;
+            sheetY = ((p >> 2) + 1) * 256;
+        } else if (group == 2) {
+            const int p = (page >= 1 && page < 6) ? (page - 1) : 0;
+            sheetX = p * 256;
+            sheetY = 0;
+        } else if (group == 3) {
+            const int p = (page >= 1 && page < 6) ? (page - 1) : 0;
+            sheetX = p * 256;
+            sheetY = 768;
+        } else {
+            return false;
+        }
+        const int cell = (iconId == 0x8FD) ? 40 : 32;
+        const int u = sheetX + (idx & 7) * cell;
+        const int v = sheetY + ((idx >> 3) & 7) * cell;
+        if (u + cell > static_cast<int>(m_bestiaryAtlasSize.x) || v + cell > static_cast<int>(m_bestiaryAtlasSize.y))
+            return false;
+        const ImVec2 uv0(static_cast<float>(u) / m_bestiaryAtlasSize.x, static_cast<float>(v) / m_bestiaryAtlasSize.y);
+        const ImVec2 uv1(static_cast<float>(u + cell) / m_bestiaryAtlasSize.x,
+                         static_cast<float>(v + cell) / m_bestiaryAtlasSize.y);
+        dl->AddImage(m_bestiaryAtlasTex, pos, ImVec2(pos.x + px, pos.y + px), uv0, uv1);
+        return true;
+    };
+
+    int monsterRendersThisFrame = 0;
+    const auto drawMonsterIconAt = [&](ImDrawList *dl, const std::string &modelName, ImVec2 pos, float px) -> bool {
+        if (modelName.empty() || !m_host.bestiaryMonsterIcon)
+            return false;
+        const ImVec2 maxPos(pos.x + px, pos.y + px);
+        if (!ImGui::IsRectVisible(pos, maxPos))
+            return true; // reserve space without rendering off-screen models
+        auto it = m_bestiaryMonsterIcons.find(modelName);
+        if (it == m_bestiaryMonsterIcons.end()) {
+            if (monsterRendersThisFrame >= 4)
+                return true;
+            ++monsterRendersThisFrame;
+            MonsterIconCache entry;
+            const BestiaryAtlas atlas = m_host.bestiaryMonsterIcon(modelName);
+            if (atlas.width > 0 && atlas.height > 0 && !atlas.rgba.empty()) {
+                ImVec2 sz{};
+                const std::string texKey = "bestiary_mon_" + modelName;
+                entry.ready =
+                    rgbaTexture(texKey.c_str(), atlas.width, atlas.height, atlas.rgba.data(), entry.tex, sz);
+            }
+            it = m_bestiaryMonsterIcons.emplace(modelName, entry).first;
+        }
+        if (it->second.ready) {
+            dl->AddImage(it->second.tex, pos, maxPos);
+            return true;
+        }
+        return false;
+    };
+
+    if (m_bestiaryTab == 0) {
+        size_t defeatedCount = 0;
+        for (const BestiaryMonster &m : m_bestiaryCache.monsters)
+            if (m.defeated > 0)
+                ++defeatedCount;
+        mutedText(L("%zu monsters (%zu defeated)"), m_bestiaryCache.monsters.size(), defeatedCount);
+        ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
+
+        size_t shown = 0;
+        if (ImGui::BeginTable("##bestiary-monsters", 2, tableFlags)) {
+            ImGui::TableSetupColumn(L("Monster"), ImGuiTableColumnFlags_WidthStretch, 0.32f);
+            ImGui::TableSetupColumn(L("Possible drops"), ImGuiTableColumnFlags_WidthStretch, 0.68f);
+            ImGui::PushStyleColor(ImGuiCol_Text, muted);
+            ImGui::TableHeadersRow();
+            ImGui::PopStyleColor();
+
+            for (size_t i = 0; i < m_bestiaryCache.monsters.size(); ++i) {
+                const BestiaryMonster &monster = m_bestiaryCache.monsters[i];
+                if (m_bestiaryDefeatedOnly && monster.defeated <= 0)
+                    continue;
+                bool ok = matches(monster.name);
+                if (!ok) {
+                    for (const BestiaryDrop &drop : monster.drops) {
+                        if (matches(drop.itemName)) {
+                            ok = true;
+                            break;
+                        }
+                    }
+                }
+                if (!ok)
+                    continue;
+                ++shown;
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                // Focusable span so controller D-pad/stick scrolls the table smoothly.
+                ImGui::SetNextItemAllowOverlap();
+                ImGui::Selectable("##mon", false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0.0f, 0.0f));
+                ImGui::SameLine(0.0f, 0.0f);
+                ImDrawList *dl = ImGui::GetWindowDrawList();
+                const float monIcon = std::floor(em(1.45f));
+                const ImVec2 monOrigin = ImGui::GetCursorScreenPos();
+                const float monAvailW = ImGui::GetContentRegionAvail().x;
+                float monX = monOrigin.x;
+                if (drawMonsterIconAt(dl, monster.modelName, ImVec2(monX, monOrigin.y), monIcon)) {
+                    if (monster.defeated > 0)
+                        dl->AddCircleFilled(ImVec2(monX + monIcon - em(0.15f), monOrigin.y + monIcon - em(0.15f)),
+                                            em(0.22f), palette::kGold);
+                    monX += monIcon + em(0.45f);
+                } else {
+                    const float badgeR = em(0.26f);
+                    if (monster.defeated > 0)
+                        dl->AddCircleFilled(ImVec2(monX + badgeR, monOrigin.y + monIcon * 0.5f), badgeR,
+                                            palette::kGold);
+                    else
+                        dl->AddCircle(ImVec2(monX + badgeR, monOrigin.y + monIcon * 0.5f), badgeR, palette::kTextMuted,
+                                      0, 1.3f);
+                    monX += em(0.9f);
+                }
+                const float monW = std::max(0.0f, monOrigin.x + monAvailW - monX);
+                const float monTextY = monOrigin.y + std::floor((monIcon - lineH) * 0.5f);
+                if (monster.defeated > 0) {
+                    char countBuf[24];
+                    std::snprintf(countBuf, sizeof(countBuf), "%s%d", kTimes, monster.defeated);
+                    const float countW = ImGui::CalcTextSize(countBuf).x;
+                    const float nameW = std::max(0.0f, monW - countW - em(0.35f));
+                    drawMarquee(dl, ImVec2(monX, monTextY), nameW, palette::kGold, monster.name.c_str());
+                    dl->AddText(ImVec2(monX + std::min(ImGui::CalcTextSize(monster.name.c_str()).x, nameW) + em(0.35f),
+                                       monTextY),
+                                palette::kTextMuted, countBuf);
+                } else {
+                    drawMarquee(dl, ImVec2(monX, monTextY), monW, textCol, monster.name.c_str());
+                }
+                ImGui::Dummy(ImVec2(monAvailW, std::max(lineH, monIcon)));
+
+                ImGui::TableNextColumn();
+                if (monster.drops.empty()) {
+                    ImGui::TextColored(muted, "\xE2\x80\x94");
+                } else {
+                    const float availW = ImGui::GetContentRegionAvail().x;
+                    const float cellW = std::floor(std::max(em(6.0f), (availW - colGap) * 0.5f));
+                    const size_t rows = (monster.drops.size() + 1u) / 2u;
+                    const ImVec2 origin = ImGui::GetCursorScreenPos();
+                    const float iconPad = em(0.35f);
+                    const float pctPad = em(0.35f);
+                    for (size_t d = 0; d < monster.drops.size(); ++d) {
+                        const BestiaryDrop &drop = monster.drops[d];
+                        const size_t r = d / 2u;
+                        const size_t c = d % 2u;
+                        const float x = origin.x + static_cast<float>(c) * (cellW + colGap);
+                        const float y = origin.y + static_cast<float>(r) * cellRowH;
+                        float cursorX = x;
+                        if (drawIconAt(dl, drop.iconId, ImVec2(cursorX, y + std::floor((cellRowH - iconSize) * 0.5f)),
+                                       iconSize))
+                            cursorX += iconSize + iconPad;
+                        char pct[16];
+                        std::snprintf(pct, sizeof(pct), "%d%%", drop.ratePercent);
+                        const float pctW = ImGui::CalcTextSize(pct).x;
+                        const float textY = y + std::floor((cellRowH - lineH) * 0.5f);
+                        const float nameW = std::max(0.0f, (x + cellW) - cursorX - pctW - pctPad);
+                        drawMarquee(dl, ImVec2(cursorX, textY), nameW, textCol, drop.itemName.c_str());
+                        dl->AddText(ImVec2(x + cellW - pctW, textY), palette::kTextMuted, pct);
+                    }
+                    ImGui::Dummy(ImVec2(availW, static_cast<float>(rows) * cellRowH));
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        if (shown == 0) {
+            ImGui::Dummy(ImVec2(0.0f, em(0.3f)));
+            mutedText("%s", L("No matching entries."));
+        }
+    } else if (m_bestiaryTab == 1) {
+        mutedText(L("%zu items"), m_bestiaryCache.items.size());
+        ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
+
+        size_t shown = 0;
+        if (ImGui::BeginTable("##bestiary-items", 2, tableFlags)) {
+            ImGui::TableSetupColumn(L("Item"), ImGuiTableColumnFlags_WidthStretch, 0.32f);
+            ImGui::TableSetupColumn(L("Dropped by"), ImGuiTableColumnFlags_WidthStretch, 0.68f);
+            ImGui::PushStyleColor(ImGuiCol_Text, muted);
+            ImGui::TableHeadersRow();
+            ImGui::PopStyleColor();
+
+            std::vector<const BestiaryItemSource *> visibleSources;
+            for (size_t i = 0; i < m_bestiaryCache.items.size(); ++i) {
+                const BestiaryItem &item = m_bestiaryCache.items[i];
+                visibleSources.clear();
+                bool nameMatch = matches(item.name);
+                bool sourceMatch = false;
+                for (const BestiaryItemSource &src : item.sources) {
+                    if (m_bestiaryDefeatedOnly && src.monsterDefeated <= 0)
+                        continue;
+                    visibleSources.push_back(&src);
+                    if (matches(src.monsterName))
+                        sourceMatch = true;
+                }
+                if (visibleSources.empty() || (!nameMatch && !sourceMatch))
+                    continue;
+                ++shown;
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemAllowOverlap();
+                ImGui::Selectable("##item", false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0.0f, 0.0f));
+                ImGui::SameLine(0.0f, 0.0f);
+                ImDrawList *dl = ImGui::GetWindowDrawList();
+                const float itemIcon = std::floor(em(1.45f));
+                const ImVec2 itemOrigin = ImGui::GetCursorScreenPos();
+                const float itemAvailW = ImGui::GetContentRegionAvail().x;
+                float itemX = itemOrigin.x;
+                if (drawIconAt(dl, item.iconId, ImVec2(itemX, itemOrigin.y), itemIcon))
+                    itemX += itemIcon + em(0.45f);
+                drawMarquee(dl, ImVec2(itemX, itemOrigin.y + std::floor((itemIcon - lineH) * 0.5f)),
+                            std::max(0.0f, itemOrigin.x + itemAvailW - itemX), textCol, item.name.c_str());
+                ImGui::Dummy(ImVec2(itemAvailW, std::max(lineH, itemIcon)));
+
+                ImGui::TableNextColumn();
+                const float availW = ImGui::GetContentRegionAvail().x;
+                const float cellW = std::floor(std::max(em(6.0f), (availW - colGap) * 0.5f));
+                const size_t rows = (visibleSources.size() + 1u) / 2u;
+                const ImVec2 origin = ImGui::GetCursorScreenPos();
+                const float pctPad = em(0.35f);
+                const float iconPad = em(0.35f);
+                for (size_t s = 0; s < visibleSources.size(); ++s) {
+                    const BestiaryItemSource &src = *visibleSources[s];
+                    const size_t r = s / 2u;
+                    const size_t c = s % 2u;
+                    const float x = origin.x + static_cast<float>(c) * (cellW + colGap);
+                    const float y = origin.y + static_cast<float>(r) * cellRowH;
+                    float cursorX = x;
+                    if (drawMonsterIconAt(dl, src.modelName,
+                                          ImVec2(cursorX, y + std::floor((cellRowH - iconSize) * 0.5f)), iconSize))
+                        cursorX += iconSize + iconPad;
+                    char pct[16];
+                    std::snprintf(pct, sizeof(pct), "%d%%", src.ratePercent);
+                    const float pctW = ImGui::CalcTextSize(pct).x;
+                    const float textY = y + std::floor((cellRowH - lineH) * 0.5f);
+                    const float nameW = std::max(0.0f, (x + cellW) - cursorX - pctW - pctPad);
+                    drawMarquee(dl, ImVec2(cursorX, textY), nameW, src.monsterDefeated > 0 ? palette::kGold : textCol,
+                                src.monsterName.c_str());
+                    dl->AddText(ImVec2(x + cellW - pctW, textY), palette::kTextMuted, pct);
+                }
+                ImGui::Dummy(ImVec2(availW, static_cast<float>(rows) * cellRowH));
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        if (shown == 0) {
+            ImGui::Dummy(ImVec2(0.0f, em(0.3f)));
+            mutedText("%s", L("No matching entries."));
+        }
+    } else if (m_bestiaryTab == 2) {
+        size_t totalShown = 0;
+        for (const BestiaryWeapon &w : m_bestiaryCache.weapons) {
+            if (m_bestiaryChara != 0 && w.charaIndex != m_bestiaryChara - 1)
+                continue;
+            if ((m_bestiaryWeaponKind == 1 && w.subWeapon) || (m_bestiaryWeaponKind == 2 && !w.subWeapon))
+                continue;
+            if (!matches(w.name) && (w.charaIndex < 0 || w.charaIndex >= 8 || !matches(kCharaNames[w.charaIndex])))
+                continue;
+            ++totalShown;
+        }
+        mutedText(L("%zu weapons"), totalShown);
+        ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
+
+        if (totalShown == 0) {
+            mutedText("%s", L("No matching entries."));
+        } else {
+            ImDrawList *dl = ImGui::GetWindowDrawList();
+            const float availW = ImGui::GetContentRegionAvail().x;
+            const float cellW = std::floor(std::max(em(8.0f), (availW - colGap) * 0.5f));
+            const float iconPad = em(0.4f);
+            const float atkPad = em(0.4f);
+            const float wRowH = std::max(lineH, iconSize) + em(0.28f);
+
+            std::vector<const BestiaryWeapon *> mainW, subW;
+            const auto drawWeaponGrid = [&](const char *subLabel, const std::vector<const BestiaryWeapon *> &list,
+                                            int idBase) {
+                if (list.empty())
+                    return;
+                mutedText("%s", L(subLabel));
+                ImGui::Dummy(ImVec2(0.0f, em(0.1f)));
+                const size_t rows = (list.size() + 1u) / 2u;
+                for (size_t r = 0; r < rows; ++r) {
+                    ImGui::PushID(idBase + static_cast<int>(r));
+                    const ImVec2 rowOrigin = ImGui::GetCursorScreenPos();
+                    ImGui::SetNextItemAllowOverlap();
+                    ImGui::Selectable("##wrow", false, ImGuiSelectableFlags_None, ImVec2(availW, wRowH));
+                    if (r % 2u == 1u)
+                        dl->AddRectFilled(rowOrigin, ImVec2(rowOrigin.x + availW, rowOrigin.y + wRowH),
+                                          IM_COL32(255, 255, 255, 8));
+                    for (size_t c = 0; c < 2u; ++c) {
+                        const size_t idx = r * 2u + c;
+                        if (idx >= list.size())
+                            break;
+                        const BestiaryWeapon &w = *list[idx];
+                        const float x = rowOrigin.x + static_cast<float>(c) * (cellW + colGap);
+                        const float y = rowOrigin.y;
+                        float cursorX = x + em(0.2f);
+                        if (drawIconAt(dl, w.iconId, ImVec2(cursorX, y + std::floor((wRowH - iconSize) * 0.5f)),
+                                       iconSize))
+                            cursorX += iconSize + iconPad;
+                        char atk[20];
+                        std::snprintf(atk, sizeof(atk), "ATK %d", w.attack);
+                        const float atkW = ImGui::CalcTextSize(atk).x;
+                        const float textY = y + std::floor((wRowH - lineH) * 0.5f);
+                        const float nameW = std::max(0.0f, (x + cellW) - cursorX - atkW - atkPad);
+                        drawMarquee(dl, ImVec2(cursorX, textY), nameW, textCol, w.name.c_str());
+                        dl->AddText(ImVec2(x + cellW - atkW, textY), palette::kGold, atk);
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::Dummy(ImVec2(0.0f, em(0.25f)));
+            };
+
+            for (int c = 0; c < 8; ++c) {
+                if (m_bestiaryChara != 0 && m_bestiaryChara - 1 != c)
+                    continue;
+                mainW.clear();
+                subW.clear();
+                const bool charaMatch = matches(kCharaNames[c]);
+                for (const BestiaryWeapon &w : m_bestiaryCache.weapons) {
+                    if (w.charaIndex != c)
+                        continue;
+                    if ((m_bestiaryWeaponKind == 1 && w.subWeapon) || (m_bestiaryWeaponKind == 2 && !w.subWeapon))
+                        continue;
+                    if (!charaMatch && !matches(w.name))
+                        continue;
+                    (w.subWeapon ? subW : mainW).push_back(&w);
+                }
+                if (mainW.empty() && subW.empty())
+                    continue;
+                ImGui::Dummy(ImVec2(0.0f, em(0.25f)));
+                const float hdrH = std::floor(em(2.2f));
+                const ImVec2 hdrPos = ImGui::GetCursorScreenPos();
+                const float fw = drawCharaPortrait(dl, c, hdrPos, hdrH);
+                const float textX = hdrPos.x + (fw > 0.0f ? fw + em(0.6f) : 0.0f);
+                ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.15f);
+                const float titleH = ImGui::GetTextLineHeight();
+                dl->AddText(ImVec2(textX, hdrPos.y + std::floor((hdrH - titleH) * 0.5f)), palette::kGold,
+                            kCharaNames[c]);
+                ImGui::PopFont();
+                dl->AddLine(ImVec2(hdrPos.x, hdrPos.y + hdrH + em(0.15f)),
+                            ImVec2(hdrPos.x + availW, hdrPos.y + hdrH + em(0.15f)), IM_COL32(255, 255, 255, 22), 1.0f);
+                ImGui::Dummy(ImVec2(availW, hdrH + em(0.35f)));
+                drawWeaponGrid("Main weapons", mainW, c * 1000);
+                drawWeaponGrid("Sub weapons", subW, c * 1000 + 500);
+            }
+        }
+    } else {
+        const int weaponCount = static_cast<int>(m_bestiaryCache.weapons.size());
+        if (m_bestiaryFusionInput < -1 || m_bestiaryFusionInput >= weaponCount)
+            m_bestiaryFusionInput = -1;
+        if (m_bestiaryFusionOutput < -1 || m_bestiaryFusionOutput >= weaponCount)
+            m_bestiaryFusionOutput = -1;
+        if (m_bestiaryChara != 0) {
+            if (m_bestiaryFusionInput >= 0 && m_bestiaryCache.weapons[m_bestiaryFusionInput].charaIndex != m_bestiaryChara - 1)
+                m_bestiaryFusionInput = -1;
+            if (m_bestiaryFusionOutput >= 0 && m_bestiaryCache.weapons[m_bestiaryFusionOutput].charaIndex != m_bestiaryChara - 1)
+                m_bestiaryFusionOutput = -1;
+        }
+        if (m_bestiaryWeaponKind != 0) {
+            const bool wantSub = m_bestiaryWeaponKind == 2;
+            if (m_bestiaryFusionInput >= 0 && m_bestiaryCache.weapons[m_bestiaryFusionInput].subWeapon != wantSub)
+                m_bestiaryFusionInput = -1;
+            if (m_bestiaryFusionOutput >= 0 && m_bestiaryCache.weapons[m_bestiaryFusionOutput].subWeapon != wantSub)
+                m_bestiaryFusionOutput = -1;
+        }
+
+        // Input and Output weapon dropdown selectors + Reset button.
+        ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
+        const float availW = ImGui::GetContentRegionAvail().x;
+        const float resetW = ImGui::CalcTextSize(L("Reset")).x + ImGui::GetStyle().FramePadding.x * 2.0f + em(0.4f);
+        const float gap = em(0.6f);
+        const float selectorW = std::floor(std::max(em(9.0f), (availW - resetW - gap * 2.0f) * 0.5f));
+
+        const auto drawWeaponCombo = [&](const char *id, const char *anyLabel, int &selected, int otherSelected) {
+            ImGui::SetNextItemWidth(selectorW);
+            std::string previewStr = selected >= 0 ? m_bestiaryCache.weapons[selected].name : std::string(L(anyLabel));
+            if (beginCombo(id, previewStr.c_str())) {
+                if (ImGui::Selectable(L(anyLabel), selected == -1))
+                    selected = -1;
+                const float itemH = std::max(lineH, iconSize) + em(0.15f);
+                const int restrictChara =
+                    otherSelected >= 0 ? m_bestiaryCache.weapons[otherSelected].charaIndex : (m_bestiaryChara - 1);
+                const bool restrictKind = otherSelected >= 0 || m_bestiaryWeaponKind != 0;
+                const bool wantSub = otherSelected >= 0 ? m_bestiaryCache.weapons[otherSelected].subWeapon
+                                                        : (m_bestiaryWeaponKind == 2);
+                for (int wi = 0; wi < weaponCount; ++wi) {
+                    const BestiaryWeapon &w = m_bestiaryCache.weapons[wi];
+                    if (restrictChara >= 0 && w.charaIndex != restrictChara)
+                        continue;
+                    if (restrictKind && w.subWeapon != wantSub)
+                        continue;
+                    ImGui::PushID(wi);
+                    const ImVec2 pos = ImGui::GetCursorScreenPos();
+                    if (ImGui::Selectable("##wopt", selected == wi, 0, ImVec2(0.0f, itemH)))
+                        selected = wi;
+                    ImDrawList *cdl = ImGui::GetWindowDrawList();
+                    float cx = pos.x + em(0.15f);
+                    if (drawIconAt(cdl, w.iconId, ImVec2(cx, pos.y + std::floor((itemH - iconSize) * 0.5f)), iconSize))
+                        cx += iconSize + em(0.35f);
+                    const float ty = pos.y + std::floor((itemH - lineH) * 0.5f);
+                    char label[128];
+                    if (restrictChara < 0 && w.charaIndex >= 0 && w.charaIndex < 8)
+                        std::snprintf(label, sizeof(label), "%s (%s)", w.name.c_str(), kCharaNames[w.charaIndex]);
+                    else
+                        std::snprintf(label, sizeof(label), "%s", w.name.c_str());
+                    cdl->AddText(ImVec2(cx, ty), textCol, label);
+                    ImGui::PopID();
+                }
+                ImGui::EndCombo();
+            }
+        };
+
+        drawWeaponCombo("##fusion-in", "Input: Any", m_bestiaryFusionInput, m_bestiaryFusionOutput);
+        ImGui::SameLine(0.0f, gap);
+        drawWeaponCombo("##fusion-out", "Output: Any", m_bestiaryFusionOutput, m_bestiaryFusionInput);
+        ImGui::SameLine(0.0f, gap);
+        const bool hasFilter = m_bestiaryFusionInput >= 0 || m_bestiaryFusionOutput >= 0 ||
+                               m_bestiaryWeaponKind != 0 || m_bestiarySearch[0] != '\0';
+        ImGui::BeginDisabled(!hasFilter);
+        if (ImGui::Button(L("Reset"), ImVec2(resetW, 0.0f))) {
+            m_bestiaryFusionInput = -1;
+            m_bestiaryFusionOutput = -1;
+            m_bestiaryWeaponKind = 0;
+            m_bestiarySearch[0] = '\0';
+        }
+        ImGui::EndDisabled();
+
+        // Filter fusions according to character, weapon kind, input, output and search text.
+        std::vector<const BestiaryFusion *> filtered;
+        filtered.reserve(m_bestiaryCache.fusions.size());
+        for (const BestiaryFusion &f : m_bestiaryCache.fusions) {
+            if (f.inputA < 0 || f.inputA >= weaponCount || f.inputB < 0 || f.inputB >= weaponCount || f.output < 0 ||
+                f.output >= weaponCount)
+                continue;
+            if (m_bestiaryChara != 0 && f.charaIndex != m_bestiaryChara - 1)
+                continue;
+            if ((m_bestiaryWeaponKind == 1 && f.subWeapon) || (m_bestiaryWeaponKind == 2 && !f.subWeapon))
+                continue;
+            if (m_bestiaryFusionInput >= 0 && f.inputA != m_bestiaryFusionInput && f.inputB != m_bestiaryFusionInput)
+                continue;
+            if (m_bestiaryFusionOutput >= 0 && f.output != m_bestiaryFusionOutput)
+                continue;
+            if (!needle.empty()) {
+                const bool ok = matches(m_bestiaryCache.weapons[f.inputA].name) ||
+                                matches(m_bestiaryCache.weapons[f.inputB].name) ||
+                                matches(m_bestiaryCache.weapons[f.output].name) ||
+                                (f.charaIndex >= 0 && f.charaIndex < 8 && matches(kCharaNames[f.charaIndex]));
+                if (!ok)
+                    continue;
+            }
+            filtered.push_back(&f);
+        }
+
+        const bool bothSelected = m_bestiaryFusionInput >= 0 && m_bestiaryFusionOutput >= 0;
+        ImGui::Dummy(ImVec2(0.0f, em(0.15f)));
+        if (bothSelected && !filtered.empty())
+            ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(palette::kGold), L("%zu fusions — fuse with highlighted weapon"),
+                               filtered.size());
+        else
+            mutedText(L("%zu fusions"), filtered.size());
+        ImGui::Dummy(ImVec2(0.0f, em(0.2f)));
+
+        if (filtered.empty()) {
+            mutedText("%s", L("No matching entries."));
+        } else if (ImGui::BeginTable("##bestiary-fusions", 3, tableFlags)) {
+            ImGui::TableSetupColumn(L("Input 1"), ImGuiTableColumnFlags_WidthStretch, 0.33f);
+            ImGui::TableSetupColumn(L(bothSelected ? "Fuse with" : "Input 2"), ImGuiTableColumnFlags_WidthStretch, 0.33f);
+            ImGui::TableSetupColumn(L("Result"), ImGuiTableColumnFlags_WidthStretch, 0.34f);
+            ImGui::PushStyleColor(ImGuiCol_Text, muted);
+            ImGui::TableHeadersRow();
+            ImGui::PopStyleColor();
+
+            const float fRowH = std::max(lineH, iconSize) + em(0.24f);
+            const auto drawWeaponCell = [&](const BestiaryWeapon &w, int prefixKind, ImU32 nameCol, bool bonusStar) {
+                ImDrawList *dl = ImGui::GetWindowDrawList();
+                const ImVec2 origin = ImGui::GetCursorScreenPos();
+                const float cellAvail = ImGui::GetContentRegionAvail().x;
+                float cx = origin.x;
+                const float ty = origin.y + std::floor((fRowH - lineH) * 0.5f);
+                if (prefixKind == 1) {
+                    dl->AddText(ImVec2(cx, ty), palette::kTextMuted, "+");
+                    cx += ImGui::CalcTextSize("+").x + em(0.3f);
+                } else if (prefixKind == 2) {
+                    const float aw = em(0.65f);
+                    const float midY = std::floor(origin.y + fRowH * 0.5f) + 0.5f;
+                    const float ah = em(0.24f);
+                    dl->AddLine(ImVec2(cx, midY), ImVec2(cx + aw, midY), palette::kTextMuted, 1.4f);
+                    dl->AddLine(ImVec2(cx + aw - ah, midY - ah), ImVec2(cx + aw, midY), palette::kTextMuted, 1.4f);
+                    dl->AddLine(ImVec2(cx + aw - ah, midY + ah), ImVec2(cx + aw, midY), palette::kTextMuted, 1.4f);
+                    cx += aw + em(0.35f);
+                }
+                if (drawIconAt(dl, w.iconId, ImVec2(cx, origin.y + std::floor((fRowH - iconSize) * 0.5f)), iconSize))
+                    cx += iconSize + em(0.35f);
+                char atkBuf[20];
+                std::snprintf(atkBuf, sizeof(atkBuf), bonusStar ? "* %d" : "%d", w.attack);
+                const float atkW = ImGui::CalcTextSize(atkBuf).x;
+                const float nameW = std::max(0.0f, (origin.x + cellAvail) - cx - atkW - em(0.35f));
+                drawMarquee(dl, ImVec2(cx, ty), nameW, nameCol, w.name.c_str());
+                dl->AddText(ImVec2(origin.x + cellAvail - atkW, ty),
+                            bonusStar ? palette::kGold : palette::kTextMuted, atkBuf);
+                ImGui::Dummy(ImVec2(cellAvail, fRowH));
+            };
+
+            ImGuiListClipper clipper;
+            clipper.Begin(static_cast<int>(filtered.size()), fRowH + ImGui::GetStyle().CellPadding.y * 2.0f);
+            while (clipper.Step()) {
+                for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
+                    const BestiaryFusion &f = *filtered[row];
+                    int firstIdx = f.inputA;
+                    int secondIdx = f.inputB;
+                    if (m_bestiaryFusionInput >= 0 && secondIdx == m_bestiaryFusionInput && firstIdx != m_bestiaryFusionInput)
+                        std::swap(firstIdx, secondIdx);
+                    ImGui::PushID(row);
+                    ImGui::TableNextRow(ImGuiTableRowFlags_None, fRowH);
+                    ImGui::TableNextColumn();
+                    ImGui::SetNextItemAllowOverlap();
+                    ImGui::Selectable("##frow", false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0.0f, fRowH));
+                    ImGui::SameLine(0.0f, 0.0f);
+                    drawWeaponCell(m_bestiaryCache.weapons[firstIdx], 0,
+                                   m_bestiaryFusionInput >= 0 ? palette::kTextMuted : textCol, false);
+
+                    ImGui::TableNextColumn();
+                    drawWeaponCell(m_bestiaryCache.weapons[secondIdx], 1,
+                                   bothSelected ? palette::kGold : textCol, false);
+
+                    ImGui::TableNextColumn();
+                    drawWeaponCell(m_bestiaryCache.weapons[f.output], 2,
+                                   palette::kGold, f.bonus);
+                    ImGui::PopID();
+                }
+            }
+            ImGui::EndTable();
+        }
     }
 }
 

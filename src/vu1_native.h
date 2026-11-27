@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "runtime/gs/gs_types.h"
@@ -152,20 +153,51 @@ std::string describePieces(const uint8_t *code, uint32_t startPC);
 // What the program leaves in VU1 data memory that a later run, or the EE,
 // may read: the bounds in quads 98 and 99 for the programs with
 // `depthBounds`. `apply` writes it where the VU1 did not run (skip, gpu);
+// when `builtMesh` is provided (from buildMesh), its already-decoded vertices
+// are reused instead of re-running readChunk.
 // `matches` says whether the VU1 left the same (check), from the data
 // memory before the run and after it.
-void applyMemoryEffects(const Program &program, uint8_t *data, uint32_t top);
+void applyMemoryEffects(const Program &program, uint8_t *data, uint32_t top,
+                        const GSNativeMesh *builtMesh = nullptr);
 bool memoryEffectsMatch(const Program &program, const uint8_t *before, uint32_t top, const uint8_t *after);
 
 // The GS packets the program kicks for that chunk, in order.
 void buildChunk(const Program &program, const uint8_t *data, uint32_t top,
                 std::vector<std::vector<uint8_t>> &packets);
 
+// Direct A+D register writes for a mesh's GS state (FOGCOL, PRIM, PRMODE, or
+// shadow volume facing/backing A+D packets), avoiding GIF packet encode/decode.
+struct MeshStateWrites
+{
+    std::pair<uint8_t, uint64_t> writes[16];
+    size_t count = 0u;
+};
+
 // The chunk as a mesh: the packets that set the GS state it draws under
 // (FOGCOL, PRIM and PRMODE), to go first, and the strip itself, for
-// GS::submitNativeMesh.
+// GS::submitNativeMesh. When `needDepth` is false, per-vertex CPU depth
+// projection is skipped (unused by the native pipeline). When `directWrites`
+// is non-null and the state packets are pure A+D writes, they are returned
+// directly and `packets` is left empty.
 void buildMesh(const Program &program, const uint8_t *data, uint32_t top,
-               std::vector<std::vector<uint8_t>> &packets, GSNativeMesh &mesh);
+               std::vector<std::vector<uint8_t>> &packets, GSNativeMesh &mesh,
+               bool needDepth = true, MeshStateWrites *directWrites = nullptr);
+
+// Direct window-space mesh for Kind::Outline (toon silhouette lines): skips
+// hidden edges and emits widened line quads straight into `mesh`, avoiding
+// GIF packet serialization and native2d::build decoding on the VIF1 thread.
+// Returns false if the chunk needs the packet fallback (e.g. fogged).
+bool buildOutlinePiece(const Program &program, const uint8_t *data, uint32_t top,
+                       MeshStateWrites &stateWrites, GSNativeMesh &mesh);
+
+// Direct window-space meshes for Kind::Shadow (shadow volumes): batches facing
+// and backing fans into two triangle-list meshes (additive pass first when
+// identifiable), avoiding per-fan GIF allocations and native2d::build decoding.
+// Returns false if the chunk needs the packet fallback.
+bool buildShadowPiece(const Program &program, const uint8_t *data, uint32_t top,
+                      const uint8_t defaultRgba[4],
+                      MeshStateWrites &firstWrites, GSNativeMesh &firstMesh,
+                      MeshStateWrites &secondWrites, GSNativeMesh &secondMesh);
 
 // RG_VU1_NATIVE, in the game (src/vif1_thread.cpp), for the chunks done
 // natively: `check` runs the VU1 as before and compares its packets with the
@@ -208,13 +240,27 @@ public:
     void tick();
 
 private:
+    struct DeclinedKey
+    {
+        const char *name;
+        const char *reason;
+        bool operator==(const DeclinedKey &o) const { return name == o.name && reason == o.reason; }
+    };
+    struct DeclinedHash
+    {
+        size_t operator()(const DeclinedKey &k) const noexcept
+        {
+            return std::hash<const void *>{}(k.name) ^ (std::hash<const void *>{}(k.reason) * 0x9E3779B97F4A7C15ull);
+        }
+    };
     Mode m_mode;
-    std::map<std::string, uint64_t> m_native;
-    std::map<std::string, uint64_t> m_declined;
+    std::unordered_map<const char *, uint64_t> m_native;
+    std::unordered_map<DeclinedKey, uint64_t, DeclinedHash> m_declined;
     std::map<std::string, uint64_t> m_kinds;
     uint64_t m_checked = 0u;
     uint64_t m_differ = 0u;
     uint32_t m_shown = 0u;
+    uint32_t m_ticks = 0u;
     int64_t m_next = 0;
 };
 

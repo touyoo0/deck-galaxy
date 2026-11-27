@@ -185,6 +185,15 @@ void observe(const uint8_t *data, uint32_t size)
             write(g_mirror, e.reg, e.value);
 }
 
+void writeRegisters(const std::pair<uint8_t, uint64_t> *writes, size_t count)
+{
+    if (!enabled() || !writes || count == 0u)
+        return;
+    std::lock_guard lock(g_mirror.mutex);
+    for (size_t i = 0; i < count; ++i)
+        write(g_mirror, writes[i].first, writes[i].second);
+}
+
 void readBack(const GS &gs)
 {
     if (!enabled())

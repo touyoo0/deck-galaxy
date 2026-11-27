@@ -4,6 +4,26 @@
 
 - With "Skip spell animations" on, combat effects and sounds of spells like Flash Sword load and play normally again.
 
+## 0.14.0 - 2026-11-27
+
+- New Bestiary page in the in-game menu with four tabs:
+  - **Monsters** and **Items**: live drop tables read from memory, 2-column grids with smooth marquee scrolling, item icons decoded from the disc, and on-demand 3D thumbnails rendered from monster `.chr` models.
+  - **Weapons**: complete per-character main and sub weapon lists with ATK stats, party character face portraits, and Main/Sub type filtering.
+  - **Fusion**: full Toady weapon synthesis guide decoded from the disc (`gama_matrix2.cfg.bin`), with filtering by character, Main/Sub type, input weapon, output weapon, and input + output partner lookup.
+- Reorganized the in-game menu into a cleaner 2-level sidebar (**Game**, **Settings**, **System**) and renamed the top header to **Menu**.
+- Redesigned the Controls diagram to match the official Steam Deck silhouette.
+- Fixed Jaster's gun texture visibility and opacity in Remaster/native rendering mode.
+
+## 0.13.0 - 2026-11-26
+
+- New "Remaster mode" (enabled by default): 2x GPU texture upscaling (Anime4K CNN for 3D textures and 2xBR for 2D/UI), mipmaps, 16x anisotropic filtering, half-resolution SSAO, FXAA and contrast-adaptive sharpening (CAS).
+- Major Steam Deck performance and power optimizations: direct VU1 outline and shadow-volume builders, SSE/AVX2 skinning and 3D culling, draw call batching, Zen 2 (`-march=znver2`) + ThinLTO builds, and lower idle overhead.
+- Cleaned up the Display menu: removed the obsolete "Scaling filter" and "Sharper picture" options.
+
+## 0.12.7 - 2026-11-25
+
+- Steadier 60 fps and lower power draw and heat on the Steam Deck across exploration and battles.
+
 ## 0.12.6 - 2026-11-23
 
 - New option "Skip spell animations": the scene of a spell or special move is skipped by itself, with no button to press.
