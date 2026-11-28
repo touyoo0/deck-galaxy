@@ -78,9 +78,9 @@ bugs the recompilation may have. This table is updated as the playthrough goes.
 | Chapter | Status | Settings used | Notes |
 |---|---|---|---|
 | 1 | ✅ Tested | French text, 2x, 60 fps, sharp filter, instant text, opening skipped, bag 99. English voices, no Director's Cut. | No bug found. |
-| 2 | ✅ Tested | Same as chapter 1. | No bug found. |
+| 2 | ✅ Tested | Same as chapter 1. | Jaster's gun was invisible in Remaster/native mode (fixed in 0.14.0, [#65](../../pull/65)). |
 | 3 | ✅ Tested | Same as chapter 1. | No bug found. |
-| 4 | ✅ Tested | Same as chapter 1. | No bug found. |
+| 4 | ✅ Tested | Same as chapter 1. | Cinematic freeze/crash from IOP memory leak (fixed in 0.14.2, [#71](../../pull/71)). |
 | 5 | ⏳ TBD | | |
 | 6 | ⏳ TBD | | |
 | 7 | ⏳ TBD | | |
